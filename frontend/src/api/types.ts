@@ -30,6 +30,8 @@ export interface NodeResponse {
   participant_name: string | null
   created_at: string
   archived: number
+  sibling_count: number
+  sibling_index: number
 }
 
 export interface ContextUsage {

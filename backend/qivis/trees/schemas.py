@@ -56,6 +56,8 @@ class NodeResponse(BaseModel):
     participant_name: str | None = None
     created_at: str
     archived: int = 0
+    sibling_count: int = 1
+    sibling_index: int = 0
 
 
 class TreeSummary(BaseModel):

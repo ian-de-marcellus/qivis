@@ -153,3 +153,50 @@ async def create_tree_with_messages(
         parent_id = node["node_id"]
 
     return {"tree_id": tree_id, "node_ids": node_ids}
+
+
+# -- Branching helpers (available from Phase 1.1 onward) --
+
+
+async def create_branching_tree(client: AsyncClient) -> dict:
+    """Create a tree with branches: root -> A -> B, root -> A -> C.
+
+    B and C are siblings (both children of A).
+
+    Returns {"tree_id": str, "node_ids": {"root": str, "A": str, "B": str, "C": str}}
+    """
+    tree = await create_test_tree(client, title="Branching Tree")
+    tree_id = tree["tree_id"]
+
+    root_resp = await client.post(f"/api/trees/{tree_id}/nodes", json={
+        "content": "Root message",
+    })
+    assert root_resp.status_code == 201
+    root_id = root_resp.json()["node_id"]
+
+    a_resp = await client.post(f"/api/trees/{tree_id}/nodes", json={
+        "content": "Message A",
+        "role": "assistant",
+        "parent_id": root_id,
+    })
+    assert a_resp.status_code == 201
+    a_id = a_resp.json()["node_id"]
+
+    b_resp = await client.post(f"/api/trees/{tree_id}/nodes", json={
+        "content": "Message B (branch 1)",
+        "parent_id": a_id,
+    })
+    assert b_resp.status_code == 201
+    b_id = b_resp.json()["node_id"]
+
+    c_resp = await client.post(f"/api/trees/{tree_id}/nodes", json={
+        "content": "Message C (branch 2)",
+        "parent_id": a_id,
+    })
+    assert c_resp.status_code == 201
+    c_id = c_resp.json()["node_id"]
+
+    return {
+        "tree_id": tree_id,
+        "node_ids": {"root": root_id, "A": a_id, "B": b_id, "C": c_id},
+    }

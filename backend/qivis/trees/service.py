@@ -1,6 +1,7 @@
 """Tree service: coordinates EventStore and StateProjector for tree/node operations."""
 
 import json
+from collections import defaultdict
 from datetime import UTC, datetime
 from uuid import uuid4
 
@@ -115,14 +116,36 @@ class TreeService:
         await self._store.append(event)
         await self._projector.project([event])
 
-        # Read back the projected node
+        # Read back the projected node with sibling info
         nodes = await self._projector.get_nodes(tree_id)
+        sibling_info = self._compute_sibling_info(nodes)
         node_row = next(n for n in nodes if n["node_id"] == node_id)
-        return self._node_from_row(node_row)
+        return self._node_from_row(node_row, sibling_info=sibling_info)
+
+    @staticmethod
+    def _compute_sibling_info(
+        node_rows: list[dict],
+    ) -> dict[str, tuple[int, int]]:
+        """Compute (sibling_index, sibling_count) for each node.
+
+        Groups nodes by parent_id, orders by created_at (already guaranteed
+        by the projector query), returns {node_id: (index, count)}.
+        """
+        parent_groups: dict[str | None, list[str]] = defaultdict(list)
+        for row in node_rows:
+            parent_groups[row["parent_id"]].append(row["node_id"])
+
+        result: dict[str, tuple[int, int]] = {}
+        for children in parent_groups.values():
+            count = len(children)
+            for idx, node_id in enumerate(children):
+                result[node_id] = (idx, count)
+        return result
 
     @staticmethod
     def _tree_detail_from_row(row: dict, node_rows: list[dict]) -> TreeDetailResponse:
         """Convert a projected tree row + node rows to a response."""
+        sibling_info = TreeService._compute_sibling_info(node_rows)
         return TreeDetailResponse(
             tree_id=row["tree_id"],
             title=row["title"],
@@ -144,11 +167,18 @@ class TreeService:
             created_at=row["created_at"],
             updated_at=row["updated_at"],
             archived=row["archived"],
-            nodes=[TreeService._node_from_row(n) for n in node_rows],
+            nodes=[
+                TreeService._node_from_row(n, sibling_info=sibling_info)
+                for n in node_rows
+            ],
         )
 
     @staticmethod
-    def _node_from_row(row: dict) -> NodeResponse:
+    def _node_from_row(
+        row: dict,
+        *,
+        sibling_info: dict[str, tuple[int, int]] | None = None,
+    ) -> NodeResponse:
         """Convert a projected node row to a response."""
 
         def maybe_json(val: object) -> dict | None:
@@ -157,6 +187,10 @@ class TreeService:
             if isinstance(val, str):
                 return json.loads(val)
             return val  # type: ignore[return-value]
+
+        si, sc = (0, 1)
+        if sibling_info is not None and row["node_id"] in sibling_info:
+            si, sc = sibling_info[row["node_id"]]
 
         return NodeResponse(
             node_id=row["node_id"],
@@ -178,6 +212,8 @@ class TreeService:
             participant_name=row["participant_name"],
             created_at=row["created_at"],
             archived=row["archived"],
+            sibling_index=si,
+            sibling_count=sc,
         )
 
 

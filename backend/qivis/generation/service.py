@@ -231,10 +231,11 @@ class GenerationService:
         await self._store.append(event)
         await self._projector.project([event])
 
-        # Read back the projected node
+        # Read back the projected node with sibling info
         nodes = await self._projector.get_nodes(tree_id)
+        sibling_info = TreeService._compute_sibling_info(nodes)
         node_row = next(n for n in nodes if n["node_id"] == node_id)
-        return TreeService._node_from_row(node_row)
+        return TreeService._node_from_row(node_row, sibling_info=sibling_info)
 
 
 class TreeNotFoundForGenerationError(Exception):
