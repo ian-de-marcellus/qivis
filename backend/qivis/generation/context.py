@@ -17,11 +17,15 @@ MODEL_CONTEXT_LIMITS: dict[str, int] = {
     "claude-3-5-sonnet-20241022": 200_000,
     "claude-3-haiku-20240307": 200_000,
     # OpenAI
+    "gpt-5.2": 400_000,
+    "gpt-5.2-pro": 400_000,
+    "gpt-5-mini": 128_000,
     "gpt-4o": 128_000,
     "gpt-4o-mini": 128_000,
     "gpt-4-turbo": 128_000,
     "gpt-4": 8_192,
     "gpt-3.5-turbo": 16_385,
+    "o4-mini": 200_000,
     "o1": 200_000,
     "o3-mini": 200_000,
 }

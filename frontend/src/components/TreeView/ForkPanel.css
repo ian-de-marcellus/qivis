@@ -103,7 +103,8 @@
 }
 
 .fork-setting-row input,
-.fork-setting-row textarea {
+.fork-setting-row textarea,
+.fork-setting-row select {
   padding: 0.35rem 0.5rem;
   font-size: 0.8rem;
   font-family: inherit;
@@ -116,9 +117,15 @@
 }
 
 .fork-setting-row input:focus,
-.fork-setting-row textarea:focus {
+.fork-setting-row textarea:focus,
+.fork-setting-row select:focus {
   outline: none;
   border-color: var(--accent);
+}
+
+.fork-setting-row select {
+  resize: none;
+  cursor: pointer;
 }
 
 .fork-setting-row input[type="number"] {

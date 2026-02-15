@@ -9,8 +9,10 @@ from qivis.providers.registry import clear_providers, register_provider
 
 
 class FakeProvider(LLMProvider):
-    def __init__(self, provider_name: str):
+    def __init__(self, provider_name: str, models: list[str] | None = None):
         self._name = provider_name
+        if models is not None:
+            self.suggested_models = models
 
     @property
     def name(self) -> str:
@@ -68,3 +70,15 @@ class TestProvidersEndpoint:
         resp = await client.get("/api/providers")
         data = resp.json()
         assert len(data) == 3
+
+    async def test_returns_suggested_models(self, client):
+        register_provider(FakeProvider("openai", models=["gpt-4o", "gpt-5.2"]))
+        resp = await client.get("/api/providers")
+        data = resp.json()
+        assert data[0]["models"] == ["gpt-4o", "gpt-5.2"]
+
+    async def test_models_empty_by_default(self, client):
+        register_provider(FakeProvider("test"))
+        resp = await client.get("/api/providers")
+        data = resp.json()
+        assert data[0]["models"] == []

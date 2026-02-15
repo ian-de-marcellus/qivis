@@ -627,6 +627,18 @@ Items identified during implementation that aren't yet assigned to a specific su
 
 - **Light/dark mode toggle**: Manual toggle in the UI instead of relying solely on `prefers-color-scheme`. Useful when testing/researching across themes without changing system defaults. _Small standalone task, can be done anytime._
 
+### Tree Settings (backend + frontend)
+
+- **Tree settings panel / default provider editing**: Allow editing a tree's default provider, model, and system prompt after creation. Currently the only way to set a tree's default provider is at creation time (and even then there's no UI for it), so every tree starts defaulting to the backend fallback (anthropic). A tree settings panel (or inline editing in the sidebar/header) would let researchers configure the default provider/model per tree. _Backend: needs a `PATCH /api/trees/{tree_id}` endpoint (or TreeUpdated event). Frontend: settings UI, wired into the tree detail view._
+
+### Generation UX (frontend + minor backend)
+
+- **Model attribution on messages**: Show which provider/model generated each assistant message. The data already exists on every node (`model`, `provider` fields). Display as subtle metadata below or beside the message content. _Small frontend task, no backend changes needed._
+
+- **Branch-local model default**: Follow-up messages in a branch should default to the most recently used provider/model in that branch, not just the tree default. When a researcher switches to GPT-4o mid-conversation, subsequent messages should keep using it until they switch again. _Requires walking the active path to find the last assistant node's provider/model and passing those as defaults to sendMessage and ForkPanel._
+
+- **Generation error recovery**: When generation fails (API error, missing credits, network issue), the UI should preserve the failed attempt with: the error message, a retry button, and the ability to change parameters (provider, model, etc.) before retrying. Currently, errors clear the streaming state and show a toast, losing the generation context. _Moderate frontend work — needs a new "failed generation" UI state alongside streaming/complete._
+
 ### Context Transparency (needs some backend + frontend work)
 
 - **Context diff indicator**: A colored badge/indicator on assistant messages where the actual generation context differed from what a researcher would expect by reading the tree. Differences to flag:

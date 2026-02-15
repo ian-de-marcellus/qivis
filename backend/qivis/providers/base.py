@@ -43,6 +43,8 @@ class StreamChunk(BaseModel):
 class LLMProvider(ABC):
     """Abstract interface for LLM providers."""
 
+    suggested_models: list[str] = []
+
     @property
     @abstractmethod
     def name(self) -> str:

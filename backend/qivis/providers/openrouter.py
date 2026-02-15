@@ -14,6 +14,23 @@ OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 class OpenRouterProvider(OpenAICompatibleProvider):
     """LLM provider backed by OpenRouter's API."""
 
+    suggested_models = [
+        "anthropic/claude-opus-4-6",
+        "anthropic/claude-sonnet-4-5",
+        "openai/gpt-5.2",
+        "openai/gpt-4o",
+        "google/gemini-3-flash",
+        "google/gemini-3-pro",
+        "deepseek/deepseek-v3.2",
+        "deepseek/deepseek-chat",
+        "meta-llama/llama-4-maverick",
+        "meta-llama/llama-4-scout",
+        "qwen/qwen3-235b-a22b",
+        "mistralai/mistral-large-3",
+        "moonshotai/kimi-k2.5",
+        "arcee-ai/trinity-large-preview",
+    ]
+
     def __init__(self, *, client: AsyncOpenAI | None = None, api_key: str | None = None) -> None:
         if client is not None:
             super().__init__(client)

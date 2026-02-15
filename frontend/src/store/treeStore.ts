@@ -5,6 +5,7 @@ import * as api from '../api/client.ts'
 import type {
   GenerateRequest,
   NodeResponse,
+  ProviderInfo,
   TreeDetail,
   TreeSummary,
 } from '../api/types.ts'
@@ -14,6 +15,7 @@ interface TreeStore {
   trees: TreeSummary[]
   selectedTreeId: string | null
   currentTree: TreeDetail | null
+  providers: ProviderInfo[]
   isLoading: boolean
   isGenerating: boolean
   streamingContent: string
@@ -24,6 +26,7 @@ interface TreeStore {
 
   // Actions
   fetchTrees: () => Promise<void>
+  fetchProviders: () => Promise<void>
   selectTree: (treeId: string) => Promise<void>
   createTree: (title: string, systemPrompt?: string) => Promise<void>
   sendMessage: (content: string) => Promise<void>
@@ -87,6 +90,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
   trees: [],
   selectedTreeId: null,
   currentTree: null,
+  providers: [],
   isLoading: false,
   isGenerating: false,
   streamingContent: '',
@@ -102,6 +106,17 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
       set({ trees, isLoading: false })
     } catch (e) {
       set({ error: String(e), isLoading: false })
+    }
+  },
+
+  fetchProviders: async () => {
+    // Only fetch once — skip if already populated
+    if (get().providers.length > 0) return
+    try {
+      const providers = await api.getProviders()
+      set({ providers })
+    } catch (e) {
+      set({ error: String(e) })
     }
   },
 
@@ -173,7 +188,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
       set({ isGenerating: true, streamingContent: '' })
 
       const generateReq = {
-        provider: 'anthropic',
+        ...(currentTree.default_provider ? { provider: currentTree.default_provider } : {}),
         ...(systemPromptOverride != null ? { system_prompt: systemPromptOverride } : {}),
       }
 

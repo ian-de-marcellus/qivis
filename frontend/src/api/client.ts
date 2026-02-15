@@ -6,6 +6,7 @@ import type {
   GenerateRequest,
   MessageStopEvent,
   NodeResponse,
+  ProviderInfo,
   TreeDetail,
   TreeSummary,
 } from './types.ts'
@@ -22,6 +23,12 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     throw new Error(`API error ${res.status}: ${text}`)
   }
   return res.json() as Promise<T>
+}
+
+// -- Providers --
+
+export function getProviders(): Promise<ProviderInfo[]> {
+  return request('/providers')
 }
 
 // -- Tree CRUD --

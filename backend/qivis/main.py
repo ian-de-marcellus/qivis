@@ -17,7 +17,7 @@ from qivis.generation.service import GenerationService
 from qivis.providers.anthropic import AnthropicProvider
 from qivis.providers.openai import OpenAIProvider
 from qivis.providers.openrouter import OpenRouterProvider
-from qivis.providers.registry import clear_providers, list_providers, register_provider
+from qivis.providers.registry import clear_providers, get_all_providers, register_provider
 from qivis.trees.router import get_generation_service, get_tree_service
 from qivis.trees.router import router as trees_router
 from qivis.trees.service import TreeService
@@ -85,4 +85,7 @@ async def health() -> dict:
 
 @app.get("/api/providers")
 async def providers() -> list[dict]:
-    return [{"name": name, "available": True} for name in list_providers()]
+    return [
+        {"name": p.name, "available": True, "models": p.suggested_models}
+        for p in get_all_providers()
+    ]

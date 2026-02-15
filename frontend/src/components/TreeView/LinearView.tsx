@@ -13,6 +13,7 @@ interface ForkTarget {
 export function LinearView() {
   const {
     currentTree,
+    providers,
     isGenerating,
     streamingContent,
     regeneratingParentId,
@@ -20,10 +21,16 @@ export function LinearView() {
     selectBranch,
     forkAndGenerate,
     regenerate,
+    fetchProviders,
   } = useTreeStore()
 
   const bottomRef = useRef<HTMLDivElement>(null)
   const [forkTarget, setForkTarget] = useState<ForkTarget | null>(null)
+
+  // Fetch providers once on mount
+  useEffect(() => {
+    fetchProviders()
+  }, [fetchProviders])
 
   const nodes = currentTree?.nodes ?? []
   let path = getActivePath(nodes, branchSelections)
@@ -103,6 +110,7 @@ export function LinearView() {
                   onRegenerateSubmit={handleRegenerateSubmit}
                   onCancel={() => setForkTarget(null)}
                   isGenerating={isGenerating}
+                  providers={providers}
                   defaults={{
                     provider: currentTree.default_provider,
                     model: currentTree.default_model,

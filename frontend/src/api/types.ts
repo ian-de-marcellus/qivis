@@ -57,6 +57,12 @@ export interface TreeDetail {
   nodes: NodeResponse[]
 }
 
+export interface ProviderInfo {
+  name: string
+  available: boolean
+  models: string[]
+}
+
 // -- Requests --
 
 export interface CreateTreeRequest {

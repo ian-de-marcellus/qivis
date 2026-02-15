@@ -18,6 +18,12 @@ from qivis.providers.base import (
 class AnthropicProvider(LLMProvider):
     """LLM provider backed by Anthropic's Messages API."""
 
+    suggested_models = [
+        "claude-opus-4-6",
+        "claude-sonnet-4-5",
+        "claude-haiku-4-5",
+    ]
+
     def __init__(self, client: AsyncAnthropic) -> None:
         self._client = client
 

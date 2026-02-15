@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { GenerateRequest } from '../../api/types.ts'
+import type { GenerateRequest, ProviderInfo } from '../../api/types.ts'
 import './ForkPanel.css'
 
 interface ForkPanelProps {
@@ -8,6 +8,7 @@ interface ForkPanelProps {
   onRegenerateSubmit: (overrides: GenerateRequest) => void
   onCancel: () => void
   isGenerating: boolean
+  providers: ProviderInfo[]
   defaults: {
     provider: string | null
     model: string | null
@@ -21,13 +22,22 @@ export function ForkPanel({
   onRegenerateSubmit,
   onCancel,
   isGenerating,
+  providers,
   defaults,
 }: ForkPanelProps) {
   const [content, setContent] = useState('')
   const [showSettings, setShowSettings] = useState(mode === 'regenerate')
 
-  const [provider, setProvider] = useState(defaults.provider ?? 'anthropic')
+  // Default to tree's provider if it's available, otherwise first provider
+  const defaultProvider =
+    providers.find((p) => p.name === defaults.provider)?.name ??
+    providers[0]?.name ??
+    ''
+  const [provider, setProvider] = useState(defaultProvider)
   const [model, setModel] = useState(defaults.model ?? '')
+
+  const selectedProvider = providers.find((p) => p.name === provider)
+  const suggestedModels = selectedProvider?.models ?? []
   const [systemPrompt, setSystemPrompt] = useState(defaults.systemPrompt ?? '')
   const [temperature, setTemperature] = useState('')
 
@@ -101,12 +111,25 @@ export function ForkPanel({
           <div className="fork-settings">
             <div className="fork-setting-row">
               <label>Provider</label>
-              <input
-                type="text"
-                value={provider}
-                onChange={(e) => setProvider(e.target.value)}
-                placeholder="anthropic"
-              />
+              {providers.length > 0 ? (
+                <select
+                  value={provider}
+                  onChange={(e) => {
+                    setProvider(e.target.value)
+                    setModel('')
+                  }}
+                >
+                  {providers.map((p) => (
+                    <option key={p.name} value={p.name}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <select disabled>
+                  <option>No providers available</option>
+                </select>
+              )}
             </div>
             <div className="fork-setting-row">
               <label>Model</label>
@@ -114,8 +137,14 @@ export function ForkPanel({
                 type="text"
                 value={model}
                 onChange={(e) => setModel(e.target.value)}
-                placeholder="default"
+                placeholder={suggestedModels[0] ?? 'default'}
+                list="fork-model-suggestions"
               />
+              <datalist id="fork-model-suggestions">
+                {suggestedModels.map((m) => (
+                  <option key={m} value={m} />
+                ))}
+              </datalist>
             </div>
             <div className="fork-setting-row">
               <label>System prompt</label>

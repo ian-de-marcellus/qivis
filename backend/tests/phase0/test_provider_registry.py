@@ -6,6 +6,7 @@ from qivis.providers.base import GenerationRequest, GenerationResult, LLMProvide
 from qivis.providers.registry import (
     ProviderNotFoundError,
     clear_providers,
+    get_all_providers,
     get_provider,
     list_providers,
     register_provider,
@@ -55,3 +56,13 @@ class TestProviderRegistry:
 
     def test_list_providers_empty(self):
         assert list_providers() == []
+
+    def test_get_all_providers_returns_instances(self):
+        provider = FakeProvider()
+        register_provider(provider)
+        all_providers = get_all_providers()
+        assert len(all_providers) == 1
+        assert all_providers[0] is provider
+
+    def test_get_all_providers_empty(self):
+        assert get_all_providers() == []

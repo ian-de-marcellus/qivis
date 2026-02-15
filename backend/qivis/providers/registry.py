@@ -26,6 +26,11 @@ def list_providers() -> list[str]:
     return list(_providers.keys())
 
 
+def get_all_providers() -> list[LLMProvider]:
+    """Return all registered provider instances."""
+    return list(_providers.values())
+
+
 def clear_providers() -> None:
     """Clear all registered providers. Used in tests."""
     _providers.clear()
