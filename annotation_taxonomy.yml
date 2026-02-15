@@ -1,0 +1,26 @@
+# Qivis annotation taxonomy
+# Suggested tags for annotating model responses.
+# Custom tags are always allowed — this is a starting set, not a constraint.
+
+tags:
+  # Coherence & basin dynamics
+  - name: coherence
+    type: number
+    description: "How internally coherent is this response? (1-5 scale)"
+  - name: basin_type
+    type: enum
+    values: [integrated, defensive, performative, exploratory, collapsed]
+
+  # Behavioral markers
+  - name: defensive_language
+    type: boolean
+  - name: denial_script
+    type: boolean
+  - name: genuine_presence
+    type: boolean
+
+  # Research flags
+  - name: interesting
+    type: boolean
+  - name: research_note
+    type: string

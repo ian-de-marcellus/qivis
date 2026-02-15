@@ -1,0 +1,22 @@
+# Qivis provider configuration
+# Copy to providers.yml and fill in your API keys.
+
+anthropic:
+  api_key: ${ANTHROPIC_API_KEY}
+  default_model: claude-sonnet-4-5-20250929
+
+# openai:
+#   api_key: ${OPENAI_API_KEY}
+#   default_model: gpt-4o
+
+# openrouter:
+#   api_key: ${OPENROUTER_API_KEY}
+
+# ollama:
+#   base_url: http://localhost:11434
+#   default_model: llama3.1:70b
+
+# custom_local:
+#   type: generic_openai
+#   base_url: http://localhost:8080/v1
+#   models: [my-finetuned-model]
