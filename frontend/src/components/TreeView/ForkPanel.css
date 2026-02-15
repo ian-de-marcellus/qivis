@@ -1,0 +1,147 @@
+.fork-panel {
+  margin: 0.5rem 0;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  background: var(--bg-primary);
+  overflow: hidden;
+}
+
+.fork-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem 0.75rem;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+}
+
+.fork-panel-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.fork-panel-close {
+  font-size: 0.75rem;
+  padding: 0.15rem 0.5rem;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.fork-panel-close:hover {
+  color: var(--text-primary);
+  border-color: var(--text-secondary);
+}
+
+.fork-panel-body {
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.fork-panel-input {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.9rem;
+  font-family: inherit;
+  line-height: 1.4;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  resize: vertical;
+  box-sizing: border-box;
+}
+
+.fork-panel-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.fork-settings-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: none;
+  border: none;
+  padding: 0.25rem 0;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.fork-settings-toggle:hover {
+  color: var(--text-primary);
+}
+
+.fork-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.5rem;
+  background: var(--bg-secondary);
+  border-radius: 4px;
+}
+
+.fork-setting-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.fork-setting-row label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+}
+
+.fork-setting-row input,
+.fork-setting-row textarea {
+  padding: 0.35rem 0.5rem;
+  font-size: 0.8rem;
+  font-family: inherit;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  resize: vertical;
+  box-sizing: border-box;
+}
+
+.fork-setting-row input:focus,
+.fork-setting-row textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.fork-setting-row input[type="number"] {
+  max-width: 8rem;
+}
+
+.fork-submit-btn {
+  padding: 0.5rem 1rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  background: var(--accent);
+  color: var(--accent-text);
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  align-self: flex-end;
+}
+
+.fork-submit-btn:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.fork-submit-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}

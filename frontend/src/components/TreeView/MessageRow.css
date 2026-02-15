@@ -1,0 +1,68 @@
+.message-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
+}
+
+.message-header .message-role {
+  margin-bottom: 0;
+}
+
+/* Branch indicator */
+.branch-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  user-select: none;
+}
+
+.branch-arrow {
+  background: none;
+  border: none;
+  padding: 0 0.15rem;
+  font-size: 0.55rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  line-height: 1;
+}
+
+.branch-arrow:hover:not(:disabled) {
+  color: var(--text-primary);
+}
+
+.branch-arrow:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.branch-label {
+  font-variant-numeric: tabular-nums;
+  min-width: 2em;
+  text-align: center;
+}
+
+/* Fork button */
+.fork-btn {
+  margin-left: auto;
+  font-size: 0.65rem;
+  padding: 0.1rem 0.4rem;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.message-row:hover .fork-btn {
+  opacity: 1;
+}
+
+.fork-btn:hover {
+  color: var(--text-primary);
+  border-color: var(--text-secondary);
+}

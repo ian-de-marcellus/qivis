@@ -23,6 +23,10 @@
   --accent-text: #ffffff;
 
   --sidebar-width: 280px;
+
+  --ctx-green: #4caf50;
+  --ctx-yellow: #ff9800;
+  --ctx-red: #f44336;
 }
 
 /* ---- Dark theme ---- */
@@ -46,6 +50,10 @@
     --border: #3a3a3a;
     --accent: #4da6ff;
     --accent-text: #1a1a1a;
+
+    --ctx-green: #66bb6a;
+    --ctx-yellow: #ffa726;
+    --ctx-red: #ef5350;
   }
 }
 

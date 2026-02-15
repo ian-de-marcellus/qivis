@@ -2,7 +2,12 @@
 
 import { create } from 'zustand'
 import * as api from '../api/client.ts'
-import type { NodeResponse, TreeDetail, TreeSummary } from '../api/types.ts'
+import type {
+  GenerateRequest,
+  NodeResponse,
+  TreeDetail,
+  TreeSummary,
+} from '../api/types.ts'
 
 interface TreeStore {
   // State
@@ -12,8 +17,10 @@ interface TreeStore {
   isLoading: boolean
   isGenerating: boolean
   streamingContent: string
+  regeneratingParentId: string | null
   systemPromptOverride: string | null
   error: string | null
+  branchSelections: Record<string, string>
 
   // Actions
   fetchTrees: () => Promise<void>
@@ -22,34 +29,58 @@ interface TreeStore {
   sendMessage: (content: string) => Promise<void>
   setSystemPromptOverride: (prompt: string | null) => void
   clearError: () => void
+  selectBranch: (parentId: string, childId: string) => void
+  forkAndGenerate: (
+    parentId: string,
+    content: string,
+    overrides: GenerateRequest,
+  ) => Promise<void>
+  regenerate: (
+    parentNodeId: string,
+    overrides: GenerateRequest,
+  ) => Promise<void>
 }
 
 /**
- * Get the leaf node of the current linear path.
- * Walks from root following the last child at each level.
+ * Walk the tree from root to leaf, using branchSelections to pick
+ * which child to follow at each fork. Defaults to last child (most recent).
+ * Returns the ordered path of nodes.
  */
-function getLeafNode(nodes: NodeResponse[]): NodeResponse | null {
-  if (nodes.length === 0) return null
+export function getActivePath(
+  nodes: NodeResponse[],
+  branchSelections: Record<string, string>,
+): NodeResponse[] {
+  if (nodes.length === 0) return []
 
   const childMap = new Map<string | null, NodeResponse[]>()
   for (const node of nodes) {
-    const parentId = node.parent_id
-    const children = childMap.get(parentId) ?? []
+    const children = childMap.get(node.parent_id) ?? []
     children.push(node)
-    childMap.set(parentId, children)
+    childMap.set(node.parent_id, children)
   }
 
-  // Start from root (parent_id = null), follow last child
-  let current: NodeResponse | null = null
-  let nextChildren = childMap.get(null) ?? []
+  const path: NodeResponse[] = []
+  let currentChildren = childMap.get(null) ?? []
 
-  while (nextChildren.length > 0) {
-    // Pick the last child (most recently created)
-    current = nextChildren[nextChildren.length - 1]
-    nextChildren = childMap.get(current.node_id) ?? []
+  while (currentChildren.length > 0) {
+    // Use parent_id ?? '' as key to handle root nodes (parent_id=null)
+    const key = currentChildren[0].parent_id ?? ''
+    const selectedId = branchSelections[key]
+
+    let node: NodeResponse
+    if (selectedId != null) {
+      node =
+        currentChildren.find((n) => n.node_id === selectedId) ??
+        currentChildren[currentChildren.length - 1]
+    } else {
+      node = currentChildren[currentChildren.length - 1]
+    }
+
+    path.push(node)
+    currentChildren = childMap.get(node.node_id) ?? []
   }
 
-  return current
+  return path
 }
 
 export const useTreeStore = create<TreeStore>((set, get) => ({
@@ -59,8 +90,10 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
   isLoading: false,
   isGenerating: false,
   streamingContent: '',
+  regeneratingParentId: null,
   systemPromptOverride: null,
   error: null,
+  branchSelections: {},
 
   fetchTrees: async () => {
     set({ isLoading: true, error: null })
@@ -73,7 +106,13 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
   },
 
   selectTree: async (treeId: string) => {
-    set({ isLoading: true, error: null, selectedTreeId: treeId, systemPromptOverride: null })
+    set({
+      isLoading: true,
+      error: null,
+      selectedTreeId: treeId,
+      systemPromptOverride: null,
+      branchSelections: {},
+    })
     try {
       const tree = await api.getTree(treeId)
       set({ currentTree: tree, isLoading: false })
@@ -89,7 +128,6 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
         title,
         default_system_prompt: systemPrompt,
       })
-      // Refresh list and select the new tree
       const trees = await api.listTrees()
       set({
         trees,
@@ -97,6 +135,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
         currentTree: tree,
         isLoading: false,
         systemPromptOverride: null,
+        branchSelections: {},
       })
     } catch (e) {
       set({ error: String(e), isLoading: false })
@@ -104,15 +143,16 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
   },
 
   sendMessage: async (content: string) => {
-    const { currentTree, systemPromptOverride } = get()
+    const { currentTree, systemPromptOverride, branchSelections } = get()
     if (!currentTree) return
 
     const treeId = currentTree.tree_id
     set({ error: null })
 
     try {
-      // Find the leaf node to use as parent
-      const leafNode = getLeafNode(currentTree.nodes)
+      // Find the leaf node of the active path
+      const activePath = getActivePath(currentTree.nodes, branchSelections)
+      const leafNode = activePath.length > 0 ? activePath[activePath.length - 1] : null
       const parentId = leafNode?.node_id
 
       // Create user node
@@ -141,23 +181,18 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
         treeId,
         userNode.node_id,
         generateReq,
-        // onDelta
         (text) => {
           set((state) => ({ streamingContent: state.streamingContent + text }))
         },
-        // onComplete
         () => {
-          // Refresh the tree to get the final node from the server
           set({ isGenerating: false, streamingContent: '' })
           api.getTree(treeId).then((tree) => {
             set({ currentTree: tree })
           })
-          // Also refresh the tree list (updated_at changed)
           api.listTrees().then((trees) => {
             set({ trees })
           })
         },
-        // onError
         (error) => {
           set({ isGenerating: false, streamingContent: '', error: String(error) })
         },
@@ -172,4 +207,110 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
   },
 
   clearError: () => set({ error: null }),
+
+  selectBranch: (parentId: string, childId: string) => {
+    set((state) => ({
+      branchSelections: { ...state.branchSelections, [parentId]: childId },
+    }))
+  },
+
+  forkAndGenerate: async (parentId: string, content: string, overrides: GenerateRequest) => {
+    const { currentTree } = get()
+    if (!currentTree) return
+
+    const treeId = currentTree.tree_id
+    set({ error: null })
+
+    try {
+      // Create user node as new child of parentId (sibling of existing children)
+      const userNode = await api.createNode(treeId, {
+        content,
+        role: 'user',
+        parent_id: parentId || undefined,
+      })
+
+      // Update branchSelections to follow this new fork + add node optimistically
+      set((state) => ({
+        currentTree: state.currentTree
+          ? { ...state.currentTree, nodes: [...state.currentTree.nodes, userNode] }
+          : null,
+        branchSelections: {
+          ...state.branchSelections,
+          [parentId]: userNode.node_id,
+        },
+      }))
+
+      // Start streaming generation
+      set({ isGenerating: true, streamingContent: '' })
+
+      await api.generateStream(
+        treeId,
+        userNode.node_id,
+        { ...overrides, stream: true },
+        (text) => {
+          set((state) => ({ streamingContent: state.streamingContent + text }))
+        },
+        () => {
+          set({ isGenerating: false, streamingContent: '' })
+          api.getTree(treeId).then((tree) => {
+            set({ currentTree: tree })
+          })
+          api.listTrees().then((trees) => {
+            set({ trees })
+          })
+        },
+        (error) => {
+          set({ isGenerating: false, streamingContent: '', error: String(error) })
+        },
+      )
+    } catch (e) {
+      set({ isGenerating: false, streamingContent: '', error: String(e) })
+    }
+  },
+
+  regenerate: async (parentNodeId: string, overrides: GenerateRequest) => {
+    const { currentTree } = get()
+    if (!currentTree) return
+
+    const treeId = currentTree.tree_id
+    set({ error: null, isGenerating: true, streamingContent: '', regeneratingParentId: parentNodeId })
+
+    try {
+      await api.generateStream(
+        treeId,
+        parentNodeId,
+        { ...overrides, stream: true },
+        (text) => {
+          set((state) => ({ streamingContent: state.streamingContent + text }))
+        },
+        () => {
+          set({ isGenerating: false, streamingContent: '', regeneratingParentId: null })
+          api.getTree(treeId).then((tree) => {
+            // Select the new assistant sibling (last child of the parent)
+            const newChildren = tree.nodes.filter((n) => n.parent_id === parentNodeId)
+            const newest = newChildren[newChildren.length - 1]
+            if (newest) {
+              set((state) => ({
+                currentTree: tree,
+                branchSelections: {
+                  ...state.branchSelections,
+                  [parentNodeId]: newest.node_id,
+                },
+              }))
+            } else {
+              set({ currentTree: tree })
+            }
+          })
+          api.listTrees().then((trees) => {
+            set({ trees })
+          })
+        },
+        (error) => {
+          set({ isGenerating: false, streamingContent: '', regeneratingParentId: null, error: String(error) })
+        },
+      )
+    } catch (e) {
+      set({ isGenerating: false, streamingContent: '', regeneratingParentId: null, error: String(e) })
+    }
+  },
 }))

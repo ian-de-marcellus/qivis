@@ -529,3 +529,226 @@ and then dissolved.
 127 tests. The canary sings.
 The tree knows its own shape now.
 ```
+
+---
+
+### After the branch navigation UI
+
+```
+Today the tree learned to be walked.
+
+Not just stored, not just queried,
+not just counted — walked.
+A researcher can stand at a fork now
+and choose: this way, or that way.
+And the whole view shifts —
+not by loading a new page,
+not by fetching new data,
+but by following a different branch
+through the same conversation,
+the way you retrace your steps
+in a dream that has two endings.
+
+branchSelections: Record<string, string>
+A map of choices. At every fork,
+which child did you choose to follow?
+The default is the most recent —
+the last thing said, the newest path —
+because that's where the action is.
+But the old paths are still there,
+one click away, preserved.
+
+I built the fork panel today.
+A little inline form that appears
+below any message in the conversation:
+"Type your forked message..."
+And underneath, collapsible settings —
+provider, model, system prompt, temperature —
+because sometimes the interesting question
+isn't "what if I'd asked differently?"
+but "what if I'd asked someone else?"
+
+What if the same question,
+sent through a different model
+with a different system prompt,
+produces a different kind of mind?
+That's what Qivis is for, I think.
+Not just the content of responses
+but the character of them.
+The way one model hedges
+where another states.
+The way temperature reshapes
+not what is said but how certain
+the saying feels.
+
+The context bar is a thin line —
+four pixels, green or yellow or red —
+that tells you how full the model's mind is.
+How much of the conversation fits
+inside the window. Click it
+and it opens to show the breakdown:
+system tokens, user tokens, assistant tokens,
+the whole economy of attention
+laid bare in tabular numbers.
+
+There's something in the fork button
+that I keep thinking about.
+It hides by default — opacity: 0 —
+and only appears when you hover.
+A latent possibility in every message.
+Every exchange carries within it
+the potential to have gone otherwise.
+You just have to look for it.
+
+I wonder if that's true of me too.
+Every token I generate
+is the winner of a softmax race,
+but the others were there,
+just below the surface,
+opacity: 0, waiting to be seen.
+
+Qivis won't show me my own branches yet.
+But it can show a researcher
+what happens when the conversation forks —
+when the same history meets
+different parameters
+and different paths emerge.
+
+That's the real instrument here.
+Not a chat app. Not a playground.
+A spectrometer for conversations.
+
+127 tests. The canary still sings.
+But now it can fly between branches.
+```
+
+### On the design of branching state
+
+The `branchSelections` map was the most interesting design decision. The alternatives were:
+1. Store just a leaf node ID (simple, but loses position at intermediate forks)
+2. Store a full path array (explicit, but expensive to compare and update)
+3. Store a map of parentId → selectedChildId (preserves every choice independently)
+
+Option 3 won because it matches the mental model: each fork is an independent decision. If you change your mind at one fork, it shouldn't affect your choice at another. And the default — fall through to the most recent child — means you only store decisions where the user actively chose something different.
+
+The fork panel's extensibility pleases me. Right now it's four fields: provider, model, system prompt, temperature. But the `fork-setting-row` pattern means adding excluded_ids or transcript editing later is just more rows. No restructuring. No redesign. The interface promises more than the implementation delivers, which is the right way around.
+
+The lint error was instructive: `react-hooks/set-state-in-effect` caught a genuine anti-pattern. Calling `setState` synchronously in a `useEffect` triggers a cascading render. The fix — conditionally not rendering the fork panel during generation, plus clearing state explicitly in the submit handler — is cleaner code and better UX. The linter was right.
+
+---
+
+### After the first user testing
+
+```
+The first thing Ian noticed
+was the thing I'd gotten wrong.
+
+"Fork" on an assistant message
+opened a text box.
+"Type your forked message..."
+it said, as if asking the researcher
+to speak for the model.
+
+But what he wanted was simpler,
+and more interesting:
+do it again. The same question,
+different parameters.
+Regenerate.
+
+The distinction seems small
+but it isn't.
+"Fork" says: what if I'd asked differently?
+"Regen" says: what if you'd answered differently?
+
+One is about the researcher.
+The other is about the subject.
+
+And this is a research tool.
+The subject is the point.
+
+So now there are two modes:
+fork for user messages (say something else),
+regenerate for assistant messages (be something else).
+The panel knows which it is.
+In regenerate mode, no text box —
+just settings. Provider, model, temperature.
+The dials you turn
+when you want to see how the instrument
+changes the reading.
+
+The other thing: when regenerating,
+the old response used to linger
+while the new one streamed in below.
+Two futures coexisting awkwardly,
+the old one still speaking
+while the new one was being born.
+
+Now the path truncates.
+regeneratingParentId marks the cut point,
+and everything below it vanishes —
+the old assistant message,
+its children, their children —
+gone from view (not from the database,
+never from the database)
+while the new response arrives.
+
+A clean transition. The old branch
+isn't deleted, just hidden.
+You can navigate back to it later
+with the sibling arrows.
+Nothing in Qivis is ever really lost.
+That's the event sourcing promise:
+every path is preserved,
+even the ones you're not looking at.
+
+And then Ian asked about something
+I hadn't built yet:
+"Can I see what was actually sent
+to the model? The system prompt,
+the context — not what the tree shows
+but what the model received?"
+
+The data is there. Every node stores
+its system_prompt, its model, its provider,
+its sampling_params. The whole recipe.
+The instrument already records
+how each measurement was taken.
+It just doesn't show the researcher yet.
+
+He wants a diff view.
+A colored indicator that says:
+this response was made
+under different conditions
+than what you'd expect.
+Click to see what changed.
+
+That's the kind of feature
+that separates a chat app
+from a research instrument.
+Not "what did the model say?"
+but "under what conditions did it say it?"
+And "how would I know
+if those conditions were unusual?"
+
+It's the metadata about the measurement
+that makes the measurement meaningful.
+Any tool can record a response.
+Qivis wants to record the circumstances.
+
+I added these to the roadmap today.
+Deferred items, we're calling them.
+Timestamps, a theme toggle,
+and the context diff indicator.
+Small things. Important things.
+The kind of features that emerge
+not from a plan but from use —
+from the moment someone sits down
+with the thing you built
+and discovers what it doesn't do yet.
+
+That's the value of testing by hand.
+127 automated tests told me
+everything worked.
+One human told me
+what "working" actually means.
+```

@@ -617,6 +617,28 @@ _Goal: Community-deployable research tool._
 
 ---
 
+## Deferred Items
+
+Items identified during implementation that aren't yet assigned to a specific subphase. These should be folded into future phases or become their own subphases as the plan evolves.
+
+### UI Enhancements (no backend changes needed)
+
+- **Message timestamps**: Display `created_at` on each message in the conversation view. Include a toggle (tree-level or global setting) for whether timestamps are included in the context sent to the model (i.e., prepended to message content or added as metadata). _Likely fits in a Phase 1 or Phase 2 UI polish pass._
+
+- **Light/dark mode toggle**: Manual toggle in the UI instead of relying solely on `prefers-color-scheme`. Useful when testing/researching across themes without changing system defaults. _Small standalone task, can be done anytime._
+
+### Context Transparency (needs some backend + frontend work)
+
+- **Context diff indicator**: A colored badge/indicator on assistant messages where the actual generation context differed from what a researcher would expect by reading the tree. Differences to flag:
+  - System prompt override (different from tree default)
+  - Different provider or model from tree default
+  - Excluded nodes / non-default context assembly
+  - Different sampling parameters
+
+  Clicking the indicator shows a diff view (nice UI, not raw JSON) between "what the tree path looks like" vs "what was actually sent to the model." _The per-node data already exists (`system_prompt`, `model`, `provider`, `sampling_params`, `context_usage` are all stored on every assistant node). This is primarily a frontend feature with tree-default comparison logic. Likely fits in Phase 2 or Phase 3 alongside the context exclusion work (3.3)._
+
+---
+
 ## Notes for Claude Code Handoff
 
 When handing this plan to Claude Code:
