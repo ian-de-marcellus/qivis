@@ -639,6 +639,8 @@ Items identified during implementation that aren't yet assigned to a specific su
 
 - **Generation error recovery**: When generation fails (API error, missing credits, network issue), the UI should preserve the failed attempt with: the error message, a retry button, and the ability to change parameters (provider, model, etc.) before retrying. Currently, errors clear the streaming state and show a toast, losing the generation context. _Moderate frontend work — needs a new "failed generation" UI state alongside streaming/complete._
 
+- **n > 1 generation**: Request multiple sibling completions in a single call (e.g., "generate 3 responses"). Each gets its own NodeCreated event and appears as siblings. The regenerate workflow already creates one new sibling at a time — this extends it to batch creation. _Backend: generation endpoint accepts an `n` parameter, loops or fans out, returns multiple nodes. Frontend: UI to request multiple completions and a way to browse/compare them (the sibling navigator already handles display). Originally scoped for Phase 1.3._
+
 ### Context Transparency (needs some backend + frontend work)
 
 - **Context diff indicator**: A colored badge/indicator on assistant messages where the actual generation context differed from what a researcher would expect by reading the tree. Differences to flag:
