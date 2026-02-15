@@ -1,5 +1,6 @@
 """Qivis FastAPI application entry point."""
 
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -14,7 +15,9 @@ from qivis.events.projector import StateProjector
 from qivis.events.store import EventStore
 from qivis.generation.service import GenerationService
 from qivis.providers.anthropic import AnthropicProvider
-from qivis.providers.registry import clear_providers, register_provider
+from qivis.providers.openai import OpenAIProvider
+from qivis.providers.openrouter import OpenRouterProvider
+from qivis.providers.registry import clear_providers, list_providers, register_provider
 from qivis.trees.router import get_generation_service, get_tree_service
 from qivis.trees.router import router as trees_router
 from qivis.trees.service import TreeService
@@ -32,10 +35,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     service = TreeService(db)
     app.dependency_overrides[get_tree_service] = lambda: service
 
-    # Provider setup
-    anthropic_client = AsyncAnthropic()
-    anthropic_provider = AnthropicProvider(anthropic_client)
-    register_provider(anthropic_provider)
+    # Provider setup — auto-discover from env vars
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        register_provider(AnthropicProvider(AsyncAnthropic()))
+
+    if os.environ.get("OPENAI_API_KEY"):
+        register_provider(OpenAIProvider(api_key=os.environ["OPENAI_API_KEY"]))
+
+    if os.environ.get("OPENROUTER_API_KEY"):
+        register_provider(OpenRouterProvider(api_key=os.environ["OPENROUTER_API_KEY"]))
 
     # Generation service
     store = EventStore(db)
@@ -73,3 +81,8 @@ app.include_router(trees_router)
 @app.get("/api/health")
 async def health() -> dict:
     return {"status": "ok", "version": "0.1.0"}
+
+
+@app.get("/api/providers")
+async def providers() -> list[dict]:
+    return [{"name": name, "available": True} for name in list_providers()]

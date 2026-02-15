@@ -10,11 +10,20 @@ from qivis.models import ContextUsage, EvictionReport
 
 # Known model context limits (tokens). Falls back to DEFAULT for unknown models.
 MODEL_CONTEXT_LIMITS: dict[str, int] = {
+    # Anthropic
     "claude-opus-4-6": 200_000,
     "claude-sonnet-4-5-20250929": 200_000,
     "claude-haiku-4-5-20251001": 200_000,
     "claude-3-5-sonnet-20241022": 200_000,
     "claude-3-haiku-20240307": 200_000,
+    # OpenAI
+    "gpt-4o": 128_000,
+    "gpt-4o-mini": 128_000,
+    "gpt-4-turbo": 128_000,
+    "gpt-4": 8_192,
+    "gpt-3.5-turbo": 16_385,
+    "o1": 200_000,
+    "o3-mini": 200_000,
 }
 DEFAULT_CONTEXT_LIMIT = 200_000
 

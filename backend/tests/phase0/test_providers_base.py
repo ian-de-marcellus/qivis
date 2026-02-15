@@ -84,3 +84,35 @@ class TestLogprobNormalizer:
         """Anthropic logprobs are not yet available; stub returns None."""
         result = LogprobNormalizer.from_anthropic(None)
         assert result is None
+
+    def test_from_openai_returns_logprob_data(self):
+        """from_openai converts OpenAI logprob entries to canonical LogprobData."""
+        from unittest.mock import MagicMock
+
+        entry = MagicMock()
+        entry.token = "Hello"
+        entry.logprob = -0.5
+        alt = MagicMock()
+        alt.token = "Hi"
+        alt.logprob = -1.2
+        entry.top_logprobs = [
+            MagicMock(token="Hello", logprob=-0.5),
+            alt,
+        ]
+
+        result = LogprobNormalizer.from_openai([entry])
+        assert result is not None
+        assert isinstance(result, LogprobData)
+        assert len(result.tokens) == 1
+        assert result.tokens[0].token == "Hello"
+        assert result.tokens[0].logprob == -0.5
+        assert result.provider_format == "openai"
+        assert result.top_k_available == 2
+        # The chosen token should be excluded from alternatives
+        assert len(result.tokens[0].top_alternatives) == 1
+        assert result.tokens[0].top_alternatives[0].token == "Hi"
+
+    def test_from_openai_returns_none_for_empty(self):
+        """from_openai returns None when given None or empty list."""
+        assert LogprobNormalizer.from_openai(None) is None
+        assert LogprobNormalizer.from_openai([]) is None

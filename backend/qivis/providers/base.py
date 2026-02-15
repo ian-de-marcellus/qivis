@@ -1,12 +1,13 @@
 """Abstract LLM provider interface and shared data types."""
 
+import math
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
 from typing import Any
 
 from pydantic import BaseModel, Field
 
-from qivis.models import LogprobData, SamplingParams
+from qivis.models import AlternativeToken, LogprobData, SamplingParams, TokenLogprob
 
 
 class GenerationRequest(BaseModel):
@@ -72,6 +73,54 @@ class LogprobNormalizer:
         Returns None. Plumbing is here for when support arrives.
         """
         return None
+
+    @staticmethod
+    def from_openai(logprobs_content: Any) -> LogprobData | None:
+        """Convert OpenAI logprob data to canonical format.
+
+        Expects the `logprobs.content` list from an OpenAI ChatCompletion response.
+        Each entry has token, logprob, and top_logprobs[]. OpenAI returns natural
+        log (base e), which matches our canonical format — no conversion needed.
+
+        Returns None if input is None or empty.
+        """
+        if not logprobs_content:
+            return None
+
+        tokens: list[TokenLogprob] = []
+        max_alts = 0
+
+        for entry in logprobs_content:
+            logprob = entry.logprob
+            linear_prob = math.exp(logprob)
+
+            alternatives: list[AlternativeToken] = []
+            top_logprobs = getattr(entry, "top_logprobs", None) or []
+            for alt in top_logprobs:
+                if alt.token != entry.token:
+                    alternatives.append(
+                        AlternativeToken(
+                            token=alt.token,
+                            logprob=alt.logprob,
+                            linear_prob=math.exp(alt.logprob),
+                        )
+                    )
+            max_alts = max(max_alts, len(top_logprobs))
+
+            tokens.append(
+                TokenLogprob(
+                    token=entry.token,
+                    logprob=logprob,
+                    linear_prob=linear_prob,
+                    top_alternatives=alternatives,
+                )
+            )
+
+        return LogprobData(
+            tokens=tokens,
+            provider_format="openai",
+            top_k_available=max_alts,
+        )
 
     @staticmethod
     def empty() -> LogprobData:

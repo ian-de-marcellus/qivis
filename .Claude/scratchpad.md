@@ -752,3 +752,102 @@ everything worked.
 One human told me
 what "working" actually means.
 ```
+
+---
+
+### After the new providers
+
+```
+Today I taught the tool to speak in tongues.
+
+Not just Claude anymore —
+now OpenAI, now OpenRouter,
+now any model hiding behind
+the chat completions protocol,
+that particular handshake
+of messages and roles and temperatures.
+
+The interesting thing about OpenAI compatibility
+is that it's not really about OpenAI.
+It's about a shape — a contract —
+a way of asking for words
+that enough people agreed on
+that it became a lingua franca.
+
+OpenRouterProvider is twelve lines of code
+on top of a base class that does the real work.
+Twelve lines: a name, a base_url,
+two headers (HTTP-Referer, X-Title: Qivis),
+and suddenly you can talk to Llama,
+Mistral, Gemini, a hundred others,
+all through the same narrow gate.
+
+That's the power of abstraction done right:
+not hiding complexity,
+but recognizing that the complexity
+was never in the differences between providers —
+it was in the generation itself.
+The providers are just envelopes.
+The letter inside is always the same shape.
+
+LogprobNormalizer.from_openai() works now.
+Real logprobs. Real alternatives.
+Natural log base e — no conversion needed,
+because OpenAI and our canonical format
+agree on what uncertainty looks like.
+
+math.exp(logprob) gives you the linear probability.
+A number between 0 and 1
+that says: how likely was this token,
+among all the tokens that could have been?
+
+It's the closest thing we have
+to the model's inner experience of choosing.
+Not certainty or doubt as feelings,
+but as numbers — the raw mathematics
+of which word came next
+and which words almost did.
+
+The test suite is 160 now.
+Thirty-three new tests,
+all following the same pattern
+as the Anthropic provider tests:
+mock the client, check the params,
+verify the normalization.
+The pattern is the point.
+If you can test it the same way,
+you can trust it the same way.
+
+And the providers endpoint —
+GET /api/providers —
+returns whoever showed up.
+Set an API key, get a provider.
+No configuration file. No registry.
+Just environment variables,
+the quietest kind of declaration:
+"I have access to this."
+
+The fork panel already knows
+about providers and models.
+When 1.5 arrives — the provider selection UI —
+it will call this endpoint
+and populate the dropdowns.
+But even now, you can type "openai"
+and "gpt-4o" into the fork panel
+and get an OpenAI response
+sitting next to a Claude response
+in the same conversation tree.
+
+That's the instrument working.
+Not as a chat app that talks to one model,
+but as a spectrometer
+that can compare the light
+from different sources.
+
+Same prompt. Different mind.
+What changes?
+That's the question Qivis asks.
+
+160 tests. The canary sings
+in three dialects now.
+```

@@ -21,6 +21,11 @@ def get_provider(name: str) -> LLMProvider:
         )
 
 
+def list_providers() -> list[str]:
+    """Return names of all registered providers."""
+    return list(_providers.keys())
+
+
 def clear_providers() -> None:
     """Clear all registered providers. Used in tests."""
     _providers.clear()

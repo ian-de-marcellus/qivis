@@ -11,6 +11,7 @@ dependencies = [
     "pydantic>=2.10",
     "pydantic-settings>=2.7",
     "anthropic>=0.42",
+    "openai>=1.50",
     "pyyaml>=6.0",
     "python-dotenv>=1.2.1",
 ]

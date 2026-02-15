@@ -7,6 +7,7 @@ from qivis.providers.registry import (
     ProviderNotFoundError,
     clear_providers,
     get_provider,
+    list_providers,
     register_provider,
 )
 
@@ -46,3 +47,11 @@ class TestProviderRegistry:
         clear_providers()
         with pytest.raises(ProviderNotFoundError):
             get_provider("fake")
+
+    def test_list_providers_returns_names(self):
+        register_provider(FakeProvider())
+        names = list_providers()
+        assert names == ["fake"]
+
+    def test_list_providers_empty(self):
+        assert list_providers() == []
