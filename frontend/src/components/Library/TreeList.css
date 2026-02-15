@@ -1,0 +1,130 @@
+.tree-list {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.tree-list-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.tree-list-header h2 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.new-tree-btn {
+  padding: 0.25rem 0.75rem;
+  font-size: 0.8rem;
+  background: var(--accent);
+  color: var(--accent-text);
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.new-tree-btn:hover {
+  opacity: 0.9;
+}
+
+.new-tree-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.new-tree-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.new-tree-form input,
+.new-tree-form textarea {
+  padding: 0.5rem;
+  font-size: 0.85rem;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  resize: vertical;
+  font-family: inherit;
+}
+
+.new-tree-form textarea {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+}
+
+.new-tree-form button {
+  padding: 0.4rem;
+  font-size: 0.85rem;
+  background: var(--accent);
+  color: var(--accent-text);
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.new-tree-form button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.tree-items {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.tree-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  padding: 0.75rem 1rem;
+  text-align: left;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-family: inherit;
+}
+
+.tree-item:hover {
+  background: var(--bg-hover);
+}
+
+.tree-item.selected {
+  background: var(--bg-selected);
+}
+
+.tree-title {
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-right: 0.5rem;
+}
+
+.tree-date {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.tree-empty {
+  padding: 2rem 1rem;
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+}

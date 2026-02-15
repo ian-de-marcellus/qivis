@@ -12,6 +12,7 @@ dependencies = [
     "pydantic-settings>=2.7",
     "anthropic>=0.42",
     "pyyaml>=6.0",
+    "python-dotenv>=1.2.1",
 ]
 
 [project.optional-dependencies]

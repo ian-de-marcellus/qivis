@@ -1,0 +1,61 @@
+.message-input {
+  border-top: 1px solid var(--border);
+  padding: 0.75rem 1rem;
+  background: var(--bg-primary);
+}
+
+.message-input-inner {
+  display: flex;
+  gap: 0.5rem;
+  max-width: 48rem;
+  margin: 0 auto;
+  align-items: flex-end;
+}
+
+.message-input textarea {
+  flex: 1;
+  padding: 0.6rem 0.75rem;
+  font-size: 0.9rem;
+  font-family: inherit;
+  line-height: 1.4;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  resize: none;
+  overflow-y: auto;
+}
+
+.message-input textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.message-input textarea:disabled {
+  opacity: 0.5;
+}
+
+.message-input textarea::placeholder {
+  color: var(--text-tertiary);
+}
+
+.message-input button {
+  padding: 0.6rem 1.25rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  background: var(--accent);
+  color: var(--accent-text);
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.message-input button:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.message-input button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}

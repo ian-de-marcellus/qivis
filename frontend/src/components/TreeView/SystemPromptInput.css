@@ -1,0 +1,62 @@
+.system-prompt {
+  border-bottom: 1px solid var(--border);
+}
+
+.system-prompt-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.5rem 1rem;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.system-prompt-toggle:hover {
+  color: var(--text-primary);
+}
+
+.toggle-arrow {
+  font-size: 0.6rem;
+  transition: transform 0.15s;
+}
+
+.toggle-arrow.expanded {
+  transform: rotate(90deg);
+}
+
+.override-badge {
+  font-size: 0.65rem;
+  padding: 0.1rem 0.4rem;
+  background: var(--accent);
+  color: var(--accent-text);
+  border-radius: 3px;
+}
+
+.system-prompt-editor {
+  padding: 0 1rem 0.75rem;
+}
+
+.system-prompt-editor textarea {
+  width: 100%;
+  padding: 0.5rem;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  line-height: 1.4;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  resize: vertical;
+  box-sizing: border-box;
+}
+
+.system-prompt-editor textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}

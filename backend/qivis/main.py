@@ -2,9 +2,12 @@
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from anthropic import AsyncAnthropic
+from dotenv import load_dotenv
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from qivis.db.connection import Database
 from qivis.events.projector import StateProjector
@@ -20,6 +23,9 @@ from qivis.trees.service import TreeService
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Manage database lifecycle and service wiring."""
+    # Load .env from backend/ directory (secrets stay out of shell profile)
+    load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+
     db = await Database.connect("qivis.db")
 
     # Tree service
@@ -52,6 +58,13 @@ app = FastAPI(
     ),
     version="0.1.0",
     lifespan=lifespan,
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 app.include_router(trees_router)

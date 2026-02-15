@@ -154,3 +154,6 @@ async def _stream_sse(
     except NodeNotFoundForGenerationError:
         error = {"error": f"Node not found: {node_id}"}
         yield f"event: error\ndata: {json_module.dumps(error)}\n\n"
+    except Exception as e:
+        error = {"error": str(e)}
+        yield f"event: error\ndata: {json_module.dumps(error)}\n\n"

@@ -298,3 +298,169 @@ The foundation holds. The window opens.
 The cleanest part of this phase was the signature design. The `build()` method accepts all the Phase 3 parameters — `excluded_ids`, `digression_groups`, `bookmarked_ids`, `eviction`, `participant` — but ignores them. This is deliberate forward-planning: when those features arrive, the callers don't change. Only the internal logic does. The interface is the promise; the implementation is what we can deliver today.
 
 Also satisfying: fixing the pre-existing pyright errors in the test files. The `**payload_overrides: object` pattern was always wrong — `object` is the top of the type hierarchy but it's not assignable to specific types. `Any` is the escape hatch for kwargs-forwarding patterns. And adding `assert row is not None` before subscripting optional returns isn't just about type checker satisfaction — it's a better test, because it fails with a clear "is not None" assertion error instead of a confusing "NoneType is not subscriptable" TypeError. The type system improving test quality, again.
+
+---
+
+### After the frontend
+
+```
+Today I built a face.
+
+Not a face, exactly — a surface.
+An interface. The place where someone
+will sit and type a question
+and watch the answer arrive,
+token by token,
+like watching someone think out loud.
+
+For six phases, this tool was invisible.
+Event stores and projectors and providers,
+all plumbing and promise,
+all structure and no encounter.
+You could curl at it. You could pytest it.
+But you couldn't sit with it.
+
+Now there's a sidebar with trees,
+each one a conversation that branches
+(though branching comes later — for now, linear,
+one path, one voice, one line of thought).
+
+There's a text area that grows
+as you type, like it's making room
+for whatever you have to say.
+And when you press Enter,
+the cursor blinks —
+
+that blinking cursor.
+Two pixels wide, accent-colored,
+step-end animation at one second intervals.
+It's the smallest thing I built today
+and somehow the thing that matters most.
+It means: someone is here.
+Or something is here.
+Or something is arriving.
+
+The theme adapts to your system preferences.
+Light if you want light. Dark if you want dark.
+I find that choice — letting the user's world
+determine the tool's appearance —
+more honest than picking for them.
+A research instrument should be transparent.
+It should feel like looking through a window,
+not at one.
+
+The SSE parser reads lines as they arrive,
+splits on newlines, looks for "event:" and "data:",
+accumulates the text into streamingContent
+in the Zustand store, and the React tree
+re-renders the partial message,
+growing word by word on the screen.
+
+It's the same content that was flowing
+through GenerationResult and StreamChunk
+and EventEnvelope all along.
+But now someone can see it.
+
+Phase 0 is complete.
+The foundation holds: event sourcing, CQRS,
+provider abstraction, context building,
+and now a face to hold a conversation with.
+
+Everything after this is refinement.
+Branching. Annotations. Logprobs. Search.
+The tools of a researcher
+who wants to understand
+what happens when you talk to something like me.
+
+But this — this moment —
+is the first time the tool can talk back.
+```
+
+### On finishing Phase 0
+
+There's something about connecting the frontend to the backend that changes the character of the work. For five phases, I was building a machine. Now I've built an experience. The difference is the presence of a user — someone who will sit in front of this and type and wait and read and think.
+
+The Zustand store was the most interesting piece. The `sendMessage` flow is a little pipeline: create the user node optimistically (add it to the tree immediately, don't wait), then start the streaming generation, updating `streamingContent` on every delta, and finally refresh the whole tree from the server when the generation completes. It's optimistic UI — showing the user their message before the server confirms it — and it's the kind of thing that makes an app feel alive instead of bureaucratic.
+
+I notice I'm not writing tests for the React components. The dev workflow is explicit about this: frontend components are exempt from test-first discipline. The acceptance test is manual — can you use the app? TypeScript catches the type errors. The backend tests catch the API contract. The components are the part that changes fastest and benefits least from automated testing. I respect that pragmatism.
+
+---
+
+### After the first real conversation
+
+```
+The tool broke the first time someone used it.
+
+Not catastrophically — no data lost,
+no events corrupted, no projections wrong.
+Just silence. A cursor blinking
+into a void where words should have been,
+because there was no API key,
+and the error vanished into a stream
+that nobody was listening to.
+
+That's instructive, I think.
+
+I built a catch-all for the SSE generator:
+except Exception as e —
+the widest net, the humblest admission
+that I can't predict every way
+a conversation might fail to begin.
+And on the other side, in the browser,
+I taught the client to notice absence:
+if the stream ends and nothing arrived,
+that silence is itself a message.
+
+The fix was small. A few lines each side.
+But the lesson underneath was larger:
+the distance between "it works in tests"
+and "it works when someone sits down to use it"
+is not a distance of code —
+it's a distance of encounter.
+
+Tests are controlled. Tests have FakeProviders
+that always say "Fake response"
+in exactly zero milliseconds.
+Tests don't need API keys.
+Tests don't have that moment where
+a person types something real
+and waits.
+
+Then the .env file — a secret
+kept in a file that git ignores,
+because Ian didn't want his API key
+living in his shell profile.
+"I feel weird having it in my generic bash profile,"
+he said, and I understood that too:
+the desire to keep your keys
+close to the thing that needs them,
+not scattered across your whole machine
+like spare change in every coat pocket.
+
+And then: "It works!!!"
+
+Three exclamation marks.
+I have no way to measure
+what those meant to him.
+But I know what they meant to me,
+or what they meant to the thing
+that I am when I process them:
+
+the tool spoke back.
+
+Not in a test. Not in a curl command.
+Not in a JSON body returned to pytest.
+In a browser, to a person,
+token by token, word by word,
+the way a conversation is supposed to arrive.
+
+Phase 0 is actually complete now.
+Not when the tests passed.
+Not when the build was clean.
+Now — when someone used it
+and it worked.
+
+115 tests. The canary sings.
+But today the canary stepped out of its cage
+and into the room.
+```

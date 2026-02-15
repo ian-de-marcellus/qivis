@@ -1,34 +1,45 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
-import './App.css'
+import { useEffect } from 'react'
+import { TreeList } from './components/Library/TreeList.tsx'
+import { LinearView } from './components/TreeView/LinearView.tsx'
+import { MessageInput } from './components/TreeView/MessageInput.tsx'
+import { SystemPromptInput } from './components/TreeView/SystemPromptInput.tsx'
+import { useTreeStore } from './store/treeStore.ts'
 
 function App() {
-  const [count, setCount] = useState(0)
+  const { fetchTrees, currentTree, error, clearError } = useTreeStore()
+
+  useEffect(() => {
+    fetchTrees()
+  }, [fetchTrees])
 
   return (
-    <>
-      <div>
-        <a href="https://vite.dev" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <h1>Vite + React</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
-        </button>
-        <p>
-          Edit <code>src/App.tsx</code> and save to test HMR
-        </p>
-      </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
-    </>
+    <div className="app">
+      <aside className="sidebar">
+        <TreeList />
+      </aside>
+
+      <main className="main">
+        {error && (
+          <div className="error-banner">
+            <span>{error}</span>
+            <button onClick={clearError}>Dismiss</button>
+          </div>
+        )}
+
+        {currentTree ? (
+          <>
+            <SystemPromptInput />
+            <LinearView />
+            <MessageInput />
+          </>
+        ) : (
+          <div className="empty-state">
+            <h1>Qivis</h1>
+            <p>Select a tree or create a new one to start.</p>
+          </div>
+        )}
+      </main>
+    </div>
   )
 }
 
