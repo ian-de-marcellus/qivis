@@ -1,6 +1,7 @@
 """Shared test helpers. Grows with each subphase."""
 
 from datetime import UTC, datetime
+from typing import Any, Literal
 from uuid import uuid4
 
 from httpx import AsyncClient
@@ -19,7 +20,7 @@ def make_tree_created_envelope(
     default_model: str | None = "claude-sonnet-4-5-20250929",
     default_provider: str | None = "anthropic",
     default_system_prompt: str | None = "You are helpful.",
-    **payload_overrides: object,
+    **payload_overrides: Any,
 ) -> EventEnvelope:
     """Create a TreeCreated EventEnvelope for testing."""
     tree_id = tree_id or str(uuid4())
@@ -44,9 +45,9 @@ def make_node_created_envelope(
     tree_id: str,
     node_id: str | None = None,
     parent_id: str | None = None,
-    role: str = "user",
+    role: Literal["system", "user", "assistant", "tool", "researcher_note"] = "user",
     content: str = "Hello",
-    **payload_overrides: object,
+    **payload_overrides: Any,
 ) -> EventEnvelope:
     """Create a NodeCreated EventEnvelope for testing."""
     node_id = node_id or str(uuid4())

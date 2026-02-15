@@ -187,6 +187,109 @@ class TestGenerateEndpoint:
         assert len(tree_detail["nodes"]) == 2
 
 
+class TestContextUsageInResponse:
+    """Phase 0.5: generated nodes have context_usage populated."""
+
+    async def test_context_usage_populated(self, gen_client: AsyncClient):
+        """Generated node response includes non-null context_usage."""
+        tree = (await gen_client.post("/api/trees", json={"title": "CU Test"})).json()
+        node = (
+            await gen_client.post(
+                f"/api/trees/{tree['tree_id']}/nodes",
+                json={"content": "Hello AI"},
+            )
+        ).json()
+
+        resp = await gen_client.post(
+            f"/api/trees/{tree['tree_id']}/nodes/{node['node_id']}/generate",
+            json={"provider": "fake"},
+        )
+        data = resp.json()
+        assert data["context_usage"] is not None
+
+    async def test_context_usage_total_tokens_positive(self, gen_client: AsyncClient):
+        """context_usage.total_tokens > 0 for any generated node."""
+        tree = (await gen_client.post("/api/trees", json={"title": "CU Test"})).json()
+        node = (
+            await gen_client.post(
+                f"/api/trees/{tree['tree_id']}/nodes",
+                json={"content": "Hello AI"},
+            )
+        ).json()
+
+        resp = await gen_client.post(
+            f"/api/trees/{tree['tree_id']}/nodes/{node['node_id']}/generate",
+            json={"provider": "fake"},
+        )
+        cu = resp.json()["context_usage"]
+        assert cu["total_tokens"] > 0
+
+    async def test_context_usage_has_breakdown_keys(self, gen_client: AsyncClient):
+        """context_usage.breakdown has role keys."""
+        tree = (
+            await gen_client.post(
+                "/api/trees",
+                json={"title": "CU Test", "default_system_prompt": "Be helpful."},
+            )
+        ).json()
+        node = (
+            await gen_client.post(
+                f"/api/trees/{tree['tree_id']}/nodes",
+                json={"content": "Hello AI"},
+            )
+        ).json()
+
+        resp = await gen_client.post(
+            f"/api/trees/{tree['tree_id']}/nodes/{node['node_id']}/generate",
+            json={"provider": "fake"},
+        )
+        breakdown = resp.json()["context_usage"]["breakdown"]
+        assert "system" in breakdown
+        assert "user" in breakdown
+
+    async def test_multi_turn_tokens_increase(self, gen_client: AsyncClient):
+        """In a multi-turn conversation, context_usage.total_tokens increases."""
+        tree = (
+            await gen_client.post(
+                "/api/trees",
+                json={"title": "Multi-turn CU", "default_system_prompt": "Be helpful."},
+            )
+        ).json()
+        tree_id = tree["tree_id"]
+
+        # Turn 1: user message → generate
+        user1 = (
+            await gen_client.post(
+                f"/api/trees/{tree_id}/nodes",
+                json={"content": "First question to the AI"},
+            )
+        ).json()
+        gen1 = (
+            await gen_client.post(
+                f"/api/trees/{tree_id}/nodes/{user1['node_id']}/generate",
+                json={"provider": "fake"},
+            )
+        ).json()
+        tokens_turn1 = gen1["context_usage"]["total_tokens"]
+
+        # Turn 2: another user message → generate
+        user2 = (
+            await gen_client.post(
+                f"/api/trees/{tree_id}/nodes",
+                json={"content": "Second question following up", "parent_id": gen1["node_id"]},
+            )
+        ).json()
+        gen2 = (
+            await gen_client.post(
+                f"/api/trees/{tree_id}/nodes/{user2['node_id']}/generate",
+                json={"provider": "fake"},
+            )
+        ).json()
+        tokens_turn2 = gen2["context_usage"]["total_tokens"]
+
+        assert tokens_turn2 > tokens_turn1
+
+
 class TestStreamingEndpoint:
     async def test_stream_returns_sse(self, gen_client: AsyncClient):
         """Streaming mode returns SSE with text_delta and message_stop events."""

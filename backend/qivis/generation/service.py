@@ -6,8 +6,9 @@ from uuid import uuid4
 
 from qivis.events.projector import StateProjector
 from qivis.events.store import EventStore
-from qivis.generation.context import assemble_messages
+from qivis.generation.context import ContextBuilder, get_model_context_limit
 from qivis.models import (
+    ContextUsage,
     EventEnvelope,
     GenerationStartedPayload,
     NodeCreatedPayload,
@@ -30,6 +31,7 @@ class GenerationService:
         self._tree_service = tree_service
         self._store = store
         self._projector = projector
+        self._context_builder = ContextBuilder()
 
     async def generate(
         self,
@@ -45,7 +47,13 @@ class GenerationService:
         tree, nodes, resolved_model, resolved_prompt, resolved_params = (
             await self._resolve_context(tree_id, node_id, model, system_prompt, sampling_params)
         )
-        messages = assemble_messages(nodes, node_id)
+        context_limit = get_model_context_limit(resolved_model)
+        messages, context_usage, _eviction_report = self._context_builder.build(
+            nodes=nodes,
+            target_node_id=node_id,
+            system_prompt=resolved_prompt,
+            model_context_limit=context_limit,
+        )
         generation_id = str(uuid4())
 
         await self._emit_generation_started(
@@ -64,6 +72,7 @@ class GenerationService:
         return await self._emit_node_created(
             tree_id, generation_id, node_id, result,
             provider.name, resolved_prompt, resolved_params,
+            context_usage=context_usage,
         )
 
     async def generate_stream(
@@ -80,7 +89,13 @@ class GenerationService:
         tree, nodes, resolved_model, resolved_prompt, resolved_params = (
             await self._resolve_context(tree_id, node_id, model, system_prompt, sampling_params)
         )
-        messages = assemble_messages(nodes, node_id)
+        context_limit = get_model_context_limit(resolved_model)
+        messages, context_usage, _eviction_report = self._context_builder.build(
+            nodes=nodes,
+            target_node_id=node_id,
+            system_prompt=resolved_prompt,
+            model_context_limit=context_limit,
+        )
         generation_id = str(uuid4())
 
         await self._emit_generation_started(
@@ -100,6 +115,7 @@ class GenerationService:
                 node = await self._emit_node_created(
                     tree_id, generation_id, node_id, chunk.result,
                     provider.name, resolved_prompt, resolved_params,
+                    context_usage=context_usage,
                 )
                 # Attach node_id to the final chunk for the SSE handler
                 chunk = StreamChunk(
@@ -182,6 +198,8 @@ class GenerationService:
         provider_name: str,
         system_prompt: str | None,
         sampling_params: SamplingParams,
+        *,
+        context_usage: ContextUsage | None = None,
     ) -> NodeResponse:
         node_id = str(uuid4())
         payload = NodeCreatedPayload(
@@ -199,6 +217,7 @@ class GenerationService:
             latency_ms=result.latency_ms,
             finish_reason=result.finish_reason,
             logprobs=result.logprobs,
+            context_usage=context_usage,
             raw_response=result.raw_response,
         )
         event = EventEnvelope(

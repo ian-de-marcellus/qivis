@@ -35,6 +35,7 @@ class TestDatabaseConnection:
             db = await Database.connect(path)
             try:
                 row = await db.fetchone("PRAGMA journal_mode")
+                assert row is not None
                 assert row["journal_mode"] == "wal"
             finally:
                 await db.close()
@@ -44,6 +45,7 @@ class TestDatabaseConnection:
         db = await Database.connect(":memory:")
         try:
             row = await db.fetchone("PRAGMA foreign_keys")
+            assert row is not None
             assert row["foreign_keys"] == 1
         finally:
             await db.close()

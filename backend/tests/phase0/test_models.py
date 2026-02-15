@@ -4,6 +4,8 @@ Verifies that data structures and event payloads match the architecture spec,
 serialize/deserialize correctly, and the EVENT_TYPES registry is complete.
 """
 
+from datetime import UTC, datetime
+
 from qivis.models import (
     EVENT_TYPES,
     AlternativeToken,
@@ -147,6 +149,7 @@ class TestTreeCreatedPayload:
         dumped = p.model_dump()
         restored = TreeCreatedPayload.model_validate(dumped)
         assert restored.title == "My Tree"
+        assert restored.default_sampling_params is not None
         assert restored.default_sampling_params.temperature == 0.5
 
 
@@ -166,6 +169,7 @@ class TestNodeCreatedPayload:
             latency_ms=200, finish_reason="end_turn",
         )
         assert p.model == "claude-sonnet-4-5-20250929"
+        assert p.usage is not None
         assert p.usage["output_tokens"] == 5
 
 
@@ -177,7 +181,7 @@ class TestEventEnvelope:
         payload = TreeCreatedPayload(title="Test").model_dump()
         env = EventEnvelope(
             event_id="e1", tree_id="t1",
-            timestamp="2026-02-15T00:00:00Z",
+            timestamp=datetime(2026, 2, 15, tzinfo=UTC),
             device_id="local", event_type="TreeCreated",
             payload=payload,
         )
@@ -188,7 +192,7 @@ class TestEventEnvelope:
     def test_typed_payload_unknown_type_raises(self):
         env = EventEnvelope(
             event_id="e1", tree_id="t1",
-            timestamp="2026-02-15T00:00:00Z",
+            timestamp=datetime(2026, 2, 15, tzinfo=UTC),
             device_id="local", event_type="NonexistentEvent",
             payload={},
         )
