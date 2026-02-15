@@ -122,3 +122,33 @@ async def create_test_tree(
     })
     assert resp.status_code == 201
     return resp.json()
+
+
+async def create_tree_with_messages(
+    client: AsyncClient,
+    n_messages: int = 4,
+    title: str = "Test Tree",
+    system_prompt: str = "You are helpful.",
+) -> dict:
+    """Create a tree with N alternating user/assistant messages.
+
+    Returns {"tree_id": str, "node_ids": [str, ...]} where node_ids
+    are in creation order.
+    """
+    tree = await create_test_tree(client, title=title, system_prompt=system_prompt)
+    tree_id = tree["tree_id"]
+    node_ids: list[str] = []
+    parent_id: str | None = None
+
+    for i in range(n_messages):
+        role = "user" if i % 2 == 0 else "assistant"
+        body: dict = {"content": f"Message {i + 1}", "role": role}
+        if parent_id is not None:
+            body["parent_id"] = parent_id
+        resp = await client.post(f"/api/trees/{tree_id}/nodes", json=body)
+        assert resp.status_code == 201
+        node = resp.json()
+        node_ids.append(node["node_id"])
+        parent_id = node["node_id"]
+
+    return {"tree_id": tree_id, "node_ids": node_ids}

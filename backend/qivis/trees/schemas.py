@@ -23,6 +23,16 @@ class CreateNodeRequest(BaseModel):
     parent_id: str | None = None
 
 
+class GenerateRequest(BaseModel):
+    """Request body for POST /api/trees/{tree_id}/nodes/{node_id}/generate."""
+
+    provider: str = "anthropic"
+    model: str | None = None
+    system_prompt: str | None = None
+    sampling_params: SamplingParams | None = None
+    stream: bool = False
+
+
 # -- Responses --
 
 

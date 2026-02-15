@@ -19,6 +19,7 @@ class StateProjector:
         self._handlers: dict[str, Callable[[EventEnvelope], Awaitable[None]]] = {
             "TreeCreated": self._handle_tree_created,
             "NodeCreated": self._handle_node_created,
+            "GenerationStarted": self._handle_generation_started,
         }
 
     async def project(self, events: list[EventEnvelope]) -> None:
@@ -75,6 +76,10 @@ class StateProjector:
                 else str(event.timestamp),
             ),
         )
+
+    async def _handle_generation_started(self, event: EventEnvelope) -> None:
+        """GenerationStarted is recorded in the event log but does not project
+        to any materialized table. Registered for explicitness."""
 
     async def _handle_node_created(self, event: EventEnvelope) -> None:
         """Project a NodeCreated event into the nodes table."""
