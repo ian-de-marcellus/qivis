@@ -3,6 +3,8 @@
 from datetime import UTC, datetime
 from uuid import uuid4
 
+from httpx import AsyncClient
+
 from qivis.models import (
     EventEnvelope,
     NodeCreatedPayload,
@@ -103,3 +105,20 @@ def make_full_node_created_envelope(tree_id: str, parent_id: str | None = None) 
         event_type="NodeCreated",
         payload=payload.model_dump(),
     )
+
+
+# -- API-level helpers (available from Phase 0.3 onward) --
+
+
+async def create_test_tree(
+    client: AsyncClient,
+    title: str = "Test Tree",
+    system_prompt: str = "You are helpful.",
+) -> dict:
+    """Create a tree via the API and return the response JSON."""
+    resp = await client.post("/api/trees", json={
+        "title": title,
+        "default_system_prompt": system_prompt,
+    })
+    assert resp.status_code == 201
+    return resp.json()

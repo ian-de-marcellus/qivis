@@ -44,3 +44,6 @@ htmlcov/
 
 # Build artifacts
 *.tsbuildinfo
+
+# Claude
+.Claude/settings.local.json
