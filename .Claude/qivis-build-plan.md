@@ -94,22 +94,20 @@ Two independent quality-of-life features.
 
 _Goal: See the model's process — token-level confidence, reasoning traces, parameter effects._
 
-### 3.1 — Logprob Visualization 🔒
+### 3.1 — Logprob Visualization ✅
 
 The feature that makes Qivis a spectrometer.
 
-**Tasks:**
-- `LogprobOverlay` component: renders token-level heatmap on assistant messages
-- Color mapping: `uncertaintyColor(logprob)` — transparent for high confidence, warm highlight for low
-- Hover tooltip: top-N alternative tokens with probabilities for any token
-- Per-message certainty badge: average/min confidence indicator
-- Toggle: enable/disable the overlay (visual noise when you don't need it)
-- Graceful degradation: no overlay, no badge, no visual noise when logprobs are null
-- Works with existing OpenAI logprobs; Anthropic logprobs used when/if available
+Pure frontend — all backend logprob infrastructure was already complete (LogprobData, TokenLogprob, AlternativeToken models, LogprobNormalizer with OpenAI extraction, SamplingParams.logprobs defaulting to True, full event-sourcing pipeline).
 
-**Blockers:** Phase 2 complete (stable generation UX needed).
+**What was built:**
+- TypeScript types: `LogprobData`, `TokenLogprob`, `AlternativeToken` — `NodeResponse.logprobs` typed from `Record<string, unknown>` to `LogprobData | null`
+- `LogprobOverlay` component: token-level heatmap rendering each `TokenLogprob.token` as a `<span>` with continuous HSLA color from `uncertaintyColor(linear_prob)` — transparent for high confidence (>0.95), warm sienna highlight for low
+- `TokenTooltip`: hover reveals chosen token probability + top alternatives with percentages, positioned below token span
+- Per-message certainty badge in `.message-meta`: average `linear_prob` as percentage with color-coded dot, click toggles overlay on/off for that message
+- Graceful degradation: null logprobs (Anthropic, older nodes) → no badge, no overlay, message renders identically to before
 
-✅ Token heatmap renders on assistant messages with logprob data. Hover shows alternatives. Badge shows node confidence. No visual noise when logprobs absent.
+No backend changes, 211 tests unchanged.
 
 ### 3.2 — Thinking Tokens 🔀
 
@@ -495,6 +493,7 @@ Ideas noted for consideration beyond the current roadmap:
 - **Conversation templates marketplace**: Community-contributed shareable research protocols beyond local templates.
 - **Real-time collaboration**: Multiple researchers on the same tree simultaneously. Event sourcing makes this architecturally straightforward to add later.
 - **Postgres migration**: For multi-user deployments. SQLite is single-researcher; Postgres enables shared instances.
+- **Prefill / continuation mode**: Let the researcher supply a partial assistant response and see where the model takes it. Anthropic Messages API supports this natively (partial assistant message). OpenAI chat API doesn't reliably continue from a prefill. Completion APIs (llama.cpp, Phase 10.2) support it perfectly with full logprobs. A lighter version using Anthropic prefill could land before Phase 10. Key research use case: "the model said X — but what if it had started with Y instead?"
 
 ---
 

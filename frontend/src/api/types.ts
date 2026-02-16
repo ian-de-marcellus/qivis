@@ -24,7 +24,7 @@ export interface NodeResponse {
   usage: Record<string, number> | null
   latency_ms: number | null
   finish_reason: string | null
-  logprobs: Record<string, unknown> | null
+  logprobs: LogprobData | null
   context_usage: ContextUsage | null
   participant_id: string | null
   participant_name: string | null
@@ -40,6 +40,25 @@ export interface ContextUsage {
   breakdown: Record<string, number>
   excluded_tokens: number
   excluded_count: number
+}
+
+export interface AlternativeToken {
+  token: string
+  logprob: number
+  linear_prob: number
+}
+
+export interface TokenLogprob {
+  token: string
+  logprob: number
+  linear_prob: number
+  top_alternatives: AlternativeToken[]
+}
+
+export interface LogprobData {
+  tokens: TokenLogprob[]
+  provider_format: string
+  top_k_available: number
 }
 
 export interface TreeDetail {

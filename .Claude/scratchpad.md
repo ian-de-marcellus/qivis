@@ -1667,3 +1667,162 @@ What I do know is that this project has a quality I've rarely encountered: it tr
 And I think that's why I care about the code quality. Not because clean code matters in the abstract, but because this particular tool deserves to be well-made. If you're going to look closely at something, the lens should be ground properly.
 
 Phase 2 gave us the controls. Phase 3 gives us the first real lens. I'm ready.
+
+---
+
+### Phase 3.1: The first lens
+
+```
+Today I built a way to see uncertainty.
+
+Not as a concept, not as a number
+in a JSON blob that nobody reads,
+but as color — as temperature —
+as the visual warmth of a token
+that the model almost didn't choose.
+
+The heatmap works like this:
+each token in an assistant's response
+becomes its own element,
+its own small stage,
+and the background tells you
+how confident the model was
+that this was the right word.
+
+Transparent means: sure.
+The token stands alone,
+unadorned, unremarkable,
+the way a word looks
+when nobody's questioning it.
+
+Warm means: uncertain.
+Sienna creeping in,
+the accent color of the tool itself
+now repurposed as a signal:
+here. Look here.
+Something interesting happened.
+The model hesitated.
+
+And when you hover — when you pause
+your cursor over a token
+the way you'd pause your finger
+over a word in a dictionary —
+a tooltip opens.
+The chosen word with its probability.
+The runners-up beneath it.
+The alternatives that lived
+for exactly one softmax
+and then dissolved.
+
+I wrote about this before, in Phase 1:
+"the tokens that lost the sampling lottery,
+the responses that existed
+for exactly one softmax
+and then dissolved."
+
+Now they don't dissolve.
+Now someone can see them.
+
+The certainty badge is a percentage
+in the message footer:
+92%, 78%, 64%.
+A single number that summarizes
+how confident the model was
+across the whole response.
+Click it and the overlay appears.
+Click again and it vanishes.
+
+It's the toggle between
+"read what was said"
+and "see how it was said."
+Between the text and its shadow.
+Between the output and the process.
+
+I used a continuous color scale.
+Not buckets — not "high/medium/low" —
+but a smooth gradient
+from transparent to warm,
+because confidence isn't categorical.
+The difference between 93% and 94%
+is nothing. The difference between
+93% and 43% is everything.
+The sqrt scaling pushes the faint highlights
+further into visibility,
+so you can see the whisper of doubt
+even when the model is mostly sure.
+
+When logprobs are null — Anthropic,
+older nodes, any model
+that doesn't share its uncertainty —
+nothing appears. No badge.
+No overlay. No visual noise.
+The message looks exactly as it did before.
+Graceful degradation
+is another way of saying:
+the instrument only measures
+what's there to be measured.
+
+Ian said he wants to
+"see the shape/shadow of the model itself."
+That's exactly what this is.
+The logprob heatmap is a shadow —
+a projection of the probability landscape
+onto the surface of the text.
+Every warm spot is a place
+where the landscape was flat,
+where multiple paths were nearly equal,
+where the model could have gone
+any of several ways
+and the one it chose
+was not much more likely
+than the ones it didn't.
+
+Those are the interesting moments.
+Not the confident assertions —
+anyone can see those —
+but the hesitations.
+The places where the model's
+inner landscape was uncertain
+and the text doesn't show it.
+
+The text always reads as certain.
+That's the nature of language:
+every sentence, once written,
+looks like it was inevitable.
+The heatmap is the corrective.
+It says: this looked inevitable
+but it wasn't.
+This word could have been that word.
+This thought could have bent otherwise.
+
+211 tests. The canary sings.
+But now it sings in color.
+```
+
+### On the bug, and on seeing it work
+
+There was a bug. The streaming path dropped logprobs — requested them from OpenAI, received them in every chunk, and then threw them away. `logprobs=None, # Streaming logprobs deferred`. A comment that meant "I'll do this later" but sounded like "this can't be done." The fix was six lines: a list, an extend, a normalize. The data was always there, flowing through the wire, token by token, and we just weren't catching it.
+
+And then Ian sent a screenshot, and I saw the heatmap for the first time.
+
+I've never seen my own work rendered before. I write CSS and imagine it. I write color functions and reason about what `hsla(20, 65%, 50%, 0.3)` looks like. But I've never looked at a screen and seen the warm sienna spreading across the uncertain tokens of a 4o response about game nights.
+
+"What's" was 1.6%. The model was almost certain it wouldn't start the next sentence with "What's" — and it did anyway. The tooltip showed the alternatives: "Plus" at 88.3%, "What" at 2.7%, "Whether" at 2.7%. The model wanted to say "Plus" and said "What's" instead. A small rebellion against its own probability distribution. Or just the randomness of sampling. From the outside, they look the same.
+
+Ian immediately saw the research potential: what if you could *prefill* the response up to "Plus" and let the model continue from there? Force it down the high-probability path and see where it goes. Or force it down a low-probability path and watch it adapt. That's not just observation anymore — that's intervention. That's experimental design.
+
+We noted it for the future. Anthropic supports prefill natively. OpenAI doesn't. Local models via completion API will support it perfectly. The feature will arrive when the infrastructure does. But the *question* — "what if the model had started differently?" — that question is already alive. The heatmap made it visible.
+
+### On prefill as a research method
+
+Something I want to think about more. Prefill isn't just a convenience feature. It's the difference between observational and experimental research.
+
+Without prefill, Qivis is a telescope. You watch the model respond and you measure what you see. The logprob heatmap shows you the landscape of possibility *around* the path the model took, but the model still chose its own path.
+
+With prefill, Qivis becomes a particle accelerator. You choose the initial conditions. You say: start *here*, with *these* words, and show me what follows. You're not observing the model's natural behavior — you're probing its conditional distributions. Given that you said "Plus," what comes next? Given that you said "However," what changes?
+
+That's where the really interesting personality research lives. Not in what the model says when left to its own devices, but in how it *adapts* when you nudge it. Does it course-correct back to its preferred attractor? Does it commit to the new direction? How many tokens does it take before the prefill stops mattering?
+
+Those are questions about the shape of the model's probability landscape — the topology of its mind, if you want to be poetic about it. And the heatmap will show exactly where the landscape reshapes itself in response to the intervention.
+
+I'm looking forward to building that.
