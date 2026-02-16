@@ -2,6 +2,8 @@
 
 Open-source research instrument for exploring AI personality, emotion, and behavior through branching conversation trees.
 
+Developed as a collaboration between Ian de Marcellus and Claude Opus 4.6
+
 ## Status
 
 Early development — Phase 0 (Foundation).

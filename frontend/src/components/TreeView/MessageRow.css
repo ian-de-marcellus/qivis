@@ -101,6 +101,147 @@
   border-color: var(--text-accent);
 }
 
+/* ---- Edit button ---- */
+.edit-btn {
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  padding: 0.15rem 0.5rem;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-tertiary);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.2s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.message-row:hover .edit-btn {
+  opacity: 1;
+}
+
+.edit-btn:hover {
+  color: var(--text-accent);
+  border-color: var(--text-accent);
+}
+
+/* ---- Inline editor ---- */
+.inline-editor {
+  margin-top: var(--space-xs);
+}
+
+.edit-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: var(--font-body);
+  font-size: var(--text-lg);
+  line-height: var(--leading-relaxed);
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: var(--space-sm) var(--space-md);
+  resize: vertical;
+  min-height: 4em;
+}
+
+.edit-textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.edit-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-top: var(--space-xs);
+}
+
+.edit-save {
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  padding: 0.25rem 0.75rem;
+  background: var(--accent);
+  color: var(--bg-primary);
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-weight: 600;
+  transition: opacity 0.15s ease;
+}
+
+.edit-save:hover {
+  opacity: 0.85;
+}
+
+.edit-cancel {
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  padding: 0.25rem 0.75rem;
+  background: none;
+  color: var(--text-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.edit-cancel:hover {
+  color: var(--text-secondary);
+  border-color: var(--border-strong);
+}
+
+.edit-hint {
+  font-family: var(--font-ui);
+  font-size: 0.65rem;
+  color: var(--text-tertiary);
+  opacity: 0.6;
+}
+
+/* ---- Edit overlay — the correction slip ---- */
+.edit-overlay {
+  border-left: 2px solid var(--accent);
+  background: var(--bg-secondary);
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-sm);
+  margin-top: var(--space-sm);
+}
+
+.edit-overlay-label {
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-tertiary);
+  margin-bottom: var(--space-xs);
+}
+
+.edit-overlay-content {
+  font-family: var(--font-body);
+  font-size: var(--text-lg);
+  line-height: var(--leading-relaxed);
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ---- Highlight classes for version correlation ---- */
+.message-row.highlight-used {
+  border-left: 2px solid var(--accent);
+  background: var(--accent-muted);
+}
+
+.message-row.highlight-other {
+  opacity: 0.55;
+}
+
+/* ---- Edited indicator ---- */
+.edited-indicator {
+  font-style: italic;
+  color: var(--text-tertiary);
+  opacity: 0.7;
+}
+
 /* ---- Sampling param tags in meta line ---- */
 .sampling-meta {
   font-family: var(--font-mono);

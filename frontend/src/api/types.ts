@@ -42,6 +42,7 @@ export interface NodeResponse {
   finish_reason: string | null
   logprobs: LogprobData | null
   thinking_content: string | null
+  edited_content: string | null
   context_usage: ContextUsage | null
   participant_id: string | null
   participant_name: string | null
@@ -98,6 +99,20 @@ export interface ProviderInfo {
   available: boolean
   models: string[]
   supported_params: string[]
+}
+
+export interface EditHistoryEntry {
+  event_id: string
+  sequence_num: number
+  timestamp: string
+  new_content: string | null
+}
+
+export interface EditHistoryResponse {
+  node_id: string
+  original_content: string
+  current_content: string
+  entries: EditHistoryEntry[]
 }
 
 // -- Requests --

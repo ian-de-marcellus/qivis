@@ -241,6 +241,12 @@ class GarbageCollectedPayload(BaseModel):
     recoverable_until: str  # ISO-8601
 
 
+class NodeContentEditedPayload(BaseModel):
+    node_id: str
+    original_content: str  # matches node.content; for event log readability
+    new_content: str | None  # edited content, or None to restore
+
+
 class GarbagePurgedPayload(BaseModel):
     purged_node_ids: list[str]
     purged_tree_ids: list[str]
@@ -257,6 +263,7 @@ EVENT_TYPES: dict[str, type[BaseModel]] = {
     "TreeUnarchived": TreeUnarchivedPayload,
     "GenerationStarted": GenerationStartedPayload,
     "NodeCreated": NodeCreatedPayload,
+    "NodeContentEdited": NodeContentEditedPayload,
     "NodeArchived": NodeArchivedPayload,
     "NodeUnarchived": NodeUnarchivedPayload,
     "AnnotationAdded": AnnotationAddedPayload,

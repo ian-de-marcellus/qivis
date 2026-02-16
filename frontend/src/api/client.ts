@@ -3,6 +3,7 @@
 import type {
   CreateNodeRequest,
   CreateTreeRequest,
+  EditHistoryResponse,
   GenerateRequest,
   MessageStopEvent,
   NodeResponse,
@@ -68,6 +69,26 @@ export function createNode(
     method: 'POST',
     body: JSON.stringify(req),
   })
+}
+
+export function editNodeContent(
+  treeId: string,
+  nodeId: string,
+  editedContent: string | null,
+): Promise<NodeResponse> {
+  return request(`/trees/${treeId}/nodes/${nodeId}/content`, {
+    method: 'PATCH',
+    body: JSON.stringify({ edited_content: editedContent }),
+  })
+}
+
+// -- Edit history --
+
+export function getEditHistory(
+  treeId: string,
+  nodeId: string,
+): Promise<EditHistoryResponse> {
+  return request(`/trees/${treeId}/nodes/${nodeId}/edit-history`)
 }
 
 // -- Generation (non-streaming) --

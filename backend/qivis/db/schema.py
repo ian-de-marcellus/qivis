@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS nodes (
     participant_id TEXT,
     participant_name TEXT,
     thinking_content TEXT,
+    edited_content TEXT,
     created_at TEXT NOT NULL,
     archived INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY (tree_id) REFERENCES trees(tree_id)
@@ -61,6 +62,7 @@ CREATE INDEX IF NOT EXISTS idx_nodes_parent_id ON nodes(parent_id);
 # Migrations for existing databases that already have the nodes table.
 _MIGRATIONS = [
     "ALTER TABLE nodes ADD COLUMN thinking_content TEXT",
+    "ALTER TABLE nodes ADD COLUMN edited_content TEXT",
 ]
 
 

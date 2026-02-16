@@ -211,7 +211,8 @@ class TestEventTypesRegistry:
         """Every payload class defined in the module should be in EVENT_TYPES."""
         expected_types = {
             "TreeCreated", "TreeMetadataUpdated", "TreeArchived", "TreeUnarchived",
-            "GenerationStarted", "NodeCreated", "NodeArchived", "NodeUnarchived",
+            "GenerationStarted", "NodeCreated", "NodeContentEdited",
+            "NodeArchived", "NodeUnarchived",
             "AnnotationAdded", "AnnotationRemoved",
             "BookmarkCreated", "BookmarkRemoved", "BookmarkSummaryGenerated",
             "NodeContextExcluded", "NodeContextIncluded",

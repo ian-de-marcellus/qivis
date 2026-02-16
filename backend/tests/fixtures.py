@@ -8,6 +8,7 @@ from httpx import AsyncClient
 
 from qivis.models import (
     EventEnvelope,
+    NodeContentEditedPayload,
     NodeCreatedPayload,
     SamplingParams,
     TreeCreatedPayload,
@@ -105,6 +106,28 @@ def make_full_node_created_envelope(tree_id: str, parent_id: str | None = None) 
         timestamp=datetime.now(UTC),
         device_id="test",
         event_type="NodeCreated",
+        payload=payload.model_dump(),
+    )
+
+
+def make_node_content_edited_envelope(
+    tree_id: str,
+    node_id: str,
+    original_content: str,
+    new_content: str | None,
+) -> EventEnvelope:
+    """Create a NodeContentEdited EventEnvelope for testing."""
+    payload = NodeContentEditedPayload(
+        node_id=node_id,
+        original_content=original_content,
+        new_content=new_content,
+    )
+    return EventEnvelope(
+        event_id=str(uuid4()),
+        tree_id=tree_id,
+        timestamp=datetime.now(UTC),
+        device_id="test",
+        event_type="NodeContentEdited",
         payload=payload.model_dump(),
     )
 

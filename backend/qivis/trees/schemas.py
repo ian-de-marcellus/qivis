@@ -34,6 +34,12 @@ class CreateNodeRequest(BaseModel):
     parent_id: str | None = None
 
 
+class PatchNodeContentRequest(BaseModel):
+    """Request body for PATCH /api/trees/{tree_id}/nodes/{node_id}/content."""
+
+    edited_content: str | None
+
+
 class GenerateRequest(BaseModel):
     """Request body for POST /api/trees/{tree_id}/nodes/{node_id}/generate."""
 
@@ -67,10 +73,25 @@ class NodeResponse(BaseModel):
     participant_id: str | None = None
     participant_name: str | None = None
     thinking_content: str | None = None
+    edited_content: str | None = None
     created_at: str
     archived: int = 0
     sibling_count: int = 1
     sibling_index: int = 0
+
+
+class EditHistoryEntry(BaseModel):
+    event_id: str
+    sequence_num: int
+    timestamp: str
+    new_content: str | None  # None = restore to original
+
+
+class EditHistoryResponse(BaseModel):
+    node_id: str
+    original_content: str
+    current_content: str
+    entries: list[EditHistoryEntry]
 
 
 class TreeSummary(BaseModel):

@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import type { GenerateRequest, NodeResponse } from '../../api/types.ts'
 import { getActivePath, useTreeStore } from '../../store/treeStore.ts'
 import { ComparisonView } from '../ComparisonView/ComparisonView.tsx'
@@ -28,11 +28,14 @@ export function LinearView() {
     generationError,
     branchSelections,
     selectBranch,
+    editNodeContent,
     setActiveStreamIndex,
     forkAndGenerate,
     regenerate,
     clearGenerationError,
     fetchProviders,
+    selectedEditVersion,
+    editHistoryCache,
   } = useTreeStore()
 
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -82,6 +85,54 @@ export function LinearView() {
     systemPrompt: currentTree.default_system_prompt,
   }
 
+  // Compute highlight classes when an edit version is selected
+  const highlights = useMemo(() => {
+    const map = new Map<string, 'highlight-used' | 'highlight-other'>()
+    if (!selectedEditVersion) return map
+
+    const { nodeId, entry } = selectedEditVersion
+    const editedNodeIdx = path.findIndex((n) => n.node_id === nodeId)
+    if (editedNodeIdx === -1) return map
+
+    // Determine the time window for this version
+    const cachedEntries = editHistoryCache[nodeId]
+    if (!cachedEntries && entry !== null) return map // history not loaded yet for non-original
+
+    const editedNode = path[editedNodeIdx]
+
+    let windowStart: string
+    let windowEnd: string | null = null
+
+    if (entry === null) {
+      // "Original" pseudo-entry — active from node creation until first edit
+      windowStart = editedNode.created_at
+      if (cachedEntries && cachedEntries.length > 0) {
+        windowEnd = cachedEntries[0].timestamp
+      }
+    } else {
+      // Specific edit entry — find its position in the ordered list
+      windowStart = entry.timestamp
+      if (cachedEntries) {
+        const entryIdx = cachedEntries.findIndex((e) => e.event_id === entry.event_id)
+        if (entryIdx !== -1 && entryIdx < cachedEntries.length - 1) {
+          windowEnd = cachedEntries[entryIdx + 1].timestamp
+        }
+      }
+    }
+
+    // Walk all assistant nodes after the edited node in the path
+    for (let i = editedNodeIdx + 1; i < path.length; i++) {
+      const n = path[i]
+      if (n.role !== 'assistant') continue
+
+      const nodeTime = n.created_at
+      const inWindow = nodeTime >= windowStart && (windowEnd === null || nodeTime < windowEnd)
+      map.set(n.node_id, inWindow ? 'highlight-used' : 'highlight-other')
+    }
+
+    return map
+  }, [selectedEditVersion, path, editHistoryCache])
+
   const handleSelectSibling = (parentId: string, siblingId: string) => {
     selectBranch(parentId, siblingId)
   }
@@ -125,9 +176,11 @@ export function LinearView() {
                   handleSelectSibling(nodeParentKey, siblingId)
                 }
                 onFork={() => handleFork(nodeParentKey, node.role)}
+                onEdit={(nodeId, editedContent) => editNodeContent(nodeId, editedContent)}
                 onCompare={siblings.length > 1 ? () => setComparingAtParent(
                   comparingAtParent === nodeParentKey ? null : nodeParentKey,
                 ) : undefined}
+                highlightClass={highlights.get(node.node_id)}
               />
               {comparingAtParent === nodeParentKey && (
                 <ComparisonView

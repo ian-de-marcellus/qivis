@@ -3,6 +3,7 @@
 import { create } from 'zustand'
 import * as api from '../api/client.ts'
 import type {
+  EditHistoryEntry,
   GenerateRequest,
   NodeResponse,
   PatchTreeRequest,
@@ -40,6 +41,8 @@ interface TreeStore {
   generationError: GenerationError | null
   branchSelections: Record<string, string>
   comparisonHoveredNodeId: string | null
+  selectedEditVersion: { nodeId: string; entry: EditHistoryEntry | null } | null
+  editHistoryCache: Record<string, EditHistoryEntry[]>
 
   // Actions
   fetchTrees: () => Promise<void>
@@ -60,6 +63,9 @@ interface TreeStore {
   selectBranch: (parentId: string, childId: string) => void
   navigateToNode: (nodeId: string) => void
   setComparisonHoveredNodeId: (nodeId: string | null) => void
+  editNodeContent: (nodeId: string, editedContent: string | null) => Promise<void>
+  setSelectedEditVersion: (nodeId: string, entry: EditHistoryEntry | null) => void
+  cacheEditHistory: (nodeId: string, entries: EditHistoryEntry[]) => void
   forkAndGenerate: (
     parentId: string,
     content: string,
@@ -133,6 +139,8 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
   generationError: null,
   branchSelections: {},
   comparisonHoveredNodeId: null,
+  selectedEditVersion: null,
+  editHistoryCache: {},
 
   fetchTrees: async () => {
     set({ isLoading: true, error: null })
@@ -360,6 +368,48 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
 
   setComparisonHoveredNodeId: (nodeId: string | null) => {
     set({ comparisonHoveredNodeId: nodeId })
+  },
+
+  editNodeContent: async (nodeId: string, editedContent: string | null) => {
+    const { currentTree } = get()
+    if (!currentTree) return
+
+    try {
+      const updated = await api.editNodeContent(currentTree.tree_id, nodeId, editedContent)
+      // Update node in tree and invalidate edit history cache for this node
+      set((state) => {
+        const { [nodeId]: _, ...remainingCache } = state.editHistoryCache
+        return {
+          currentTree: state.currentTree
+            ? {
+                ...state.currentTree,
+                nodes: state.currentTree.nodes.map((n) =>
+                  n.node_id === nodeId ? { ...n, edited_content: updated.edited_content } : n,
+                ),
+              }
+            : null,
+          editHistoryCache: remainingCache,
+        }
+      })
+    } catch (e) {
+      set({ error: String(e) })
+    }
+  },
+
+  setSelectedEditVersion: (nodeId: string, entry: EditHistoryEntry | null) => {
+    const current = get().selectedEditVersion
+    if (entry === null && current?.nodeId === nodeId) {
+      // Deselect
+      set({ selectedEditVersion: null })
+    } else {
+      set({ selectedEditVersion: { nodeId, entry } })
+    }
+  },
+
+  cacheEditHistory: (nodeId: string, entries: EditHistoryEntry[]) => {
+    set((state) => ({
+      editHistoryCache: { ...state.editHistoryCache, [nodeId]: entries },
+    }))
   },
 
   forkAndGenerate: async (parentId: string, content: string, overrides: GenerateRequest) => {

@@ -1,7 +1,9 @@
 import { useState } from 'react'
 import type { LogprobData, NodeResponse, SamplingParams } from '../../api/types.ts'
+import { useTreeStore } from '../../store/treeStore.ts'
 import { BranchIndicator } from './BranchIndicator.tsx'
 import { ContextBar } from './ContextBar.tsx'
+import { EditHistory } from './EditHistory.tsx'
 import { LogprobOverlay, averageCertainty, uncertaintyColor } from './LogprobOverlay.tsx'
 import { ThinkingSection } from './ThinkingSection.tsx'
 import './MessageRow.css'
@@ -47,10 +49,16 @@ interface MessageRowProps {
   onSelectSibling: (siblingId: string) => void
   onFork: () => void
   onCompare?: () => void
+  onEdit?: (nodeId: string, editedContent: string | null) => void
+  highlightClass?: 'highlight-used' | 'highlight-other'
 }
 
-export function MessageRow({ node, siblings, onSelectSibling, onFork, onCompare }: MessageRowProps) {
+export function MessageRow({ node, siblings, onSelectSibling, onFork, onCompare, onEdit, highlightClass }: MessageRowProps) {
   const [showLogprobs, setShowLogprobs] = useState(false)
+  const [isEditing, setIsEditing] = useState(false)
+  const [editValue, setEditValue] = useState('')
+
+  const editHistoryCache = useTreeStore((s) => s.editHistoryCache)
 
   const roleLabel = node.role === 'researcher_note'
     ? 'Researcher Note'
@@ -59,8 +67,12 @@ export function MessageRow({ node, siblings, onSelectSibling, onFork, onCompare 
   const logprobs: LogprobData | null = node.logprobs
   const avgCertainty = logprobs ? averageCertainty(logprobs) : null
 
+  const hasEdit = node.edited_content != null
+  const hasEditHistory = hasEdit || (editHistoryCache[node.node_id]?.length ?? 0) > 0
+  const rowClasses = ['message-row', node.role, highlightClass].filter(Boolean).join(' ')
+
   return (
-    <div className={`message-row ${node.role}`}>
+    <div className={rowClasses}>
       <div className="message-header">
         <span className="message-role">{roleLabel}</span>
         {node.role === 'assistant' && node.model && (
@@ -77,22 +89,89 @@ export function MessageRow({ node, siblings, onSelectSibling, onFork, onCompare 
         <button className="fork-btn" onClick={onFork} aria-label={node.role === 'assistant' ? 'Regenerate' : 'Fork'}>
           {node.role === 'assistant' ? 'Regen' : 'Fork'}
         </button>
+        {onEdit && !isEditing && (
+          <button
+            className="edit-btn"
+            onClick={() => {
+              setEditValue(node.edited_content ?? node.content)
+              setIsEditing(true)
+            }}
+            aria-label="Edit message"
+          >
+            Edit
+          </button>
+        )}
       </div>
       {node.thinking_content && (
         <ThinkingSection thinkingContent={node.thinking_content} />
       )}
-      <div className="message-content">
-        {showLogprobs && logprobs ? (
-          <LogprobOverlay logprobs={logprobs} />
-        ) : (
-          node.content
-        )}
-      </div>
+      {isEditing && onEdit ? (
+        <div className="inline-editor">
+          <textarea
+            className="edit-textarea"
+            value={editValue}
+            onChange={(e) => setEditValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                setIsEditing(false)
+              } else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                onEdit(node.node_id, editValue)
+                setIsEditing(false)
+              }
+            }}
+            autoFocus
+            rows={Math.max(3, editValue.split('\n').length)}
+          />
+          <div className="edit-actions">
+            <button
+              className="edit-save"
+              onClick={() => {
+                onEdit(node.node_id, editValue)
+                setIsEditing(false)
+              }}
+            >
+              Save
+            </button>
+            <button
+              className="edit-cancel"
+              onClick={() => setIsEditing(false)}
+            >
+              Cancel
+            </button>
+            <span className="edit-hint">Cmd+Enter to save, Esc to cancel</span>
+          </div>
+        </div>
+      ) : (
+        <>
+          {/* Original content — always primary, always the truth */}
+          <div className="message-content">
+            {showLogprobs && logprobs ? (
+              <LogprobOverlay logprobs={logprobs} />
+            ) : (
+              node.content
+            )}
+          </div>
+
+          {/* Edit overlay — the correction slip */}
+          {hasEdit && (
+            <div className="edit-overlay">
+              <div className="edit-overlay-label">model sees</div>
+              <div className="edit-overlay-content">{node.edited_content}</div>
+            </div>
+          )}
+
+          {/* Collapsible edit history — visible when edited or when cache has entries */}
+          {hasEditHistory && <EditHistory node={node} />}
+        </>
+      )}
       {node.role === 'assistant' && node.context_usage != null && (
         <ContextBar contextUsage={node.context_usage} />
       )}
       <div className="message-meta">
         {formatTimestamp(node.created_at)}
+        {hasEditHistory && (
+          <span className="edited-indicator"> &middot; edited</span>
+        )}
         {node.latency_ms != null && (
           <>
             {` \u00b7 ${(node.latency_ms / 1000).toFixed(1)}s`}

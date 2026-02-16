@@ -10,6 +10,7 @@ from qivis.events.projector import StateProjector
 from qivis.events.store import EventStore
 from qivis.models import (
     EventEnvelope,
+    NodeContentEditedPayload,
     NodeCreatedPayload,
     TreeCreatedPayload,
     TreeMetadataUpdatedPayload,
@@ -17,7 +18,10 @@ from qivis.models import (
 from qivis.trees.schemas import (
     CreateNodeRequest,
     CreateTreeRequest,
+    EditHistoryEntry,
+    EditHistoryResponse,
     NodeResponse,
+    PatchNodeContentRequest,
     PatchTreeRequest,
     TreeDetailResponse,
     TreeSummary,
@@ -194,6 +198,88 @@ class TreeService:
         node_row = next(n for n in nodes if n["node_id"] == node_id)
         return self._node_from_row(node_row, sibling_info=sibling_info)
 
+    async def edit_node_content(
+        self, tree_id: str, node_id: str, edited_content: str | None,
+    ) -> NodeResponse:
+        """Edit a node's content overlay. Emits NodeContentEdited event.
+
+        Normalization: empty string -> None, same-as-original -> None.
+        """
+        tree = await self._projector.get_tree(tree_id)
+        if tree is None:
+            raise TreeNotFoundError(tree_id)
+
+        nodes = await self._projector.get_nodes(tree_id)
+        node_row = next((n for n in nodes if n["node_id"] == node_id), None)
+        if node_row is None:
+            raise NodeNotFoundError(node_id)
+
+        # Normalize: empty string -> None, same-as-original -> None
+        if edited_content is not None:
+            edited_content = edited_content.strip() if edited_content else None
+        if edited_content == node_row["content"]:
+            edited_content = None
+        if edited_content == "":
+            edited_content = None
+
+        now = datetime.now(UTC)
+        payload = NodeContentEditedPayload(
+            node_id=node_id,
+            original_content=node_row["content"],
+            new_content=edited_content,
+        )
+        event = EventEnvelope(
+            event_id=str(uuid4()),
+            tree_id=tree_id,
+            timestamp=now,
+            device_id="local",
+            event_type="NodeContentEdited",
+            payload=payload.model_dump(),
+        )
+
+        await self._store.append(event)
+        await self._projector.project([event])
+
+        # Read back with sibling info
+        nodes = await self._projector.get_nodes(tree_id)
+        sibling_info = self._compute_sibling_info(nodes)
+        updated_row = next(n for n in nodes if n["node_id"] == node_id)
+        return self._node_from_row(updated_row, sibling_info=sibling_info)
+
+    async def get_edit_history(
+        self, tree_id: str, node_id: str,
+    ) -> EditHistoryResponse:
+        """Get the edit history for a node from the event log."""
+        tree = await self._projector.get_tree(tree_id)
+        if tree is None:
+            raise TreeNotFoundError(tree_id)
+
+        nodes = await self._projector.get_nodes(tree_id)
+        node_row = next((n for n in nodes if n["node_id"] == node_id), None)
+        if node_row is None:
+            raise NodeNotFoundError(node_id)
+
+        events = await self._store.get_events_by_type(tree_id, "NodeContentEdited")
+        entries = [
+            EditHistoryEntry(
+                event_id=ev.event_id,
+                sequence_num=ev.sequence_num,
+                timestamp=ev.timestamp.isoformat() if hasattr(ev.timestamp, 'isoformat') else str(ev.timestamp),
+                new_content=ev.payload["new_content"],
+            )
+            for ev in events
+            if ev.payload["node_id"] == node_id
+        ]
+
+        current_content = node_row.get("edited_content") or node_row["content"]
+
+        return EditHistoryResponse(
+            node_id=node_id,
+            original_content=node_row["content"],
+            current_content=current_content,
+            entries=entries,
+        )
+
     @staticmethod
     def _compute_sibling_info(
         node_rows: list[dict],
@@ -283,6 +369,7 @@ class TreeService:
             participant_id=row["participant_id"],
             participant_name=row["participant_name"],
             thinking_content=row.get("thinking_content"),
+            edited_content=row.get("edited_content"),
             created_at=row["created_at"],
             archived=row["archived"],
             sibling_index=si,
@@ -294,6 +381,12 @@ class TreeNotFoundError(Exception):
     def __init__(self, tree_id: str) -> None:
         self.tree_id = tree_id
         super().__init__(f"Tree not found: {tree_id}")
+
+
+class NodeNotFoundError(Exception):
+    def __init__(self, node_id: str) -> None:
+        self.node_id = node_id
+        super().__init__(f"Node not found: {node_id}")
 
 
 class InvalidParentError(Exception):

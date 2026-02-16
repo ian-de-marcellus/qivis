@@ -44,6 +44,17 @@ class EventStore:
         )
         return [self._row_to_envelope(row) for row in rows]
 
+    async def get_events_by_type(
+        self, tree_id: str, event_type: str,
+    ) -> list[EventEnvelope]:
+        """Get all events of a given type for a tree, ordered by sequence_num."""
+        rows = await self._db.fetchall(
+            "SELECT * FROM events WHERE tree_id = ? AND event_type = ? "
+            "ORDER BY sequence_num",
+            (tree_id, event_type),
+        )
+        return [self._row_to_envelope(row) for row in rows]
+
     async def get_events_since(self, sequence_num: int) -> list[EventEnvelope]:
         """Get all events across all trees after the given sequence_num."""
         rows = await self._db.fetchall(

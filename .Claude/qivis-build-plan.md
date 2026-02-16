@@ -200,22 +200,27 @@ No backend changes. 263 tests unchanged. Pure frontend.
 
 _Goal: See — and control — the gap between what happened and what the model knows._
 
-### 5.1 — Message Editing 🔒
+### 5.1 — Message Editing ✅
 
-Retroactive edits as research interventions.
+Retroactive edits as research interventions with palimpsest display and version correlation.
 
-**Tasks:**
-- `NodeContentEdited` event: stores node_id, original_content, new_content, timestamp
-- `PATCH /api/trees/{id}/nodes/{nid}/content` endpoint
-- Projector: node stores both `content` (original, always primary) and `edited_content` (current edit, null if unedited)
-- Context builder: uses `edited_content` when present, falls back to `content`
-- Frontend: edit button on any message, inline editor, save/cancel
-- **Original message always remains the primary display** in the conversation view; subtle "edited" indicator when an edit exists
-- For downstream messages: edit persists in context. "Restore" button reverts to original for future context. "Edit" button to change to something else. Both available per-node alongside the message.
-
-**Blockers:** Phase 4 complete.
-
-✅ Can edit any message. Original preserved and always primary in the conversation view. Model sees edited version. Edits restorable per-node.
+**What was built:**
+- `NodeContentEditedPayload` event type: `node_id`, `original_content`, `new_content` (null = restore)
+- Schema migration: `edited_content TEXT` column on nodes table
+- Projector handler: `NodeContentEdited` → UPDATE nodes SET edited_content
+- Context builder: single-line change — `node.get("edited_content") or node["content"]`
+- `PATCH /api/trees/{id}/nodes/{nid}/content` endpoint with normalization (empty → null, same-as-original → null)
+- `PatchNodeContentRequest` schema, `NodeNotFoundError` exception, `edit_node_content` service method
+- `EventStore.get_events_by_type(tree_id, event_type)` — filtered event query for edit history reconstruction
+- `GET /api/trees/{id}/nodes/{nid}/edit-history` endpoint: `EditHistoryResponse` with `original_content`, `current_content`, and ordered `EditHistoryEntry[]` (event_id, sequence_num, timestamp, new_content)
+- `get_edit_history` service method: queries event log, filters by node_id, returns complete edit timeline
+- Frontend: `editNodeContent` API client + Zustand action (in-place node update, no tree re-fetch)
+- MessageRow: Edit/Restore buttons (hover-reveal), inline textarea editor (Cmd+Enter save, Esc cancel), "(edited)" indicator in meta line
+- **Palimpsest display**: original content stays in primary reading position with normal styling (the truth); edit appears below as an "overlay block" with thin accent left-border, faint bg-secondary background, and "MODEL SEES" label — visually "placed here" like a correction slip on a manuscript
+- **EditHistory component**: collapsible panel (follows ThinkingSection pattern), lazy-loads history on first expand, renders all versions as clickable rows with version number, truncated preview, relative timestamp. Synthetic "Original" (v0) entry. Click to select → highlights downstream assistants
+- **Version correlation highlights**: `useMemo` in LinearView computes timestamp-based windows from edit history entries. When a version is selected, assistant messages generated during that version's window get `highlight-used` (accent left-border + muted background), others get `highlight-other` (dimmed opacity)
+- Store: `selectedEditVersion`, `editHistoryCache`, `setSelectedEditVersion`, `cacheEditHistory` actions. Cache invalidated on edit.
+- 29 tests (5 contract, 6 context builder, 8 API integration, 3 EventStore, 7 edit history). 292 total passing.
 
 ### 5.2 — "What the Model Saw" 🔒
 

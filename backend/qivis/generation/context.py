@@ -160,7 +160,7 @@ class ContextBuilder:
     @staticmethod
     def _maybe_prepend_timestamp(node: dict, include: bool) -> str:
         """Optionally prepend [YYYY-MM-DD HH:MM] to node content."""
-        content = node["content"]
+        content = node.get("edited_content") or node["content"]
         if not include:
             return content
         created_at = node.get("created_at")

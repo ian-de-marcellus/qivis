@@ -16,13 +16,20 @@ from qivis.providers.registry import ProviderNotFoundError, get_provider
 from qivis.trees.schemas import (
     CreateNodeRequest,
     CreateTreeRequest,
+    EditHistoryResponse,
     GenerateRequest,
     NodeResponse,
+    PatchNodeContentRequest,
     PatchTreeRequest,
     TreeDetailResponse,
     TreeSummary,
 )
-from qivis.trees.service import InvalidParentError, TreeNotFoundError, TreeService
+from qivis.trees.service import (
+    InvalidParentError,
+    NodeNotFoundError,
+    TreeNotFoundError,
+    TreeService,
+)
 
 router = APIRouter(prefix="/api/trees", tags=["trees"])
 
@@ -87,6 +94,35 @@ async def create_node(
         raise HTTPException(status_code=404, detail=f"Tree not found: {tree_id}")
     except InvalidParentError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.patch("/{tree_id}/nodes/{node_id}/content")
+async def edit_node_content(
+    tree_id: str,
+    node_id: str,
+    request: PatchNodeContentRequest,
+    service: TreeService = Depends(get_tree_service),
+) -> NodeResponse:
+    try:
+        return await service.edit_node_content(tree_id, node_id, request.edited_content)
+    except TreeNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Tree not found: {tree_id}")
+    except NodeNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Node not found: {node_id}")
+
+
+@router.get("/{tree_id}/nodes/{node_id}/edit-history")
+async def get_edit_history(
+    tree_id: str,
+    node_id: str,
+    service: TreeService = Depends(get_tree_service),
+) -> EditHistoryResponse:
+    try:
+        return await service.get_edit_history(tree_id, node_id)
+    except TreeNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Tree not found: {tree_id}")
+    except NodeNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Node not found: {node_id}")
 
 
 @router.post(

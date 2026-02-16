@@ -11,6 +11,7 @@ from collections.abc import Awaitable, Callable
 from qivis.db.connection import Database
 from qivis.models import (
     EventEnvelope,
+    NodeContentEditedPayload,
     NodeCreatedPayload,
     TreeCreatedPayload,
     TreeMetadataUpdatedPayload,
@@ -28,6 +29,7 @@ class StateProjector:
             "TreeCreated": self._handle_tree_created,
             "TreeMetadataUpdated": self._handle_tree_metadata_updated,
             "NodeCreated": self._handle_node_created,
+            "NodeContentEdited": self._handle_node_content_edited,
             "GenerationStarted": self._handle_generation_started,
         }
 
@@ -118,6 +120,14 @@ class StateProjector:
         await self._db.execute(
             f"UPDATE trees SET {payload.field} = ?, updated_at = ? WHERE tree_id = ?",
             (value, timestamp, event.tree_id),
+        )
+
+    async def _handle_node_content_edited(self, event: EventEnvelope) -> None:
+        """Project a NodeContentEdited event: set/clear edited_content on a node."""
+        payload = NodeContentEditedPayload.model_validate(event.payload)
+        await self._db.execute(
+            "UPDATE nodes SET edited_content = ? WHERE node_id = ?",
+            (payload.new_content, payload.node_id),
         )
 
     async def _handle_generation_started(self, event: EventEnvelope) -> None:
