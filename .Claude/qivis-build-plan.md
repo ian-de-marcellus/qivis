@@ -161,22 +161,21 @@ Honest annotation of which dials actually work on which provider.
 
 _Goal: See the tree as a tree. Compare branches side by side._
 
-### 4.1 — Graph View 🔒
+### 4.1 — Graph View ✅
 
 The tree topology made visible.
 
-**Tasks:**
-- Tree layout algorithm (d3-hierarchy or custom) for positioning nodes
-- SVG or canvas rendering with zoom/pan
-- Node display: truncated content preview, role indicator, model badge
-- Click-to-navigate: clicking a node in graph view navigates the linear view to that path
-- Branch highlighting: active path visually distinct, hover highlights full branch
-- Visual density indicators: where did the researcher branch most? Dead ends vs. active branches
-- Toggle between linear view and graph view (or side-by-side split)
+**What was built:**
+- **Custom tree layout algorithm** (`treeLayout.ts`): simplified Reingold-Tilford — bottom-up subtree width computation, top-down x assignment. No external dependencies. Handles asymmetric trees, multiple roots, any depth. ~110 lines.
+- **Custom zoom/pan hook** (`useZoomPan.ts`): pointer events for drag-to-pan, wheel for cursor-centered zoom (0.15x to 3x), `fitToContent()` for auto-fitting tree to viewport. ~100 lines.
+- **SVG rendering** (`GraphView.tsx`): layered rendering — bezier curve edges, role-colored node circles, fork rings for branching points, single-letter role labels. Active path highlighted in warm sienna, off-path nodes ghosted at 30% opacity. Hover highlights the full path from root to hovered node.
+- **Split pane layout**: linear view on left, graph on right. Draggable divider with 200px minimum, 60% maximum. Subtle dot-grid background on graph pane evoking scientific precision. Stats badge (node count, fork count) in bottom-right corner.
+- **Click-to-navigate**: `navigateToNode(nodeId)` store action walks backward from target to root, builds complete `branchSelections` map, sets it in one call. LinearView and GraphView both react instantly. Replaces (not merges) selections — clicking is a full path commitment.
+- **Toggle button**: 28x28 branching-tree SVG icon in TreeSettings bar, same visual vocabulary as the gear icon. Active state with accent highlight when graph is open.
+- **Tooltip**: hover reveals content preview (~120 chars), role label, model name. Paper-colored overlay with editorial typography.
+- **Design**: scientific-diagram aesthetic within the existing editorial palette. Dot-grid background, organic bezier edges, warm glow on active path, ghostly off-path branches. Consistent with light/dark theme.
 
-**Blockers:** Phase 3 complete (want the reading experience solid before adding a new view mode).
-
-✅ Can see the full tree topology. Click any node to navigate there. Visual structure reveals patterns of exploration.
+No backend changes. 263 tests unchanged. Pure frontend.
 
 ### 4.2 — Side-by-Side Comparison 🔀
 

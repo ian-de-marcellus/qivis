@@ -4,7 +4,12 @@ import { useTreeStore } from '../../store/treeStore.ts'
 import { SAMPLING_PRESETS, detectPreset, type PresetName } from './samplingPresets.ts'
 import './TreeSettings.css'
 
-export function TreeSettings() {
+interface TreeSettingsProps {
+  graphOpen?: boolean
+  onToggleGraph?: () => void
+}
+
+export function TreeSettings({ graphOpen, onToggleGraph }: TreeSettingsProps) {
   const { currentTree, updateTree, providers, fetchProviders } = useTreeStore()
   const [isOpen, setIsOpen] = useState(false)
   const [isEditingTitle, setIsEditingTitle] = useState(false)
@@ -173,6 +178,22 @@ export function TreeSettings() {
           >
             {currentTree.title || 'Untitled'}
           </span>
+        )}
+        {onToggleGraph && (
+          <button
+            className={`graph-toggle ${graphOpen ? 'active' : ''}`}
+            onClick={onToggleGraph}
+            aria-label={graphOpen ? 'Hide graph view' : 'Show graph view'}
+            title={graphOpen ? 'Hide graph' : 'Show graph'}
+          >
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+              <circle cx="10" cy="4" r="2" />
+              <circle cx="5" cy="14" r="2" />
+              <circle cx="15" cy="14" r="2" />
+              <line x1="10" y1="6" x2="5" y2="12" />
+              <line x1="10" y1="6" x2="15" y2="12" />
+            </svg>
+          </button>
         )}
         <button
           className={`tree-settings-gear ${isOpen ? 'active' : ''}`}

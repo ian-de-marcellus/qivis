@@ -74,6 +74,39 @@
   height: 16px;
 }
 
+/* ---- Graph toggle button ---- */
+
+.graph-toggle {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.graph-toggle:hover {
+  color: var(--text-secondary);
+  border-color: var(--border);
+}
+
+.graph-toggle.active {
+  color: var(--text-accent);
+  border-color: var(--accent);
+  background: var(--accent-muted);
+}
+
+.graph-toggle svg {
+  width: 16px;
+  height: 16px;
+}
+
 /* ---- Expandable settings panel ---- */
 
 .tree-settings-panel {

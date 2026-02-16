@@ -57,6 +57,7 @@ interface TreeStore {
   clearGenerationError: () => void
   setActiveStreamIndex: (index: number) => void
   selectBranch: (parentId: string, childId: string) => void
+  navigateToNode: (nodeId: string) => void
   forkAndGenerate: (
     parentId: string,
     content: string,
@@ -338,6 +339,20 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
     set((state) => ({
       branchSelections: { ...state.branchSelections, [parentId]: childId },
     }))
+  },
+
+  navigateToNode: (nodeId: string) => {
+    const { currentTree } = get()
+    if (!currentTree) return
+    const nodeMap = new Map(currentTree.nodes.map((n) => [n.node_id, n]))
+    const selections: Record<string, string> = {}
+    let current = nodeMap.get(nodeId)
+    while (current) {
+      const parentKey = current.parent_id ?? ''
+      selections[parentKey] = current.node_id
+      current = current.parent_id ? nodeMap.get(current.parent_id) : undefined
+    }
+    set({ branchSelections: selections })
   },
 
   forkAndGenerate: async (parentId: string, content: string, overrides: GenerateRequest) => {

@@ -93,3 +93,67 @@
   transform: rotate(-30deg) translateY(-2px);
   width: 60%;
 }
+
+/* ---- Split layout: linear + graph panes ---- */
+
+.split-layout {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+.linear-pane {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.graph-pane {
+  width: 35%;
+  flex-shrink: 0;
+  overflow: hidden;
+  border-left: 1px solid var(--border-subtle);
+  display: flex;
+}
+
+.split-divider {
+  width: 5px;
+  flex-shrink: 0;
+  cursor: col-resize;
+  background: transparent;
+  transition: background 0.15s ease;
+  position: relative;
+}
+
+.split-divider::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 3px;
+  height: 32px;
+  border-radius: 2px;
+  background: var(--border);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.split-divider:hover::after {
+  opacity: 1;
+}
+
+.split-divider:hover {
+  background: var(--accent-muted);
+}
+
+.split-divider:active {
+  background: var(--accent-muted);
+}
+
+.split-divider:active::after {
+  opacity: 1;
+  background: var(--accent);
+}

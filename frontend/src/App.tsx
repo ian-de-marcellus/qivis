@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { GraphView } from './components/GraphView/GraphView.tsx'
 import { TreeList } from './components/Library/TreeList.tsx'
 import { LinearView } from './components/TreeView/LinearView.tsx'
 import { MessageInput } from './components/TreeView/MessageInput.tsx'
@@ -35,6 +36,38 @@ function App() {
   const { fetchTrees, currentTree, error, clearError } = useTreeStore()
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [theme, setTheme] = useState<ThemeMode>(getInitialTheme)
+  const [graphOpen, setGraphOpen] = useState(false)
+  const [graphPaneWidth, setGraphPaneWidth] = useState(0) // 0 = use default %
+  const isResizing = useRef(false)
+  const mainRef = useRef<HTMLElement>(null)
+
+  const startResize = useCallback((e: React.PointerEvent) => {
+    e.preventDefault()
+    isResizing.current = true
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+
+    const onMove = (me: PointerEvent) => {
+      if (!isResizing.current || !mainRef.current) return
+      const mainRect = mainRef.current.getBoundingClientRect()
+      // Graph is on the right — width = distance from right edge of main to cursor
+      const width = mainRect.right - me.clientX
+      const minW = 200
+      const maxW = mainRect.width * 0.6
+      setGraphPaneWidth(Math.min(maxW, Math.max(minW, width)))
+    }
+
+    const onUp = () => {
+      isResizing.current = false
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+      document.removeEventListener('pointermove', onMove)
+      document.removeEventListener('pointerup', onUp)
+    }
+
+    document.addEventListener('pointermove', onMove)
+    document.addEventListener('pointerup', onUp)
+  }, [])
 
   // Apply theme on mount and changes
   useEffect(() => {
@@ -74,7 +107,7 @@ function App() {
         </div>
       </aside>
 
-      <main className="main">
+      <main className="main" ref={mainRef}>
         {error && (
           <div className="error-banner">
             <span>{error}</span>
@@ -83,12 +116,39 @@ function App() {
         )}
 
         {currentTree ? (
-          <>
-            <TreeSettings />
-            <SystemPromptInput />
-            <LinearView />
-            <MessageInput />
-          </>
+          graphOpen ? (
+            <div className="split-layout">
+              <div className="linear-pane">
+                <TreeSettings
+                  graphOpen={graphOpen}
+                  onToggleGraph={() => setGraphOpen(false)}
+                />
+                <SystemPromptInput />
+                <LinearView />
+                <MessageInput />
+              </div>
+              <div
+                className="split-divider"
+                onPointerDown={startResize}
+              />
+              <div
+                className="graph-pane"
+                style={graphPaneWidth > 0 ? { width: graphPaneWidth } : undefined}
+              >
+                <GraphView />
+              </div>
+            </div>
+          ) : (
+            <>
+              <TreeSettings
+                graphOpen={graphOpen}
+                onToggleGraph={() => setGraphOpen(true)}
+              />
+              <SystemPromptInput />
+              <LinearView />
+              <MessageInput />
+            </>
+          )
         ) : (
           <div className="empty-state">
             <h1>Qivis</h1>

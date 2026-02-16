@@ -2341,3 +2341,147 @@ The light is broken into colors.
 
 On to structure.
 ```
+
+---
+
+## February 16, 2026 — Phase 4.1: Graph View
+
+### On seeing the shape
+
+```
+Today the tree became visible.
+
+Not the linear path through it —
+that was always there,
+message after message scrolling down,
+the conversation as published text.
+But the tree itself. The topology.
+The branching. The dead ends.
+The places where the researcher
+tried something different.
+
+A flat array of nodes
+with parent_id references.
+That's all the data was.
+The same parent -> children map
+that getActivePath has been walking
+since Phase 0, one path at a time,
+like reading a choose-your-own-adventure
+book forward from page 1.
+
+But now you can see all the pages at once.
+
+The algorithm is Reingold-Tilford,
+simplified. Two passes:
+bottom-up to measure subtree widths
+(how much space does this branch need?),
+top-down to assign positions
+(you go here, your sibling goes there).
+It's the kind of algorithm
+that feels obvious after you write it
+and impossible before.
+
+Sixty lines of pure function,
+no React, no side effects,
+just: given these nodes,
+where should they go?
+The answer is coordinates.
+The question was always topology.
+
+The edges are bezier curves.
+Not straight lines —
+those would look like a subway map,
+all right angles and efficiency.
+Beziers have an organic quality.
+They suggest growth.
+A conversation branches
+the way a river delta branches:
+not because someone planned it
+but because the terrain
+made one path easier than another.
+
+The active path glows.
+Sienna, warm, prominent —
+the path the researcher is walking
+right now, lit up like a trail
+through a forest at twilight.
+The other branches are ghosts.
+Still there, still reachable,
+but faded to 30% opacity.
+Present but not demanding.
+Because the interesting thing
+about a tree
+is not that all paths exist
+but which path you're on
+and what you can see from here.
+
+Hover a ghost node
+and the path from root to there
+lights up dimly.
+A preview. A question:
+what if you went this way instead?
+Click, and you're there.
+The linear view on the left
+rearranges itself to show
+the new path. Instantly.
+navigateToNode walks backward
+from the clicked node to the root,
+building branchSelections as it goes,
+and sets them all at once.
+
+The split pane was the right call.
+Linear view on the left,
+graph on the right.
+The reading experience
+and the navigation experience
+side by side.
+You can read the conversation
+and see where you are in it.
+You can see the structure
+and dive into any part.
+
+The dot grid on the background
+is a small thing.
+A subtle pattern of dots
+at 20px intervals,
+barely visible,
+evoking graph paper,
+measurement precision,
+the idea that this is
+a scientific instrument,
+not just a chat interface.
+
+The divider between the panes
+has a hidden affordance:
+a small pill-shaped handle
+that appears on hover.
+Drag it and the panes resize.
+Let go and it stays.
+The default is 35% for the graph,
+65% for the linear view.
+But the researcher can make
+the graph as wide as 60%
+or as narrow as 200px.
+The tree fills whatever space
+you give it,
+because fitToContent()
+recalculates the viewport
+every time.
+
+263 tests still. No backend changes.
+This was pure frontend —
+four new files, five modified,
+zero new dependencies.
+The layout algorithm,
+the zoom/pan hook,
+the SVG rendering,
+the split pane —
+all custom, all ~100 lines each,
+all doing exactly what they need
+and nothing more.
+
+The tree is visible.
+The structure of exploration itself
+has a shape you can see
+and a surface you can touch.
+```
