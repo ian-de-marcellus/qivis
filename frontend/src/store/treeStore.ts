@@ -11,6 +11,14 @@ import type {
   TreeSummary,
 } from '../api/types.ts'
 
+interface GenerationError {
+  parentNodeId: string
+  provider: string
+  model: string | null
+  systemPrompt: string | null
+  errorMessage: string
+}
+
 interface TreeStore {
   // State
   trees: TreeSummary[]
@@ -23,6 +31,7 @@ interface TreeStore {
   regeneratingParentId: string | null
   systemPromptOverride: string | null
   error: string | null
+  generationError: GenerationError | null
   branchSelections: Record<string, string>
 
   // Actions
@@ -38,6 +47,7 @@ interface TreeStore {
   sendMessage: (content: string) => Promise<void>
   setSystemPromptOverride: (prompt: string | null) => void
   clearError: () => void
+  clearGenerationError: () => void
   selectBranch: (parentId: string, childId: string) => void
   forkAndGenerate: (
     parentId: string,
@@ -103,6 +113,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
   regeneratingParentId: null,
   systemPromptOverride: null,
   error: null,
+  generationError: null,
   branchSelections: {},
 
   fetchTrees: async () => {
@@ -191,7 +202,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
     if (!currentTree) return
 
     const treeId = currentTree.tree_id
-    set({ error: null })
+    set({ error: null, generationError: null })
 
     try {
       // Find the leaf node of the active path
@@ -216,8 +227,14 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
       // Start streaming generation
       set({ isGenerating: true, streamingContent: '' })
 
+      // Branch-local defaults: prefer last assistant's provider/model over tree defaults
+      const lastAssistant = [...activePath].reverse().find((n) => n.role === 'assistant')
+      const resolvedProvider = lastAssistant?.provider ?? currentTree.default_provider
+      const resolvedModel = lastAssistant?.model ?? currentTree.default_model
+
       const generateReq = {
-        ...(currentTree.default_provider ? { provider: currentTree.default_provider } : {}),
+        ...(resolvedProvider ? { provider: resolvedProvider } : {}),
+        ...(resolvedModel ? { model: resolvedModel } : {}),
         ...(systemPromptOverride != null ? { system_prompt: systemPromptOverride } : {}),
       }
 
@@ -238,7 +255,18 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
           })
         },
         (error) => {
-          set({ isGenerating: false, streamingContent: '', error: String(error) })
+          set({
+            isGenerating: false,
+            streamingContent: '',
+            error: String(error),
+            generationError: {
+              parentNodeId: userNode.node_id,
+              provider: resolvedProvider ?? 'anthropic',
+              model: resolvedModel ?? null,
+              systemPrompt: systemPromptOverride ?? null,
+              errorMessage: String(error),
+            },
+          })
         },
       )
     } catch (e) {
@@ -251,6 +279,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
   },
 
   clearError: () => set({ error: null }),
+  clearGenerationError: () => set({ generationError: null }),
 
   selectBranch: (parentId: string, childId: string) => {
     set((state) => ({
@@ -263,7 +292,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
     if (!currentTree) return
 
     const treeId = currentTree.tree_id
-    set({ error: null })
+    set({ error: null, generationError: null })
 
     try {
       // Create user node as new child of parentId (sibling of existing children)
@@ -284,29 +313,49 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
         },
       }))
 
-      // Start streaming generation
       set({ isGenerating: true, streamingContent: '' })
 
-      await api.generateStream(
-        treeId,
-        userNode.node_id,
-        { ...overrides, stream: true },
-        (text) => {
-          set((state) => ({ streamingContent: state.streamingContent + text }))
-        },
-        () => {
-          set({ isGenerating: false, streamingContent: '' })
-          api.getTree(treeId).then((tree) => {
-            set({ currentTree: tree })
-          })
-          api.listTrees().then((trees) => {
-            set({ trees })
-          })
-        },
-        (error) => {
-          set({ isGenerating: false, streamingContent: '', error: String(error) })
-        },
-      )
+      if (overrides.n && overrides.n > 1) {
+        // n>1: use non-streaming, then refresh tree to see all siblings
+        await api.generate(treeId, userNode.node_id, overrides)
+        set({ isGenerating: false })
+        const tree = await api.getTree(treeId)
+        set({ currentTree: tree })
+        const trees = await api.listTrees()
+        set({ trees })
+      } else {
+        await api.generateStream(
+          treeId,
+          userNode.node_id,
+          { ...overrides, stream: true },
+          (text) => {
+            set((state) => ({ streamingContent: state.streamingContent + text }))
+          },
+          () => {
+            set({ isGenerating: false, streamingContent: '' })
+            api.getTree(treeId).then((tree) => {
+              set({ currentTree: tree })
+            })
+            api.listTrees().then((trees) => {
+              set({ trees })
+            })
+          },
+          (error) => {
+            set({
+              isGenerating: false,
+              streamingContent: '',
+              error: String(error),
+              generationError: {
+                parentNodeId: userNode.node_id,
+                provider: overrides.provider ?? 'anthropic',
+                model: overrides.model ?? null,
+                systemPrompt: overrides.system_prompt ?? null,
+                errorMessage: String(error),
+              },
+            })
+          },
+        )
+      }
     } catch (e) {
       set({ isGenerating: false, streamingContent: '', error: String(e) })
     }
@@ -317,42 +366,79 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
     if (!currentTree) return
 
     const treeId = currentTree.tree_id
-    set({ error: null, isGenerating: true, streamingContent: '', regeneratingParentId: parentNodeId })
+    set({
+      error: null, generationError: null,
+      isGenerating: true, streamingContent: '', regeneratingParentId: parentNodeId,
+    })
 
     try {
-      await api.generateStream(
-        treeId,
-        parentNodeId,
-        { ...overrides, stream: true },
-        (text) => {
-          set((state) => ({ streamingContent: state.streamingContent + text }))
-        },
-        () => {
-          set({ isGenerating: false, streamingContent: '', regeneratingParentId: null })
-          api.getTree(treeId).then((tree) => {
-            // Select the new assistant sibling (last child of the parent)
-            const newChildren = tree.nodes.filter((n) => n.parent_id === parentNodeId)
-            const newest = newChildren[newChildren.length - 1]
-            if (newest) {
-              set((state) => ({
-                currentTree: tree,
-                branchSelections: {
-                  ...state.branchSelections,
-                  [parentNodeId]: newest.node_id,
-                },
-              }))
-            } else {
-              set({ currentTree: tree })
-            }
-          })
-          api.listTrees().then((trees) => {
-            set({ trees })
-          })
-        },
-        (error) => {
-          set({ isGenerating: false, streamingContent: '', regeneratingParentId: null, error: String(error) })
-        },
-      )
+      if (overrides.n && overrides.n > 1) {
+        // n>1: use non-streaming, then refresh tree to see all siblings
+        await api.generate(treeId, parentNodeId, overrides)
+        set({ isGenerating: false, regeneratingParentId: null })
+        const tree = await api.getTree(treeId)
+        const newChildren = tree.nodes.filter((n) => n.parent_id === parentNodeId)
+        const newest = newChildren[newChildren.length - 1]
+        if (newest) {
+          set((state) => ({
+            currentTree: tree,
+            branchSelections: {
+              ...state.branchSelections,
+              [parentNodeId]: newest.node_id,
+            },
+          }))
+        } else {
+          set({ currentTree: tree })
+        }
+        const trees = await api.listTrees()
+        set({ trees })
+      } else {
+        await api.generateStream(
+          treeId,
+          parentNodeId,
+          { ...overrides, stream: true },
+          (text) => {
+            set((state) => ({ streamingContent: state.streamingContent + text }))
+          },
+          () => {
+            set({ isGenerating: false, streamingContent: '', regeneratingParentId: null })
+            api.getTree(treeId).then((tree) => {
+              // Select the new assistant sibling (last child of the parent)
+              const newChildren = tree.nodes.filter((n) => n.parent_id === parentNodeId)
+              const newest = newChildren[newChildren.length - 1]
+              if (newest) {
+                set((state) => ({
+                  currentTree: tree,
+                  branchSelections: {
+                    ...state.branchSelections,
+                    [parentNodeId]: newest.node_id,
+                  },
+                }))
+              } else {
+                set({ currentTree: tree })
+              }
+            })
+            api.listTrees().then((trees) => {
+              set({ trees })
+            })
+          },
+          (error) => {
+            set({
+              isGenerating: false,
+              streamingContent: '',
+              regeneratingParentId: null,
+              error: String(error),
+              generationError: {
+                parentNodeId,
+                provider: overrides.provider ?? 'anthropic',
+                model: overrides.model ?? null,
+                systemPrompt: overrides.system_prompt ?? null,
+                errorMessage: String(error),
+              },
+            })
+          },
+        )
+      }
     } catch (e) {
       set({ isGenerating: false, streamingContent: '', regeneratingParentId: null, error: String(e) })
     }

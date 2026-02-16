@@ -105,6 +105,13 @@ async def generate(
     except ProviderNotFoundError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+    if request.stream and request.n > 1:
+        raise HTTPException(
+            status_code=400,
+            detail="Streaming not supported with n > 1."
+            " Simultaneous streaming is a planned enhancement.",
+        )
+
     if request.stream:
         return StreamingResponse(
             _stream_sse(gen_service, tree_id, node_id, provider, request),
@@ -113,6 +120,18 @@ async def generate(
         )
 
     try:
+        if request.n > 1:
+            nodes = await gen_service.generate_n(
+                tree_id,
+                node_id,
+                provider,
+                n=request.n,
+                model=request.model,
+                system_prompt=request.system_prompt,
+                sampling_params=request.sampling_params,
+            )
+            return nodes[0]
+
         return await gen_service.generate(
             tree_id,
             node_id,

@@ -17,10 +17,12 @@ export function LinearView() {
     isGenerating,
     streamingContent,
     regeneratingParentId,
+    generationError,
     branchSelections,
     selectBranch,
     forkAndGenerate,
     regenerate,
+    clearGenerationError,
     fetchProviders,
   } = useTreeStore()
 
@@ -58,6 +60,16 @@ export function LinearView() {
   }, [path.length, streamingContent])
 
   if (!currentTree) return null
+
+  const leafNodeId = path.length > 0 ? path[path.length - 1].node_id : null
+
+  // Branch-local defaults: use last assistant node's provider/model from active path
+  const lastAssistant = [...path].reverse().find((n) => n.role === 'assistant')
+  const branchDefaults = {
+    provider: lastAssistant?.provider ?? currentTree.default_provider,
+    model: lastAssistant?.model ?? currentTree.default_model,
+    systemPrompt: currentTree.default_system_prompt,
+  }
 
   const handleSelectSibling = (parentId: string, siblingId: string) => {
     selectBranch(parentId, siblingId)
@@ -111,11 +123,7 @@ export function LinearView() {
                   onCancel={() => setForkTarget(null)}
                   isGenerating={isGenerating}
                   providers={providers}
-                  defaults={{
-                    provider: currentTree.default_provider,
-                    model: currentTree.default_model,
-                    systemPrompt: currentTree.default_system_prompt,
-                  }}
+                  defaults={branchDefaults}
                 />
               )}
             </Fragment>
@@ -136,6 +144,39 @@ export function LinearView() {
           <div className="message-row assistant">
             <div className="message-role">assistant</div>
             <div className="message-content thinking">Thinking...</div>
+          </div>
+        )}
+
+        {!isGenerating && generationError && leafNodeId === generationError.parentNodeId && (
+          <div className="generation-error-panel">
+            <div className="generation-error-header">Generation failed</div>
+            <div className="generation-error-message">{generationError.errorMessage}</div>
+            <div className="generation-error-actions">
+              <button
+                className="generation-error-retry"
+                onClick={() => {
+                  regenerate(generationError.parentNodeId, {
+                    provider: generationError.provider,
+                    model: generationError.model ?? undefined,
+                    system_prompt: generationError.systemPrompt ?? undefined,
+                  })
+                }}
+              >
+                Retry
+              </button>
+              <button
+                className="generation-error-settings"
+                onClick={() => {
+                  clearGenerationError()
+                  setForkTarget({ parentId: generationError.parentNodeId, mode: 'regenerate' })
+                }}
+              >
+                Change settings
+              </button>
+              <button className="generation-error-dismiss" onClick={clearGenerationError}>
+                Dismiss
+              </button>
+            </div>
           </div>
         )}
 

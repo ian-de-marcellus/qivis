@@ -55,33 +55,34 @@ _Goal: Make the existing tool properly usable._
 
 The gaps identified during Phase 1 manual testing. Small phase, focused on filling holes before building new features.
 
-### 2.1 — Tree Settings 🔒
+### 2.1 — Tree Settings ✅
 
-Allow editing a tree's defaults after creation.
+Allow editing a tree's defaults after creation. `PATCH /api/trees/{id}` with `TreeMetadataUpdated` events (one per changed field, preserving old/new values). Projector handler with field allowlist. Settings panel UI: inline-editable title, gear icon expands provider/model/system prompt form. Provider/model selection on tree creation. 20 tests. 184 tests at completion.
 
-**Tasks:**
-- `PATCH /api/trees/{id}` endpoint accepting partial updates (default_provider, default_model, default_system_prompt, default_sampling_params, title)
-- `TreeMetadataUpdated` events for each changed field (preserving old/new values)
-- Projector handler for `TreeMetadataUpdated`
-- Settings panel UI — accessible from tree header or sidebar, edits default provider/model/system prompt
-- Wire provider dropdown + model datalist (reuse from ForkPanel) into settings panel
-
-**Blockers:** Phase 1 complete.
-
-✅ Can change a tree's default provider, model, and system prompt after creation. Changes reflected in subsequent generations.
-
-### 2.2 — Generation UX 🔒
+### 2.2 — Generation UX ✅
 
 Error recovery, smarter defaults, batch generation.
 
+- **Error recovery**: `generationError` store state preserves failed attempt params (provider, model, system prompt, parent node ID, error message). Inline error panel at path leaf with Retry / Change settings / Dismiss. Retry uses saved params. Change settings opens ForkPanel in regenerate mode.
+- **Branch-local model default**: Walk active path backwards to find last assistant node's provider/model. Use as defaults for `sendMessage`, ForkPanel, and regenerate. Falls back to tree defaults.
+- **n>1 generation**: `n: int = Field(default=1, ge=1, le=10)` on `GenerateRequest`. `generate_n()` service method uses `asyncio.gather` for parallel generation. All N results share same `generation_id`. Router returns first node. Frontend: count input in ForkPanel settings, n>1 forces non-streaming. Streaming + n>1 rejected with 400.
+
+12 new tests. 196 tests at completion.
+
+### 2.2b — Simultaneous Streaming n>1 🔀
+
+Stream all N responses simultaneously with live branch navigation.
+
 **Tasks:**
-- **Error recovery**: When generation fails, preserve the failed attempt as a UI state with: error message text, retry button, ability to change provider/model/params before retry. Currently errors vanish into a toast.
-- **Branch-local model default**: Walk the active path to find the last assistant node's provider/model. Use those as defaults for the next generation and in ForkPanel, falling back to tree defaults. Researcher switches to GPT-4o mid-branch, subsequent messages keep using it.
-- **n>1 generation**: Backend `n` parameter on generate endpoint, fan-out to create multiple sibling `NodeCreated` events. Frontend UI to request N completions. Sibling navigator already handles display. Originally scoped for Phase 1.3.
+- Extend SSE protocol with `completion_index` on text_delta and message_stop events
+- Backend: N concurrent `provider.generate_stream()` calls merged into single tagged SSE stream
+- New `generation_complete` SSE event when all N streams finish
+- Frontend: per-completion streaming buffers (`streamingContents: Map<number, string>`), branch indicator visible during generation
+- Handle partial failures (some streams error while others succeed)
 
-**Blockers:** 2.1 (tree settings must work for defaults to make sense).
+**Blockers:** 2.2 (core n>1 event model must exist).
 
-✅ Failed generations show error with retry. Branch defaults follow the most recent model. Can generate 3+ responses from the same point in one action.
+✅ All N responses stream in simultaneously. Branch navigator active during generation.
 
 ### 2.3 — Small Polish 🔀
 

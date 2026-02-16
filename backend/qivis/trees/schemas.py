@@ -41,6 +41,7 @@ class GenerateRequest(BaseModel):
     system_prompt: str | None = None
     sampling_params: SamplingParams | None = None
     stream: bool = False
+    n: int = Field(default=1, ge=1, le=10)
 
 
 # -- Responses --

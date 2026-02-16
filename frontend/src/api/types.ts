@@ -92,6 +92,7 @@ export interface GenerateRequest {
   system_prompt?: string
   sampling_params?: Record<string, unknown>
   stream?: boolean
+  n?: number
 }
 
 // -- SSE events --

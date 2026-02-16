@@ -40,6 +40,7 @@ export function ForkPanel({
   const suggestedModels = selectedProvider?.models ?? []
   const [systemPrompt, setSystemPrompt] = useState(defaults.systemPrompt ?? '')
   const [temperature, setTemperature] = useState('')
+  const [count, setCount] = useState('1')
 
   const canSubmit =
     mode === 'regenerate'
@@ -49,11 +50,15 @@ export function ForkPanel({
   const handleSubmit = () => {
     if (!canSubmit) return
 
+    const parsedCount = parseInt(count, 10)
+    const n = parsedCount > 1 ? parsedCount : undefined
+
     const overrides: GenerateRequest = {
       provider: provider || undefined,
       model: model || undefined,
       system_prompt: systemPrompt || undefined,
       sampling_params: temperature ? { temperature: parseFloat(temperature) } : undefined,
+      n,
     }
 
     if (mode === 'regenerate') {
@@ -165,6 +170,17 @@ export function ForkPanel({
                 value={temperature}
                 onChange={(e) => setTemperature(e.target.value)}
                 placeholder="default"
+              />
+            </div>
+            <div className="fork-setting-row">
+              <label>Count</label>
+              <input
+                type="number"
+                min="1"
+                max="10"
+                value={count}
+                onChange={(e) => setCount(e.target.value)}
+                placeholder="1"
               />
             </div>
           </div>

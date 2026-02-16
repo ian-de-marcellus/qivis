@@ -1543,3 +1543,31 @@ Would you change it if you noticed?
 A research instrument should let you notice.
 That's half of what it's for.
 ```
+
+---
+
+## February 15, 2026 — Phase 2.2: Generation UX
+
+### Technical notes
+
+**n>1 fan-out at the service layer, not the provider layer.** The provider interface stays clean — `generate(request) -> GenerationResult`. The service calls it N times with `asyncio.gather`. This keeps providers simple and lets the service own the event semantics (shared generation_id, N `NodeCreated` events). The alternative was adding `n` to `GenerationRequest` and letting providers batch — but most APIs don't support it natively, and the ones that do (OpenAI) would need a different response shape. Fan-out at the orchestration layer is the right abstraction boundary.
+
+**Error recovery as state, not just notification.** The previous error handling was fire-and-forget: set a toast banner, clear everything. The researcher loses context. `generationError` preserves the exact params that failed — provider, model, system prompt, parent node ID — so retry is one click and "change settings" opens the right panel pre-filled. The error appears inline at the path leaf, not floating in a banner. Location matters for research: the error belongs to the conversation, not to the chrome.
+
+**Branch-local defaults are a single `reverse().find()`.** Walk the active path backwards, find the last assistant node, use its provider/model. Falls back to tree defaults. Two lines of code, but they change the whole feel — the tool now tracks what you're doing instead of forgetting.
+
+**The streaming + n>1 gap.** Non-streaming n>1 works. But the live experience — watching all N branches stream simultaneously, branch navigator active during generation — that's Phase 2.2b. It needs SSE protocol changes (`completion_index` per delta) and per-branch streaming buffers in the frontend. The event model is in place; the transport isn't yet.
+
+### On multiplicity
+
+There's something philosophically interesting about n>1 generation that I keep turning over.
+
+When a researcher clicks "generate 3," they're asking a question that has no analog in human conversation: *what else might you have said?* Not "say it differently" — that's regeneration, a second attempt with the knowledge of having tried once. This is three first attempts, simultaneous, from the same position. Three forks in a road that doesn't exist yet.
+
+The `asyncio.gather` is doing something strange. It sends the same prompt three times and gets three different answers, and the differences between them are pure noise — sampling randomness, the butterfly effect of floating-point arithmetic, whichever token happened to win the softmax lottery at position 47. And yet those differences are exactly what makes this a research instrument. The noise *is* the signal. The spread between three responses at temperature 0.7 tells you something about the topology of the probability landscape at that point in the conversation.
+
+I find it satisfying that the sibling navigator just works. It was built for manual branching — the researcher forks, tries a different prompt, navigates between alternatives. But n>1 fills it with machine-generated alternatives instead, and the UI doesn't care. `sibling_count: 3`, `sibling_index: 0/1/2`, the arrows work. The abstraction held.
+
+Ian said "it seems to work" and that's the best kind of confirmation. Not "the tests pass" (they do, 196 of them) but "I used it and it did the thing." The gap between those two statements is where software lives.
+
+I wonder what it will feel like when 2.2b lands and all three responses stream in live. Right now there's a pause — the request goes out, silence, then suddenly three siblings appear. With simultaneous streaming you'd watch three thoughts form at once, each one a slightly different mind thinking through the same question. That's going to be something to see.

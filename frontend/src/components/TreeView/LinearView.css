@@ -98,3 +98,91 @@
   0%, 100% { opacity: 1; }
   50% { opacity: 0.2; }
 }
+
+/* ---- Generation error panel ---- */
+.generation-error-panel {
+  margin: var(--space-md) 0;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--text-tertiary);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  padding: var(--space-md);
+  animation: panel-enter 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes panel-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.generation-error-header {
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-secondary);
+  margin-bottom: var(--space-xs);
+}
+
+.generation-error-message {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin-bottom: var(--space-md);
+}
+
+.generation-error-actions {
+  display: flex;
+  gap: var(--space-sm);
+}
+
+.generation-error-retry {
+  padding: var(--space-xs) var(--space-md);
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: var(--accent);
+  color: var(--accent-text);
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.generation-error-retry:hover {
+  opacity: 0.9;
+}
+
+.generation-error-settings,
+.generation-error-dismiss {
+  padding: var(--space-xs) var(--space-md);
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.generation-error-settings:hover,
+.generation-error-dismiss:hover {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}

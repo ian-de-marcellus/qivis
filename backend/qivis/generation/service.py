@@ -1,5 +1,6 @@
 """Generation service: orchestrates LLM calls and event emission."""
 
+import asyncio
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from uuid import uuid4
@@ -74,6 +75,54 @@ class GenerationService:
             provider.name, resolved_prompt, resolved_params,
             context_usage=context_usage,
         )
+
+    async def generate_n(
+        self,
+        tree_id: str,
+        node_id: str,
+        provider: LLMProvider,
+        *,
+        n: int,
+        model: str | None = None,
+        system_prompt: str | None = None,
+        sampling_params: SamplingParams | None = None,
+    ) -> list[NodeResponse]:
+        """Generate N responses in parallel and store as sibling nodes."""
+        tree, nodes, resolved_model, resolved_prompt, resolved_params = (
+            await self._resolve_context(tree_id, node_id, model, system_prompt, sampling_params)
+        )
+        context_limit = get_model_context_limit(resolved_model)
+        messages, context_usage, _eviction_report = self._context_builder.build(
+            nodes=nodes,
+            target_node_id=node_id,
+            system_prompt=resolved_prompt,
+            model_context_limit=context_limit,
+        )
+        generation_id = str(uuid4())
+
+        await self._emit_generation_started(
+            tree_id, generation_id, node_id,
+            resolved_model, provider.name, resolved_prompt, resolved_params,
+            n=n,
+        )
+
+        request = GenerationRequest(
+            model=resolved_model,
+            messages=messages,
+            system_prompt=resolved_prompt,
+            sampling_params=resolved_params,
+        )
+        results = await asyncio.gather(*[provider.generate(request) for _ in range(n)])
+
+        created: list[NodeResponse] = []
+        for result in results:
+            node = await self._emit_node_created(
+                tree_id, generation_id, node_id, result,
+                provider.name, resolved_prompt, resolved_params,
+                context_usage=context_usage,
+            )
+            created.append(node)
+        return created
 
     async def generate_stream(
         self,
@@ -169,6 +218,8 @@ class GenerationService:
         provider_name: str,
         system_prompt: str | None,
         sampling_params: SamplingParams,
+        *,
+        n: int = 1,
     ) -> None:
         payload = GenerationStartedPayload(
             generation_id=generation_id,
@@ -177,6 +228,7 @@ class GenerationService:
             provider=provider_name,
             system_prompt=system_prompt,
             sampling_params=sampling_params,
+            n=n,
         )
         event = EventEnvelope(
             event_id=str(uuid4()),
