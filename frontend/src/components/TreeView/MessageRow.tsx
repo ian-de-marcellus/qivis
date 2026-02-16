@@ -11,10 +11,17 @@ interface MessageRowProps {
 }
 
 export function MessageRow({ node, siblings, onSelectSibling, onFork }: MessageRowProps) {
+  const roleLabel = node.role === 'researcher_note'
+    ? 'Researcher Note'
+    : node.role.charAt(0).toUpperCase() + node.role.slice(1)
+
   return (
     <div className={`message-row ${node.role}`}>
       <div className="message-header">
-        <div className="message-role">{node.role}</div>
+        <span className="message-role">{roleLabel}</span>
+        {node.role === 'assistant' && node.model && (
+          <span className="message-model">{node.model}</span>
+        )}
         {node.sibling_count > 1 && (
           <BranchIndicator
             node={node}
@@ -22,7 +29,7 @@ export function MessageRow({ node, siblings, onSelectSibling, onFork }: MessageR
             onSelect={onSelectSibling}
           />
         )}
-        <button className="fork-btn" onClick={onFork}>
+        <button className="fork-btn" onClick={onFork} aria-label={node.role === 'assistant' ? 'Regenerate' : 'Fork'}>
           {node.role === 'assistant' ? 'Regen' : 'Fork'}
         </button>
       </div>
@@ -32,8 +39,8 @@ export function MessageRow({ node, siblings, onSelectSibling, onFork }: MessageR
       )}
       {node.latency_ms != null && (
         <div className="message-meta">
-          {node.latency_ms}ms
-          {node.usage && ` \u00b7 ${node.usage.input_tokens}+${node.usage.output_tokens} tokens`}
+          {(node.latency_ms / 1000).toFixed(1)}s
+          {node.usage && ` \u00b7 ${node.usage.input_tokens.toLocaleString()}+${node.usage.output_tokens.toLocaleString()} tok`}
         </div>
       )}
     </div>

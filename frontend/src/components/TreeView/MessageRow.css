@@ -1,20 +1,28 @@
 .message-header {
   display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 0.25rem;
+  align-items: baseline;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-xs);
 }
 
 .message-header .message-role {
   margin-bottom: 0;
 }
 
-/* Branch indicator */
+.message-model {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  opacity: 0.7;
+}
+
+/* ---- Branch indicator ---- */
 .branch-indicator {
   display: inline-flex;
   align-items: center;
-  gap: 0.15rem;
-  font-size: 0.7rem;
+  gap: 0.2rem;
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
   color: var(--text-secondary);
   user-select: none;
 }
@@ -22,40 +30,43 @@
 .branch-arrow {
   background: none;
   border: none;
-  padding: 0 0.15rem;
-  font-size: 0.55rem;
-  color: var(--text-secondary);
+  padding: 0.1rem 0.25rem;
+  font-size: 0.8rem;
+  color: var(--text-tertiary);
   cursor: pointer;
+  transition: color 0.15s ease;
   line-height: 1;
 }
 
 .branch-arrow:hover:not(:disabled) {
-  color: var(--text-primary);
+  color: var(--accent);
 }
 
 .branch-arrow:disabled {
-  opacity: 0.3;
+  opacity: 0.25;
   cursor: default;
 }
 
 .branch-label {
   font-variant-numeric: tabular-nums;
-  min-width: 2em;
+  min-width: 3.5em;
   text-align: center;
+  font-size: var(--text-xs);
 }
 
-/* Fork button */
+/* ---- Fork button ---- */
 .fork-btn {
   margin-left: auto;
-  font-size: 0.65rem;
-  padding: 0.1rem 0.4rem;
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  padding: 0.15rem 0.5rem;
   background: none;
-  border: 1px solid var(--border);
-  border-radius: 3px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
   color: var(--text-tertiary);
   cursor: pointer;
   opacity: 0;
-  transition: opacity 0.15s;
+  transition: opacity 0.2s ease, border-color 0.15s ease, color 0.15s ease;
 }
 
 .message-row:hover .fork-btn {
@@ -63,6 +74,6 @@
 }
 
 .fork-btn:hover {
-  color: var(--text-primary);
-  border-color: var(--text-secondary);
+  color: var(--text-accent);
+  border-color: var(--text-accent);
 }

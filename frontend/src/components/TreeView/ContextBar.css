@@ -1,23 +1,28 @@
 .context-bar-wrapper {
-  margin-top: 0.5rem;
+  margin-top: var(--space-md);
 }
 
 .context-bar {
   display: block;
   width: 100%;
-  height: 4px;
-  background: var(--bg-hover);
+  height: 2px;
+  background: var(--border-subtle);
   border: none;
-  border-radius: 2px;
+  border-radius: 1px;
   padding: 0;
   cursor: pointer;
   overflow: hidden;
+  transition: height 0.2s ease;
+}
+
+.context-bar:hover {
+  height: 4px;
 }
 
 .context-bar-fill {
   height: 100%;
-  border-radius: 2px;
-  transition: width 0.3s ease;
+  border-radius: 1px;
+  transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .ctx-green .context-bar-fill { background: var(--ctx-green); }
@@ -25,24 +30,41 @@
 .ctx-red .context-bar-fill { background: var(--ctx-red); }
 
 .context-breakdown {
-  margin-top: 0.35rem;
-  padding: 0.5rem 0.75rem;
+  margin-top: var(--space-sm);
+  padding: var(--space-md);
   background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  font-size: 0.75rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  animation: breakdown-enter 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes breakdown-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .context-breakdown-header {
+  font-family: var(--font-ui);
   font-weight: 600;
-  margin-bottom: 0.35rem;
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: var(--space-sm);
   color: var(--text-secondary);
 }
 
 .context-breakdown-items {
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
+  gap: 0.25rem;
 }
 
 .context-breakdown-row {

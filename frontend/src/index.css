@@ -1,63 +1,124 @@
-/* ---- CSS Custom Properties: Light theme (default) ---- */
+/* ---- Design Tokens: Light theme (default) ---- */
 :root {
-  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  --font-mono: 'SF Mono', 'Fira Code', 'Fira Mono', Menlo, Consolas, monospace;
+  /* Typography */
+  --font-display: 'Newsreader', Georgia, 'Times New Roman', serif;
+  --font-body: 'Source Serif 4', Georgia, 'Times New Roman', serif;
+  --font-ui: 'DM Sans', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', Consolas, monospace;
 
-  --bg-primary: #ffffff;
-  --bg-secondary: #f8f9fa;
+  /* Type scale */
+  --text-xs: 0.75rem;
+  --text-sm: 0.8125rem;
+  --text-base: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.5rem;
+  --text-2xl: 2rem;
+  --text-3xl: 2.75rem;
+
+  --leading-tight: 1.3;
+  --leading-normal: 1.6;
+  --leading-relaxed: 1.8;
+
+  /* Surfaces — warm paper tones */
+  --bg-primary: #faf8f5;
+  --bg-secondary: #f2efe9;
   --bg-input: #ffffff;
-  --bg-hover: #f0f1f3;
-  --bg-selected: #e8eaed;
-  --bg-message: #f8f9fa;
-  --bg-user-message: #e8f0fe;
-  --bg-assistant-message: #f8f9fa;
-  --bg-system-message: #fef7e0;
-  --bg-note-message: #f0f7f0;
+  --bg-hover: #ece8e1;
+  --bg-selected: #e4dfd6;
+  --bg-overlay: rgba(250, 248, 245, 0.95);
 
-  --text-primary: #1a1a1a;
-  --text-secondary: #666666;
-  --text-tertiary: #999999;
+  /* Messages — typographic, not chromatic */
+  --bg-user-message: transparent;
+  --bg-assistant-message: transparent;
+  --bg-system-message: #f5f2eb;
+  --bg-note-message: transparent;
 
-  --border: #e0e0e0;
-  --accent: #1a73e8;
-  --accent-text: #ffffff;
+  /* Text — warm ink tones */
+  --text-primary: #1a1612;
+  --text-secondary: #6b6560;
+  --text-tertiary: #9e9892;
+  --text-accent: #8b4513;
 
+  /* Borders */
+  --border: #e0dbd4;
+  --border-subtle: #ece8e1;
+  --border-strong: #c4bdb4;
+
+  /* Accent — warm sienna */
+  --accent: #a0522d;
+  --accent-muted: rgba(160, 82, 45, 0.12);
+  --accent-text: #faf8f5;
+
+  /* Semantic */
+  --ctx-green: #5b8a5a;
+  --ctx-yellow: #c4922a;
+  --ctx-red: #b94a48;
+
+  /* Error */
+  --error-bg: #fdf0ee;
+  --error-text: #9e2b25;
+
+  /* Spacing */
+  --space-xs: 0.25rem;
+  --space-sm: 0.5rem;
+  --space-md: 1rem;
+  --space-lg: 1.5rem;
+  --space-xl: 2.5rem;
+  --space-2xl: 4rem;
+
+  /* Layout */
+  --content-width: 42rem;
   --sidebar-width: 280px;
 
-  --ctx-green: #4caf50;
-  --ctx-yellow: #ff9800;
-  --ctx-red: #f44336;
+  /* Radii */
+  --radius-sm: 3px;
+  --radius-md: 6px;
+  --radius-lg: 12px;
+
+  /* Atmosphere */
+  --bg-atmosphere: linear-gradient(180deg, #faf8f5 0%, #f7f4ef 50%, #faf8f5 100%);
 }
 
 /* ---- Dark theme ---- */
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg-primary: #1a1a1a;
-    --bg-secondary: #242424;
-    --bg-input: #2a2a2a;
-    --bg-hover: #2e2e2e;
-    --bg-selected: #363636;
-    --bg-message: #242424;
-    --bg-user-message: #1e2d3d;
-    --bg-assistant-message: #242424;
-    --bg-system-message: #2d2a1e;
-    --bg-note-message: #1e2d1e;
+    --bg-primary: #1c1a17;
+    --bg-secondary: #242119;
+    --bg-input: #2a2720;
+    --bg-hover: #302c24;
+    --bg-selected: #3a352b;
+    --bg-overlay: rgba(28, 26, 23, 0.95);
 
-    --text-primary: #e0e0e0;
-    --text-secondary: #999999;
-    --text-tertiary: #666666;
+    --bg-user-message: transparent;
+    --bg-assistant-message: transparent;
+    --bg-system-message: #252218;
+    --bg-note-message: transparent;
 
-    --border: #3a3a3a;
-    --accent: #4da6ff;
-    --accent-text: #1a1a1a;
+    --text-primary: #e8e2d8;
+    --text-secondary: #9e9688;
+    --text-tertiary: #6b6458;
+    --text-accent: #d4956a;
 
-    --ctx-green: #66bb6a;
-    --ctx-yellow: #ffa726;
-    --ctx-red: #ef5350;
+    --border: #3a352b;
+    --border-subtle: #302c24;
+    --border-strong: #4a4438;
+
+    --accent: #d4956a;
+    --accent-muted: rgba(212, 149, 106, 0.15);
+    --accent-text: #1c1a17;
+
+    --ctx-green: #6b9e6a;
+    --ctx-yellow: #d4a74a;
+    --ctx-red: #c96458;
+
+    --error-bg: #2d1f1c;
+    --error-text: #e8856a;
+
+    --bg-atmosphere: linear-gradient(180deg, #1c1a17 0%, #1e1b16 50%, #1c1a17 100%);
   }
 }
 
-/* ---- Base styles ---- */
+/* ---- Base reset ---- */
 *,
 *::before,
 *::after {
@@ -71,12 +132,13 @@ html, body, #root {
 }
 
 body {
-  font-family: var(--font-sans);
-  font-size: 14px;
-  line-height: 1.5;
+  font-family: var(--font-ui);
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
   color: var(--text-primary);
-  background: var(--bg-primary);
+  background: var(--bg-atmosphere);
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 /* ---- App layout ---- */
@@ -88,9 +150,17 @@ body {
 .sidebar {
   width: var(--sidebar-width);
   flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
   background: var(--bg-secondary);
   border-right: 1px solid var(--border);
   overflow: hidden;
+  transition: width 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+              border-color 0.35s ease;
+}
+
+.sidebar.collapsed {
+  width: 44px;
 }
 
 .main {
@@ -99,6 +169,7 @@ body {
   flex-direction: column;
   min-width: 0;
   overflow: hidden;
+  position: relative;
 }
 
 /* ---- Empty state ---- */
@@ -108,19 +179,25 @@ body {
   flex-direction: column;
   justify-content: center;
   align-items: center;
-  color: var(--text-secondary);
+  padding: var(--space-xl);
 }
 
 .empty-state h1 {
-  font-size: 2rem;
+  font-family: var(--font-display);
+  font-size: var(--text-3xl);
   font-weight: 300;
-  margin: 0 0 0.5rem;
+  font-style: italic;
+  letter-spacing: -0.02em;
+  margin: 0 0 var(--space-sm);
   color: var(--text-primary);
 }
 
 .empty-state p {
+  font-family: var(--font-body);
+  font-size: var(--text-lg);
+  font-style: italic;
+  color: var(--text-secondary);
   margin: 0;
-  font-size: 0.95rem;
 }
 
 /* ---- Error banner ---- */
@@ -128,25 +205,37 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0.5rem 1rem;
-  background: #fde8e8;
-  color: #c62828;
-  font-size: 0.85rem;
-}
-
-@media (prefers-color-scheme: dark) {
-  .error-banner {
-    background: #3d1e1e;
-    color: #ff6b6b;
-  }
+  padding: var(--space-sm) var(--space-md);
+  background: var(--error-bg);
+  color: var(--error-text);
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  border-bottom: 1px solid var(--border);
 }
 
 .error-banner button {
-  padding: 0.2rem 0.5rem;
-  font-size: 0.75rem;
+  padding: var(--space-xs) var(--space-sm);
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
   background: none;
   border: 1px solid currentColor;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   color: inherit;
   cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.error-banner button:hover {
+  opacity: 0.7;
+}
+
+/* ---- Shared: toggle arrow ---- */
+.toggle-arrow {
+  font-size: 0.5rem;
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  display: inline-block;
+}
+
+.toggle-arrow.expanded {
+  transform: rotate(90deg);
 }

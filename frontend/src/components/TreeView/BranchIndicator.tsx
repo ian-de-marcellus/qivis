@@ -18,10 +18,10 @@ export function BranchIndicator({ node, siblings, onSelect }: BranchIndicatorPro
         disabled={currentIndex <= 0}
         aria-label="Previous branch"
       >
-        &#9664;
+        &#8249;
       </button>
       <span className="branch-label">
-        {currentIndex + 1}/{count}
+        {currentIndex + 1} of {count}
       </span>
       <button
         className="branch-arrow"
@@ -29,7 +29,7 @@ export function BranchIndicator({ node, siblings, onSelect }: BranchIndicatorPro
         disabled={currentIndex >= count - 1}
         aria-label="Next branch"
       >
-        &#9654;
+        &#8250;
       </button>
     </span>
   )

@@ -1,61 +1,73 @@
 .message-input {
-  border-top: 1px solid var(--border);
-  padding: 0.75rem 1rem;
+  border-top: 1px solid var(--border-subtle);
+  padding: var(--space-lg) var(--space-md);
   background: var(--bg-primary);
 }
 
 .message-input-inner {
   display: flex;
-  gap: 0.5rem;
-  max-width: 48rem;
+  gap: var(--space-sm);
+  max-width: var(--content-width);
   margin: 0 auto;
   align-items: flex-end;
 }
 
 .message-input textarea {
   flex: 1;
-  padding: 0.6rem 0.75rem;
-  font-size: 0.9rem;
-  font-family: inherit;
-  line-height: 1.4;
+  padding: var(--space-sm) var(--space-md);
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
   background: var(--bg-input);
   color: var(--text-primary);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   resize: none;
   overflow-y: auto;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .message-input textarea:focus {
   outline: none;
   border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-muted);
 }
 
 .message-input textarea:disabled {
-  opacity: 0.5;
+  opacity: 0.4;
 }
 
 .message-input textarea::placeholder {
   color: var(--text-tertiary);
+  font-style: italic;
 }
 
 .message-input button {
-  padding: 0.6rem 1.25rem;
-  font-size: 0.85rem;
-  font-weight: 500;
+  padding: var(--space-sm) var(--space-lg);
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
   background: var(--accent);
   color: var(--accent-text);
   border: none;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   cursor: pointer;
   white-space: nowrap;
+  transition: opacity 0.15s, transform 0.1s;
 }
 
 .message-input button:hover:not(:disabled) {
   opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+.message-input button:active:not(:disabled) {
+  transform: translateY(0);
 }
 
 .message-input button:disabled {
-  opacity: 0.4;
+  opacity: 0.3;
   cursor: not-allowed;
 }
