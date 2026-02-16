@@ -3,6 +3,27 @@ import { BranchIndicator } from './BranchIndicator.tsx'
 import { ContextBar } from './ContextBar.tsx'
 import './MessageRow.css'
 
+function formatTimestamp(isoString: string): string {
+  const date = new Date(isoString)
+  const now = new Date()
+  const diffMs = now.getTime() - date.getTime()
+  const diffMin = Math.floor(diffMs / 60_000)
+
+  if (diffMin < 1) return 'just now'
+  if (diffMin < 60) return `${diffMin}m ago`
+
+  const diffHr = Math.floor(diffMin / 60)
+  if (diffHr < 24) return `${diffHr}h ago`
+
+  return date.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+  }) + ', ' + date.toLocaleTimeString(undefined, {
+    hour: 'numeric',
+    minute: '2-digit',
+  })
+}
+
 interface MessageRowProps {
   node: NodeResponse
   siblings: NodeResponse[]
@@ -37,12 +58,15 @@ export function MessageRow({ node, siblings, onSelectSibling, onFork }: MessageR
       {node.role === 'assistant' && node.context_usage != null && (
         <ContextBar contextUsage={node.context_usage} />
       )}
-      {node.latency_ms != null && (
-        <div className="message-meta">
-          {(node.latency_ms / 1000).toFixed(1)}s
-          {node.usage && ` \u00b7 ${node.usage.input_tokens.toLocaleString()}+${node.usage.output_tokens.toLocaleString()} tok`}
-        </div>
-      )}
+      <div className="message-meta">
+        {formatTimestamp(node.created_at)}
+        {node.latency_ms != null && (
+          <>
+            {` \u00b7 ${(node.latency_ms / 1000).toFixed(1)}s`}
+            {node.usage && ` \u00b7 ${node.usage.input_tokens.toLocaleString()}+${node.usage.output_tokens.toLocaleString()} tok`}
+          </>
+        )}
+      </div>
     </div>
   )
 }

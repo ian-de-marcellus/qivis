@@ -72,6 +72,11 @@ class TreeService:
         # Map PatchTreeRequest fields to their current projected values
         field_to_current = {
             "title": tree["title"],
+            "metadata": (
+                json.loads(tree["metadata"])
+                if isinstance(tree["metadata"], str) and tree["metadata"]
+                else tree["metadata"] or {}
+            ),
             "default_model": tree["default_model"],
             "default_provider": tree["default_provider"],
             "default_system_prompt": tree["default_system_prompt"],

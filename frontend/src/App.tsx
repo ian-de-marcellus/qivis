@@ -7,9 +7,45 @@ import { TreeSettings } from './components/TreeView/TreeSettings.tsx'
 import { useTreeStore } from './store/treeStore.ts'
 import './App.css'
 
+type ThemeMode = 'system' | 'light' | 'dark'
+
+const THEME_KEY = 'qivis-theme'
+const THEME_LABELS: Record<ThemeMode, string> = {
+  system: '\u25D0',  // ◐ half circle
+  light: '\u263C',   // ☼ sun
+  dark: '\u263E',    // ☾ moon
+}
+const THEME_CYCLE: ThemeMode[] = ['system', 'light', 'dark']
+
+function getInitialTheme(): ThemeMode {
+  const stored = localStorage.getItem(THEME_KEY)
+  if (stored === 'light' || stored === 'dark') return stored
+  return 'system'
+}
+
+function applyTheme(mode: ThemeMode) {
+  if (mode === 'light' || mode === 'dark') {
+    document.documentElement.dataset.theme = mode
+  } else {
+    delete document.documentElement.dataset.theme
+  }
+}
+
 function App() {
   const { fetchTrees, currentTree, error, clearError } = useTreeStore()
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [theme, setTheme] = useState<ThemeMode>(getInitialTheme)
+
+  // Apply theme on mount and changes
+  useEffect(() => {
+    applyTheme(theme)
+    localStorage.setItem(THEME_KEY, theme)
+  }, [theme])
+
+  const cycleTheme = () => {
+    const idx = THEME_CYCLE.indexOf(theme)
+    setTheme(THEME_CYCLE[(idx + 1) % THEME_CYCLE.length])
+  }
 
   useEffect(() => {
     fetchTrees()
@@ -20,6 +56,14 @@ function App() {
       <aside className={`sidebar ${sidebarCollapsed ? 'collapsed' : ''}`}>
         {!sidebarCollapsed && <TreeList />}
         <div className="sidebar-toggle-bar">
+          <button
+            className="theme-toggle"
+            onClick={cycleTheme}
+            aria-label={`Theme: ${theme}`}
+            title={`Theme: ${theme}`}
+          >
+            {THEME_LABELS[theme]}
+          </button>
           <button
             className="sidebar-toggle"
             onClick={() => setSidebarCollapsed(!sidebarCollapsed)}

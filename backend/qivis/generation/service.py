@@ -45,7 +45,7 @@ class GenerationService:
         sampling_params: SamplingParams | None = None,
     ) -> NodeResponse:
         """Generate a non-streaming response and store as a new node."""
-        tree, nodes, resolved_model, resolved_prompt, resolved_params = (
+        tree, nodes, resolved_model, resolved_prompt, resolved_params, include_ts = (
             await self._resolve_context(tree_id, node_id, model, system_prompt, sampling_params)
         )
         context_limit = get_model_context_limit(resolved_model)
@@ -54,6 +54,7 @@ class GenerationService:
             target_node_id=node_id,
             system_prompt=resolved_prompt,
             model_context_limit=context_limit,
+            include_timestamps=include_ts,
         )
         generation_id = str(uuid4())
 
@@ -88,7 +89,7 @@ class GenerationService:
         sampling_params: SamplingParams | None = None,
     ) -> list[NodeResponse]:
         """Generate N responses in parallel and store as sibling nodes."""
-        tree, nodes, resolved_model, resolved_prompt, resolved_params = (
+        tree, nodes, resolved_model, resolved_prompt, resolved_params, include_ts = (
             await self._resolve_context(tree_id, node_id, model, system_prompt, sampling_params)
         )
         context_limit = get_model_context_limit(resolved_model)
@@ -97,6 +98,7 @@ class GenerationService:
             target_node_id=node_id,
             system_prompt=resolved_prompt,
             model_context_limit=context_limit,
+            include_timestamps=include_ts,
         )
         generation_id = str(uuid4())
 
@@ -136,7 +138,7 @@ class GenerationService:
         sampling_params: SamplingParams | None = None,
     ) -> AsyncIterator[StreamChunk]:
         """Stream N responses simultaneously, yielding tagged chunks."""
-        tree, nodes, resolved_model, resolved_prompt, resolved_params = (
+        tree, nodes, resolved_model, resolved_prompt, resolved_params, include_ts = (
             await self._resolve_context(
                 tree_id, node_id, model, system_prompt, sampling_params
             )
@@ -148,6 +150,7 @@ class GenerationService:
                 target_node_id=node_id,
                 system_prompt=resolved_prompt,
                 model_context_limit=context_limit,
+                include_timestamps=include_ts,
             )
         )
         generation_id = str(uuid4())
@@ -249,7 +252,7 @@ class GenerationService:
         sampling_params: SamplingParams | None = None,
     ) -> AsyncIterator[StreamChunk]:
         """Generate a streaming response, yielding chunks."""
-        tree, nodes, resolved_model, resolved_prompt, resolved_params = (
+        tree, nodes, resolved_model, resolved_prompt, resolved_params, include_ts = (
             await self._resolve_context(tree_id, node_id, model, system_prompt, sampling_params)
         )
         context_limit = get_model_context_limit(resolved_model)
@@ -258,6 +261,7 @@ class GenerationService:
             target_node_id=node_id,
             system_prompt=resolved_prompt,
             model_context_limit=context_limit,
+            include_timestamps=include_ts,
         )
         generation_id = str(uuid4())
 
@@ -304,7 +308,7 @@ class GenerationService:
         model: str | None,
         system_prompt: str | None,
         sampling_params: SamplingParams | None,
-    ) -> tuple[dict, list[dict], str, str | None, SamplingParams]:
+    ) -> tuple[dict, list[dict], str, str | None, SamplingParams, bool]:
         """Validate tree/node and resolve parameters from request or tree defaults."""
         tree = await self._projector.get_tree(tree_id)
         if tree is None:
@@ -321,7 +325,19 @@ class GenerationService:
         )
         resolved_params = sampling_params or SamplingParams()
 
-        return tree, nodes, resolved_model, resolved_prompt, resolved_params
+        # Tree-level setting: include timestamps in context
+        metadata_raw = tree.get("metadata")
+        if isinstance(metadata_raw, str):
+            import json as json_mod
+            try:
+                metadata = json_mod.loads(metadata_raw)
+            except (ValueError, TypeError):
+                metadata = {}
+        else:
+            metadata = metadata_raw or {}
+        include_timestamps = bool(metadata.get("include_timestamps", False))
+
+        return tree, nodes, resolved_model, resolved_prompt, resolved_params, include_timestamps
 
     async def _emit_generation_started(
         self,

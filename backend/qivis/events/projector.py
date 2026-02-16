@@ -88,6 +88,7 @@ class StateProjector:
 
     _UPDATABLE_TREE_FIELDS = {
         "title",
+        "metadata",
         "default_model",
         "default_provider",
         "default_system_prompt",
@@ -105,7 +106,7 @@ class StateProjector:
             return
 
         value = payload.new_value
-        if payload.field == "default_sampling_params" and value is not None:
+        if payload.field in ("default_sampling_params", "metadata") and value is not None:
             value = json.dumps(value)
 
         timestamp = (

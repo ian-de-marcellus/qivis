@@ -1,17 +1,41 @@
-/* ---- Sidebar toggle bar (always visible at top of sidebar) ---- */
+/* ---- Sidebar toggle bar (always visible at bottom of sidebar) ---- */
 .sidebar-toggle-bar {
   display: flex;
   align-items: center;
   justify-content: flex-end;
+  gap: var(--space-xs);
   padding: var(--space-sm);
   flex-shrink: 0;
   border-top: 1px solid var(--border-subtle);
 }
 
 .sidebar.collapsed .sidebar-toggle-bar {
+  flex-direction: column;
   justify-content: center;
   border-top: none;
   margin-top: auto;
+}
+
+/* ---- Theme toggle ---- */
+.theme-toggle {
+  width: 28px;
+  height: 28px;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.875rem;
+  line-height: 1;
+  color: var(--text-secondary);
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.theme-toggle:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
 }
 
 .sidebar-toggle {

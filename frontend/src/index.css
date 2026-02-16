@@ -79,9 +79,46 @@
   --bg-atmosphere: linear-gradient(180deg, #faf8f5 0%, #f7f4ef 50%, #faf8f5 100%);
 }
 
-/* ---- Dark theme ---- */
+/* ---- Dark theme: manual override ---- */
+:root[data-theme="dark"] {
+    --bg-primary: #1c1a17;
+    --bg-secondary: #242119;
+    --bg-input: #2a2720;
+    --bg-hover: #302c24;
+    --bg-selected: #3a352b;
+    --bg-overlay: rgba(28, 26, 23, 0.95);
+
+    --bg-user-message: transparent;
+    --bg-assistant-message: transparent;
+    --bg-system-message: #252218;
+    --bg-note-message: transparent;
+
+    --text-primary: #e8e2d8;
+    --text-secondary: #9e9688;
+    --text-tertiary: #6b6458;
+    --text-accent: #d4956a;
+
+    --border: #3a352b;
+    --border-subtle: #302c24;
+    --border-strong: #4a4438;
+
+    --accent: #d4956a;
+    --accent-muted: rgba(212, 149, 106, 0.15);
+    --accent-text: #1c1a17;
+
+    --ctx-green: #6b9e6a;
+    --ctx-yellow: #d4a74a;
+    --ctx-red: #c96458;
+
+    --error-bg: #2d1f1c;
+    --error-text: #e8856a;
+
+    --bg-atmosphere: linear-gradient(180deg, #1c1a17 0%, #1e1b16 50%, #1c1a17 100%);
+}
+
+/* ---- Dark theme: system preference (when no manual override) ---- */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]):not([data-theme="dark"]) {
     --bg-primary: #1c1a17;
     --bg-secondary: #242119;
     --bg-input: #2a2720;

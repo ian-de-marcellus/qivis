@@ -21,6 +21,7 @@ class PatchTreeRequest(BaseModel):
     """Fields to update on a tree. Only fields present in the request body are changed."""
 
     title: str | None = None
+    metadata: dict | None = None
     default_model: str | None = None
     default_provider: str | None = None
     default_system_prompt: str | None = None

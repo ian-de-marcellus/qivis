@@ -143,6 +143,26 @@
   cursor: pointer;
 }
 
+.tree-settings-toggle {
+  display: flex;
+  align-items: center;
+}
+
+.tree-settings-toggle label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.tree-settings-toggle input[type="checkbox"] {
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
 .tree-settings-actions {
   display: flex;
   justify-content: flex-end;

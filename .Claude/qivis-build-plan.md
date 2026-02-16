@@ -79,17 +79,14 @@ Stream all N responses simultaneously with live branch navigation.
 
 5 new backend tests (replace old 400-rejection tests). 201 tests at completion.
 
-### 2.3 — Small Polish 🔀
+### 2.3 — Small Polish ✅
 
-Standalone improvements that don't depend on each other.
+Two independent quality-of-life features.
 
-**Tasks:**
-- **Message timestamps**: Display `created_at` on each message. Include a toggle (tree-level setting) for whether timestamps are prepended to message content in the context sent to the model.
-- **Light/dark mode toggle**: Manual override in the UI (light / dark / system). Persisted in localStorage. Overrides `prefers-color-scheme` when set.
+- **Message timestamps**: `formatTimestamp()` helper in MessageRow — relative when recent ("2m ago"), absolute when older ("Feb 15, 2:30 PM"). Shown on all messages in hover-revealed `.message-meta`. Tree-level "Include timestamps in context" setting (stored in tree `metadata` JSON blob): when enabled, ContextBuilder prepends `[YYYY-MM-DD HH:MM]` to each message sent to the LLM. `metadata` added to `PatchTreeRequest` and projector `_UPDATABLE_TREE_FIELDS` allowlist. Checkbox in TreeSettings panel.
+- **Theme toggle**: Three-state cycle button (system/light/dark) in sidebar toggle bar. `data-theme` attribute on `:root` + dual CSS selectors (`:root[data-theme="dark"]` for manual, `@media (prefers-color-scheme: dark)` with `:not()` guards for system). Persisted in `localStorage('qivis-theme')`. Unicode icons for modes.
 
-**Blockers:** None — can be done alongside 2.1 or 2.2.
-
-✅ Timestamps visible. Theme manually switchable. **Phase 2 complete.**
+10 new tests. 211 tests at completion. **Phase 2 complete.**
 
 ---
 

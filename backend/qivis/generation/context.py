@@ -6,6 +6,8 @@ and ContextUsage/EvictionReport output. Smart eviction (protected ranges,
 summarization, digression groups) comes in Phase 3.
 """
 
+from datetime import datetime
+
 from qivis.models import ContextUsage, EvictionReport
 
 # Known model context limits (tokens). Falls back to DEFAULT for unknown models.
@@ -58,6 +60,7 @@ class ContextBuilder:
         system_prompt: str | None,
         model_context_limit: int,
         *,
+        include_timestamps: bool = False,
         # Phase 3+ parameters — accepted but ignored in 0.5
         excluded_ids: set[str] | None = None,
         digression_groups: dict | None = None,
@@ -79,7 +82,7 @@ class ContextBuilder:
 
         # 2. Filter to API-sendable roles (exclude system, researcher_note)
         messages = [
-            {"role": n["role"], "content": n["content"]}
+            {"role": n["role"], "content": self._maybe_prepend_timestamp(n, include_timestamps)}
             for n in path
             if n["role"] in ("user", "assistant", "tool")
         ]
@@ -147,6 +150,21 @@ class ContextBuilder:
 
         chain.reverse()
         return chain
+
+    @staticmethod
+    def _maybe_prepend_timestamp(node: dict, include: bool) -> str:
+        """Optionally prepend [YYYY-MM-DD HH:MM] to node content."""
+        content = node["content"]
+        if not include:
+            return content
+        created_at = node.get("created_at")
+        if not created_at:
+            return content
+        try:
+            dt = datetime.fromisoformat(created_at)
+            return f"[{dt.strftime('%Y-%m-%d %H:%M')}] {content}"
+        except (ValueError, TypeError):
+            return content
 
     @staticmethod
     def _count_tokens(text: str) -> int:

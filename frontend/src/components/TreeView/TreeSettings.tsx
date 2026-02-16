@@ -161,6 +161,24 @@ export function TreeSettings() {
               />
             </div>
 
+            <div className="tree-settings-toggle">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={!!currentTree.metadata?.include_timestamps}
+                  onChange={async (e) => {
+                    await updateTree(currentTree.tree_id, {
+                      metadata: {
+                        ...currentTree.metadata,
+                        include_timestamps: e.target.checked,
+                      },
+                    })
+                  }}
+                />
+                Include timestamps in context
+              </label>
+            </div>
+
             <div className="tree-settings-actions">
               <button
                 className="tree-settings-save"

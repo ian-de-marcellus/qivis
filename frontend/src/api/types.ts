@@ -74,6 +74,7 @@ export interface CreateTreeRequest {
 
 export interface PatchTreeRequest {
   title?: string | null
+  metadata?: Record<string, unknown>
   default_model?: string | null
   default_provider?: string | null
   default_system_prompt?: string | null
