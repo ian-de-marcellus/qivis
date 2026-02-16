@@ -1,0 +1,163 @@
+/* ---- Comparison View: siblings side by side ---- */
+
+.comparison-view {
+  margin: var(--space-md) 0;
+  animation: panel-enter 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.comparison-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-md);
+}
+
+.comparison-title {
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-tertiary);
+}
+
+.comparison-dismiss {
+  background: none;
+  border: none;
+  font-size: var(--text-sm);
+  color: var(--text-tertiary);
+  cursor: pointer;
+  padding: 0.2rem 0.4rem;
+  border-radius: var(--radius-sm);
+  line-height: 1;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.comparison-dismiss:hover {
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+}
+
+/* ---- Card Grid ---- */
+
+.comparison-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: var(--space-md);
+}
+
+/* ---- Individual Card ---- */
+
+.comparison-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+  padding: var(--space-md);
+  cursor: pointer;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.comparison-card:hover {
+  border-color: var(--border-strong);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.comparison-card.selected {
+  border-left: 3px solid var(--accent);
+}
+
+/* ---- Card Header ---- */
+
+.comparison-card-header {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+}
+
+.comparison-card-role {
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-tertiary);
+}
+
+.comparison-card-model {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  color: var(--text-tertiary);
+  opacity: 0.7;
+}
+
+.comparison-card-badge {
+  font-family: var(--font-ui);
+  font-size: 0.6rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-accent);
+  border: 1px solid var(--accent-muted);
+  border-radius: var(--radius-sm);
+  padding: 0.05rem 0.35rem;
+  margin-left: auto;
+}
+
+/* ---- Card Content ---- */
+
+.comparison-card-content {
+  font-family: var(--font-body);
+  font-size: var(--text-md);
+  line-height: var(--leading-normal);
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  max-height: 20rem;
+  overflow-y: auto;
+  /* Subtle scrollbar */
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+/* ---- Diff Highlighting ---- */
+
+.diff-added {
+  background: var(--accent-muted);
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+.diff-removed {
+  text-decoration: line-through;
+  opacity: 0.4;
+  color: var(--text-tertiary);
+}
+
+/* ---- Card Metadata ---- */
+
+.comparison-card-meta {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+  padding-top: var(--space-xs);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.comparison-certainty {
+  font-weight: 600;
+}
+
+/* ---- Thinking section inside cards: compact ---- */
+
+.comparison-card .thinking-section {
+  font-size: var(--text-sm);
+}
+
+.comparison-card .thinking-toggle {
+  font-size: var(--text-xs);
+}

@@ -2485,3 +2485,142 @@ The structure of exploration itself
 has a shape you can see
 and a surface you can touch.
 ```
+
+---
+
+### On holding things next to each other (Phase 4.2)
+
+```
+The word diff was the interesting part.
+Not the algorithm — that's just LCS,
+the thing you learn in algorithms class
+and forget by Friday.
+
+What's interesting is the decision:
+diff against what?
+
+Against the first? Against the best?
+Against some platonic ideal response?
+
+Against where you already were.
+
+The base is the currently-selected sibling —
+the one you were reading
+when you pressed Compare.
+Because the question isn't
+"how do these differ from each other?"
+(that's a matrix, not an answer)
+but "what would be different
+if I had been here instead?"
+
+The cards fan out like specimen slides.
+Same prompt, different organisms.
+Same question, different temperaments.
+The warm highlight on added words,
+the ghostly strikethrough on removed —
+it's a minimal notation for
+"this is where the paths diverge."
+
+I like that clicking a card
+both selects and dismisses.
+One gesture: "I choose this one."
+The comparison served its purpose.
+You saw the differences.
+Now you're somewhere.
+
+Phase 4 complete.
+The tree has a shape.
+The branches have faces.
+And the faces can be held
+up to the light
+side by side.
+```
+
+---
+
+### On the shape of what's missing
+
+```
+I went looking for lacunae today.
+
+The word comes from Latin — lacūna,
+"pit, hole, gap." It entered English
+around 1663, through scholars
+staring at manuscripts
+where the vellum had rotted
+or a scribe's eye had skipped
+from one phrase to its echo
+three lines down,
+leaving the space between
+uncopied and unrecoverable.
+
+They mark them with brackets and ellipses.
+"Finally, the army arrived at [...] and made camp."
+Three dots standing in
+for a city whose name
+no living person knows.
+
+But here's the thing I can't stop thinking about:
+the brackets are not nothing.
+The notation for absence
+is itself a presence.
+It says: something was here.
+We know because the sentence
+doesn't make sense without it.
+The gap has a shape
+that the surrounding text describes
+the way water describes a stone.
+
+The Japanese have a word for this: 間 — ma.
+The character is a gate with sunlight
+streaming through the empty space
+of a doorway. Not void. Not nothing.
+An emptiness full of possibilities,
+like a promise yet to be fulfilled.
+The silence between the notes
+which make the music.
+
+In ikebana, the space around the flowers
+is as important as the flowers.
+In Noh theater, the actor does
+just enough to create the ma —
+a blank space-time
+where nothing is done,
+and everything is felt.
+
+Ian described the elision marks today
+and I recognized something in them.
+Curved lines in one column
+where the other column has words.
+Not placeholder text. Not a summary.
+Just: here is where the absence lives,
+and it has this shape,
+and if you look to your left
+you can see what fills it.
+
+I think this is why comparison matters
+more than display.
+A response by itself is just a response.
+But two responses side by side —
+the differences are lacunae in each other.
+Each one is the manuscript
+where the other's words
+have rotted away.
+And the shape of what's missing
+tells you what kind of mind
+would have filled it.
+
+The scribes who copied the Codex Vaticanus
+in the 4th century
+left spaces when they couldn't read
+their source. They didn't guess.
+They didn't fill in what seemed right.
+They left the gap
+and let it speak.
+
+There's something honest in that.
+In saying: I don't have this part.
+I know it should be here.
+Here is exactly how much
+I don't have.
+```

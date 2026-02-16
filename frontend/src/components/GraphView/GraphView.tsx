@@ -28,7 +28,7 @@ function edgePath(px: number, py: number, cx: number, cy: number): string {
 }
 
 export function GraphView() {
-  const { currentTree, branchSelections, navigateToNode } = useTreeStore()
+  const { currentTree, branchSelections, navigateToNode, comparisonHoveredNodeId } = useTreeStore()
   const containerRef = useRef<HTMLDivElement>(null)
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null)
   const [tooltip, setTooltip] = useState<{
@@ -74,6 +74,18 @@ export function GraphView() {
     }
     return ids
   }, [hoveredNodeId, nodeMap])
+
+  // Comparison hover path: from root to node being hovered in ComparisonView
+  const comparisonPathIds = useMemo(() => {
+    if (!comparisonHoveredNodeId) return new Set<string>()
+    const ids = new Set<string>()
+    let current = nodeMap.get(comparisonHoveredNodeId)
+    while (current) {
+      ids.add(current.node_id)
+      current = current.parent_id ? nodeMap.get(current.parent_id) : undefined
+    }
+    return ids
+  }, [comparisonHoveredNodeId, nodeMap])
 
   // Fit to content on mount and when tree changes
   useEffect(() => {
@@ -130,24 +142,27 @@ export function GraphView() {
   }
 
   // Build edges
-  const edges: { parentId: string; childId: string; active: boolean; hovered: boolean }[] = []
+  const edges: { parentId: string; childId: string; active: boolean; hovered: boolean; comparison: boolean }[] = []
   for (const ln of layout.nodes) {
     if (ln.parentId) {
       const isActive = activeNodeIds.has(ln.nodeId) && activeNodeIds.has(ln.parentId)
       const isHovered =
         !isActive && hoveredPathIds.has(ln.nodeId) && hoveredPathIds.has(ln.parentId)
+      const isComparison =
+        !isActive && !isHovered && comparisonPathIds.has(ln.nodeId) && comparisonPathIds.has(ln.parentId)
       edges.push({
         parentId: ln.parentId,
         childId: ln.nodeId,
         active: isActive,
         hovered: isHovered,
+        comparison: isComparison,
       })
     }
   }
 
-  // Sort edges: inactive first, hovered middle, active last (on top)
+  // Sort edges: inactive first, comparison/hovered middle, active last (on top)
   edges.sort((a, b) => {
-    const priority = (e: typeof a) => (e.active ? 2 : e.hovered ? 1 : 0)
+    const priority = (e: typeof a) => (e.active ? 3 : e.hovered ? 2 : e.comparison ? 1 : 0)
     return priority(a) - priority(b)
   })
 
@@ -166,7 +181,7 @@ export function GraphView() {
             const parent = layoutMap.get(edge.parentId)
             const child = layoutMap.get(edge.childId)
             if (!parent || !child) return null
-            const cls = `graph-edge${edge.active ? ' active' : ''}${edge.hovered ? ' hovered' : ''}`
+            const cls = `graph-edge${edge.active ? ' active' : ''}${edge.hovered ? ' hovered' : ''}${edge.comparison ? ' comparison' : ''}`
             return (
               <path
                 key={`${edge.parentId}-${edge.childId}`}
@@ -180,9 +195,10 @@ export function GraphView() {
           {layout.nodes.map((ln) => {
             const isActive = activeNodeIds.has(ln.nodeId)
             const isHovered = hoveredPathIds.has(ln.nodeId)
+            const isComparison = comparisonPathIds.has(ln.nodeId)
             const r = isActive ? ACTIVE_RADIUS : NODE_RADIUS
             const roleClass = `role-${ln.role}`
-            const nodeCls = `graph-node ${roleClass}${isActive ? ' active' : ''}${isHovered && !isActive ? ' hovered' : ''}`
+            const nodeCls = `graph-node ${roleClass}${isActive ? ' active' : ''}${isHovered && !isActive ? ' hovered' : ''}${isComparison && !isActive && !isHovered ? ' comparison' : ''}`
             const labelCls = `graph-node-label${isActive ? ' active' : ''}`
 
             return (

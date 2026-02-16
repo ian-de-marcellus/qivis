@@ -39,6 +39,7 @@ interface TreeStore {
   error: string | null
   generationError: GenerationError | null
   branchSelections: Record<string, string>
+  comparisonHoveredNodeId: string | null
 
   // Actions
   fetchTrees: () => Promise<void>
@@ -58,6 +59,7 @@ interface TreeStore {
   setActiveStreamIndex: (index: number) => void
   selectBranch: (parentId: string, childId: string) => void
   navigateToNode: (nodeId: string) => void
+  setComparisonHoveredNodeId: (nodeId: string | null) => void
   forkAndGenerate: (
     parentId: string,
     content: string,
@@ -130,6 +132,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
   error: null,
   generationError: null,
   branchSelections: {},
+  comparisonHoveredNodeId: null,
 
   fetchTrees: async () => {
     set({ isLoading: true, error: null })
@@ -353,6 +356,10 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
       current = current.parent_id ? nodeMap.get(current.parent_id) : undefined
     }
     set({ branchSelections: selections })
+  },
+
+  setComparisonHoveredNodeId: (nodeId: string | null) => {
+    set({ comparisonHoveredNodeId: nodeId })
   },
 
   forkAndGenerate: async (parentId: string, content: string, overrides: GenerateRequest) => {

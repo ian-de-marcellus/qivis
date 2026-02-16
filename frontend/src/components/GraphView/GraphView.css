@@ -44,6 +44,13 @@
   opacity: 0.5;
 }
 
+.graph-edge.comparison {
+  stroke: var(--accent);
+  stroke-width: 2;
+  opacity: 0.45;
+  stroke-dasharray: 4 3;
+}
+
 /* ---- Nodes ---- */
 
 .graph-node-group {
@@ -63,6 +70,12 @@
 
 .graph-node.hovered {
   opacity: 0.8;
+}
+
+.graph-node.comparison {
+  opacity: 0.8;
+  stroke-width: 2;
+  stroke-dasharray: 3 2;
 }
 
 .graph-node-group:hover .graph-node {

@@ -46,9 +46,10 @@ interface MessageRowProps {
   siblings: NodeResponse[]
   onSelectSibling: (siblingId: string) => void
   onFork: () => void
+  onCompare?: () => void
 }
 
-export function MessageRow({ node, siblings, onSelectSibling, onFork }: MessageRowProps) {
+export function MessageRow({ node, siblings, onSelectSibling, onFork, onCompare }: MessageRowProps) {
   const [showLogprobs, setShowLogprobs] = useState(false)
 
   const roleLabel = node.role === 'researcher_note'
@@ -70,6 +71,7 @@ export function MessageRow({ node, siblings, onSelectSibling, onFork }: MessageR
             node={node}
             siblings={siblings}
             onSelect={onSelectSibling}
+            onCompare={onCompare}
           />
         )}
         <button className="fork-btn" onClick={onFork} aria-label={node.role === 'assistant' ? 'Regenerate' : 'Fork'}>

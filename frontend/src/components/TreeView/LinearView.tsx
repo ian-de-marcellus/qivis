@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
 import type { GenerateRequest, NodeResponse } from '../../api/types.ts'
 import { getActivePath, useTreeStore } from '../../store/treeStore.ts'
+import { ComparisonView } from '../ComparisonView/ComparisonView.tsx'
 import { ForkPanel } from './ForkPanel.tsx'
 import { MessageRow } from './MessageRow.tsx'
 import { ThinkingSection } from './ThinkingSection.tsx'
@@ -36,6 +37,7 @@ export function LinearView() {
 
   const bottomRef = useRef<HTMLDivElement>(null)
   const [forkTarget, setForkTarget] = useState<ForkTarget | null>(null)
+  const [comparingAtParent, setComparingAtParent] = useState<string | null>(null)
 
   // Fetch providers once on mount
   useEffect(() => {
@@ -123,7 +125,21 @@ export function LinearView() {
                   handleSelectSibling(nodeParentKey, siblingId)
                 }
                 onFork={() => handleFork(nodeParentKey, node.role)}
+                onCompare={siblings.length > 1 ? () => setComparingAtParent(
+                  comparingAtParent === nodeParentKey ? null : nodeParentKey,
+                ) : undefined}
               />
+              {comparingAtParent === nodeParentKey && (
+                <ComparisonView
+                  siblings={siblings}
+                  selectedNodeId={node.node_id}
+                  onSelect={(selectedId) => {
+                    selectBranch(nodeParentKey, selectedId)
+                    setComparingAtParent(null)
+                  }}
+                  onDismiss={() => setComparingAtParent(null)}
+                />
+              )}
               {!isGenerating && forkTarget?.parentId === nodeParentKey && (
                 <ForkPanel
                   mode={forkTarget.mode}

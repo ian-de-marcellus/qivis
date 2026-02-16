@@ -177,21 +177,22 @@ The tree topology made visible.
 
 No backend changes. 263 tests unchanged. Pure frontend.
 
-### 4.2 — Side-by-Side Comparison 🔀
+### 4.2 — Side-by-Side Comparison ✅
 
-Hold two responses up next to each other.
+Hold all sibling responses up next to each other.
 
-**Tasks:**
-- Select 2–3 sibling nodes from the branch navigator (multi-select mode)
-- Split pane opens inline within the tree view (not a separate page)
-- Diff highlighting: text differences between responses
-- Metadata comparison: model, provider, latency, token usage side by side
-- Logprob comparison (if available): certainty badges, heatmap differences
-- Dismiss to return to single-branch view
+**What was built:**
+- **Word-level diff algorithm** (`wordDiff.ts`): LCS-based word diff between base (currently selected) and each sibling. Tokenizes on whitespace, computes LCS with DP, produces `DiffSegment[]` (common/added/removed), merges adjacent segments. ~110 lines.
+- **ComparisonCard** (`ComparisonCard.tsx`): Individual sibling card with role/model header, diff-highlighted content, always-visible metadata footer (latency, tokens, certainty badge, sampling params). Selected card gets accent left-border + "current" badge.
+- **ComparisonView** (`ComparisonView.tsx`): CSS grid container for all sibling cards. Computes word diffs against selected sibling. Responsive grid (280px min-width). Header with dismiss button. Panel-enter animation.
+- **Compare button**: Added to BranchIndicator (hidden until hover, like Fork). Threaded through MessageRow. Toggle behavior — click again to dismiss.
+- **LinearView integration**: `comparingAtParent` local state. ComparisonView renders inline below the message. Click a card to select that branch + dismiss comparison.
+- **Diff styling**: Added text gets `var(--accent-muted)` background highlight. Removed text gets line-through + reduced opacity.
+- **Design decisions**: Show ALL siblings (no multi-select picker). Diff against current selection. Local state not store. Metadata always visible (not hover-gated). Smaller font than MessageRow for density.
 
-**Blockers:** 3.1 (logprob visualization enriches comparison). Can start alongside 4.1.
+No backend changes. 263 tests unchanged. Pure frontend.
 
-✅ Can compare sibling responses side by side with diff highlighting. **Phase 4 complete.**
+**Phase 4 complete.**
 
 ---
 
@@ -231,7 +232,26 @@ The overlay that reveals the model's reality.
 
 **Blockers:** 5.1 (editing must work for the view to have content to show).
 
-✅ Can see exactly what any model saw during generation. Edits, overrides, and differences all visible. **Phase 5 complete.**
+✅ Can see exactly what any model saw during generation. Edits, overrides, and differences all visible.
+
+### 5.3 — Full Context Comparison 🔒
+
+Two responses, two realities — the full context that produced each, held up side by side.
+
+The researcher selects two sibling responses from the existing comparison view (Phase 4.2). Instead of just comparing the response text, "Full compare" opens a dedicated two-column view showing the complete root-to-leaf "what the model saw" context for each response, synchronized scroll, with differences highlighted.
+
+**Tasks:**
+- Entry point: "Full compare" button in ComparisonView (Phase 4.2), selects current + one other sibling
+- Two-column layout: full root-to-leaf context for each response, rendered as "what the model saw" (5.2 infrastructure — edited content shown, system prompt visible, exclusions ghosted when 6.3 lands)
+- **Synced scrolling**: both columns scroll together, shared messages horizontally aligned
+- **Shared prefix**: show the full shared path by default (identical messages connected across columns); collapse button to hide/dim the shared prefix and focus on where paths diverge
+- **Divergence highlighting**: at the fork point, messages unique to each column highlighted with accent treatment. System prompt differences highlighted. Model/provider/param differences annotated.
+- **Elision marks for absences**: when one column has messages the other doesn't (post-fork, different branch depths, future context exclusions), the opposite column shows curved bracket/brace connecting the surrounding messages — visual indication that "content exists here in the other path." Visual only, no click behavior; the researcher reads the actual content in the adjacent column.
+- **Scaffold for generality**: core comparison logic takes two `NodeResponse[]` paths, not two sibling IDs. Sibling comparison is the entry point, but the same infrastructure could compare any two root-to-leaf paths in the future.
+
+**Blockers:** 5.2 ("what the model saw" infrastructure provides the context rendering). Benefits from 6.3 (context exclusion) but doesn't require it — exclusion rendering added retroactively when 6.3 lands.
+
+✅ Can open full context comparison between two sibling responses. See exactly where their realities diverge — different messages, different edits, different system prompts. Elision marks show what exists in one context but not the other. **Phase 5 complete.**
 
 ---
 
@@ -524,8 +544,11 @@ Phase 0 ✅ → Phase 1 ✅ → Phase 1b ✅
                           Phase 4
                         (Structure)
                              ↓
-                          Phase 5
+                       Phase 5.1–5.2
                        (Transparency)
+                             ↓
+                         Phase 5.3
+                    (Full Context Compare)
                              ↓
                           Phase 6
                      (Instrumentation)

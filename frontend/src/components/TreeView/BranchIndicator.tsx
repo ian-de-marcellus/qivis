@@ -4,9 +4,10 @@ interface BranchIndicatorProps {
   node: NodeResponse
   siblings: NodeResponse[]
   onSelect: (siblingId: string) => void
+  onCompare?: () => void
 }
 
-export function BranchIndicator({ node, siblings, onSelect }: BranchIndicatorProps) {
+export function BranchIndicator({ node, siblings, onSelect, onCompare }: BranchIndicatorProps) {
   const currentIndex = siblings.findIndex((s) => s.node_id === node.node_id)
   const count = siblings.length
 
@@ -31,6 +32,15 @@ export function BranchIndicator({ node, siblings, onSelect }: BranchIndicatorPro
       >
         &#8250;
       </button>
+      {onCompare && (
+        <button
+          className="compare-btn"
+          onClick={(e) => { e.stopPropagation(); onCompare() }}
+          aria-label="Compare siblings"
+        >
+          Compare
+        </button>
+      )}
     </span>
   )
 }
