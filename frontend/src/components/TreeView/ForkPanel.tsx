@@ -14,6 +14,7 @@ interface ForkPanelProps {
     model: string | null
     systemPrompt: string | null
   }
+  streamDefault: boolean
 }
 
 export function ForkPanel({
@@ -24,6 +25,7 @@ export function ForkPanel({
   isGenerating,
   providers,
   defaults,
+  streamDefault,
 }: ForkPanelProps) {
   const [content, setContent] = useState('')
   const [showSettings, setShowSettings] = useState(mode === 'regenerate')
@@ -41,6 +43,7 @@ export function ForkPanel({
   const [systemPrompt, setSystemPrompt] = useState(defaults.systemPrompt ?? '')
   const [temperature, setTemperature] = useState('')
   const [count, setCount] = useState('1')
+  const [stream, setStream] = useState(streamDefault)
 
   const canSubmit =
     mode === 'regenerate'
@@ -59,6 +62,7 @@ export function ForkPanel({
       system_prompt: systemPrompt || undefined,
       sampling_params: temperature ? { temperature: parseFloat(temperature) } : undefined,
       n,
+      stream,
     }
 
     if (mode === 'regenerate') {
@@ -182,6 +186,16 @@ export function ForkPanel({
                 onChange={(e) => setCount(e.target.value)}
                 placeholder="1"
               />
+            </div>
+            <div className="fork-setting-row fork-setting-toggle">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={stream}
+                  onChange={(e) => setStream(e.target.checked)}
+                />
+                Stream
+              </label>
             </div>
           </div>
         )}

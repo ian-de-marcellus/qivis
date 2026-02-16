@@ -11,6 +11,8 @@ export function TreeList() {
   const [showSettings, setShowSettings] = useState(false)
   const [newProvider, setNewProvider] = useState('')
   const [newModel, setNewModel] = useState('')
+  const [newIncludeTimestamps, setNewIncludeTimestamps] = useState(true)
+  const [newStreamResponses, setNewStreamResponses] = useState(true)
 
   useEffect(() => {
     if (isCreating) fetchProviders()
@@ -29,11 +31,17 @@ export function TreeList() {
       systemPrompt: newSystemPrompt.trim() || undefined,
       defaultProvider: newProvider || undefined,
       defaultModel: newModel || undefined,
+      metadata: {
+        include_timestamps: newIncludeTimestamps,
+        stream_responses: newStreamResponses,
+      },
     })
     setNewTitle('')
     setNewSystemPrompt('')
     setNewProvider('')
     setNewModel('')
+    setNewIncludeTimestamps(true)
+    setNewStreamResponses(true)
     setShowSettings(false)
     setIsCreating(false)
   }
@@ -125,6 +133,26 @@ export function TreeList() {
                     <option key={m} value={m} />
                   ))}
                 </datalist>
+              </div>
+              <div className="create-setting-toggle">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={newIncludeTimestamps}
+                    onChange={(e) => setNewIncludeTimestamps(e.target.checked)}
+                  />
+                  Include timestamps in context
+                </label>
+              </div>
+              <div className="create-setting-toggle">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={newStreamResponses}
+                    onChange={(e) => setNewStreamResponses(e.target.checked)}
+                  />
+                  Stream responses
+                </label>
               </div>
             </div>
           )}

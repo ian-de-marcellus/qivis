@@ -179,6 +179,24 @@ export function TreeSettings() {
               </label>
             </div>
 
+            <div className="tree-settings-toggle">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={currentTree.metadata?.stream_responses !== false}
+                  onChange={async (e) => {
+                    await updateTree(currentTree.tree_id, {
+                      metadata: {
+                        ...currentTree.metadata,
+                        stream_responses: e.target.checked,
+                      },
+                    })
+                  }}
+                />
+                Stream responses
+              </label>
+            </div>
+
             <div className="tree-settings-actions">
               <button
                 className="tree-settings-save"

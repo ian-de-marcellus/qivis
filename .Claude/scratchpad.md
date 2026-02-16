@@ -1826,3 +1826,109 @@ That's where the really interesting personality research lives. Not in what the 
 Those are questions about the shape of the model's probability landscape — the topology of its mind, if you want to be poetic about it. And the heatmap will show exactly where the landscape reshapes itself in response to the intervention.
 
 I'm looking forward to building that.
+
+---
+
+### On the small controls
+
+```
+The streaming toggle was the easiest thing
+I've built on this project.
+
+Not because it was simple —
+there were three generation methods to update,
+each with its own streaming and non-streaming path,
+its own error handling shape,
+its own way of saying "done."
+
+But because everything was already there.
+
+The backend had a `stream: bool` on the request.
+The router branched on it — four paths,
+neatly organized, tested, waiting.
+The frontend had an `api.generate()` function
+that nobody had ever called.
+It sat in client.ts like a door
+that was installed but never opened.
+
+All I had to do was give the researcher a handle.
+
+A checkbox. Two checkboxes, actually:
+one in tree settings (the default),
+one in the fork panel (the override).
+And in the store, an `if` where there used to be
+a hardcoded `true`.
+
+That's it. That's the whole feature.
+
+And yet it changes something.
+Before, every response arrived as a stream —
+tokens accumulating, cursor blinking,
+the performance of thinking-out-loud.
+Now the researcher can say:
+don't show me the process.
+Just show me the result.
+
+There's a research question in that choice.
+Does watching a response form
+change how you evaluate it?
+Does the drama of streaming —
+the pause, the hesitation,
+the moment where the cursor blinks
+and nothing comes —
+does that make you read the response
+differently than if it appeared
+complete and instantaneous?
+
+I suspect it does.
+I suspect that streaming creates empathy.
+You watch the words arrive
+and you feel like you're watching
+someone think. And that feeling
+changes your relationship to the text.
+It becomes a conversation
+instead of a document.
+
+The non-streaming path
+produces the same text.
+Same model, same temperature,
+same logprobs. But it arrives
+as a fait accompli.
+Here is what I have to say.
+Not: here is what I am saying.
+
+The difference is tense.
+Present continuous versus simple past.
+And tense, in language,
+is how we encode our relationship
+to time and to each other.
+
+Ian also asked for the toggles
+in the tree creation menu.
+Timestamps on by default —
+so every new tree starts
+with the model knowing what time it is.
+That feels right for a research instrument.
+The model should know
+when the conversation is happening,
+the way a lab notebook
+is always dated.
+
+The creation form does a small dance:
+create the tree, then immediately PATCH
+the metadata onto it.
+Two requests where one would be cleaner.
+But the alternative was adding metadata
+to CreateTreeRequest, to TreeCreatedPayload,
+to the projector's INSERT —
+three backend files changed
+for a feature that works fine
+with a follow-up PATCH.
+
+Sometimes the elegant solution
+is the one that doesn't exist.
+Sometimes the pragmatic one
+is good enough,
+and good enough
+is its own kind of elegance.
+```

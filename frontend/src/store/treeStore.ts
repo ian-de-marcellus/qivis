@@ -46,6 +46,7 @@ interface TreeStore {
     systemPrompt?: string
     defaultProvider?: string
     defaultModel?: string
+    metadata?: Record<string, unknown>
   }) => Promise<void>
   updateTree: (treeId: string, req: PatchTreeRequest) => Promise<void>
   sendMessage: (content: string) => Promise<void>
@@ -166,15 +167,19 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
     systemPrompt?: string
     defaultProvider?: string
     defaultModel?: string
+    metadata?: Record<string, unknown>
   }) => {
     set({ isLoading: true, error: null })
     try {
-      const tree = await api.createTree({
+      let tree = await api.createTree({
         title,
         default_system_prompt: opts?.systemPrompt,
         default_provider: opts?.defaultProvider,
         default_model: opts?.defaultModel,
       })
+      if (opts?.metadata) {
+        tree = await api.updateTree(tree.tree_id, { metadata: opts.metadata })
+      }
       const trees = await api.listTrees()
       set({
         trees,
@@ -233,7 +238,6 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
           : null,
       }))
 
-      // Start streaming generation
       set({ isGenerating: true, streamingContent: '' })
 
       // Branch-local defaults: prefer last assistant's provider/model over tree defaults
@@ -241,29 +245,55 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
       const resolvedProvider = lastAssistant?.provider ?? currentTree.default_provider
       const resolvedModel = lastAssistant?.model ?? currentTree.default_model
 
-      const generateReq = {
+      const generateReq: GenerateRequest = {
         ...(resolvedProvider ? { provider: resolvedProvider } : {}),
         ...(resolvedModel ? { model: resolvedModel } : {}),
         ...(systemPromptOverride != null ? { system_prompt: systemPromptOverride } : {}),
       }
 
-      await api.generateStream(
-        treeId,
-        userNode.node_id,
-        generateReq,
-        (text) => {
-          set((state) => ({ streamingContent: state.streamingContent + text }))
-        },
-        () => {
+      const shouldStream = currentTree.metadata?.stream_responses !== false
+
+      if (shouldStream) {
+        await api.generateStream(
+          treeId,
+          userNode.node_id,
+          generateReq,
+          (text) => {
+            set((state) => ({ streamingContent: state.streamingContent + text }))
+          },
+          () => {
+            set({ isGenerating: false, streamingContent: '' })
+            api.getTree(treeId).then((tree) => {
+              set({ currentTree: tree })
+            })
+            api.listTrees().then((trees) => {
+              set({ trees })
+            })
+          },
+          (error) => {
+            set({
+              isGenerating: false,
+              streamingContent: '',
+              error: String(error),
+              generationError: {
+                parentNodeId: userNode.node_id,
+                provider: resolvedProvider ?? 'anthropic',
+                model: resolvedModel ?? null,
+                systemPrompt: systemPromptOverride ?? null,
+                errorMessage: String(error),
+              },
+            })
+          },
+        )
+      } else {
+        try {
+          await api.generate(treeId, userNode.node_id, generateReq)
           set({ isGenerating: false, streamingContent: '' })
-          api.getTree(treeId).then((tree) => {
-            set({ currentTree: tree })
-          })
-          api.listTrees().then((trees) => {
-            set({ trees })
-          })
-        },
-        (error) => {
+          const tree = await api.getTree(treeId)
+          set({ currentTree: tree })
+          const trees = await api.listTrees()
+          set({ trees })
+        } catch (error) {
           set({
             isGenerating: false,
             streamingContent: '',
@@ -276,8 +306,8 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
               errorMessage: String(error),
             },
           })
-        },
-      )
+        }
+      }
     } catch (e) {
       set({ isGenerating: false, streamingContent: '', error: String(e) })
     }
@@ -324,8 +354,9 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
       }))
 
       const n = overrides.n ?? 1
+      const shouldStream = overrides.stream !== false
 
-      if (n > 1) {
+      if (shouldStream && n > 1) {
         set({
           isGenerating: true,
           streamingContent: '',
@@ -391,7 +422,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
             })
           },
         )
-      } else {
+      } else if (shouldStream) {
         set({ isGenerating: true, streamingContent: '' })
         await api.generateStream(
           treeId,
@@ -424,6 +455,29 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
             })
           },
         )
+      } else {
+        set({ isGenerating: true, streamingContent: '' })
+        try {
+          await api.generate(treeId, userNode.node_id, { ...overrides, n })
+          set({ isGenerating: false, streamingContent: '' })
+          const tree = await api.getTree(treeId)
+          set({ currentTree: tree })
+          const trees = await api.listTrees()
+          set({ trees })
+        } catch (error) {
+          set({
+            isGenerating: false,
+            streamingContent: '',
+            error: String(error),
+            generationError: {
+              parentNodeId: userNode.node_id,
+              provider: overrides.provider ?? 'anthropic',
+              model: overrides.model ?? null,
+              systemPrompt: overrides.system_prompt ?? null,
+              errorMessage: String(error),
+            },
+          })
+        }
       }
     } catch (e) {
       set({ isGenerating: false, streamingContent: '', error: String(e) })
@@ -441,9 +495,10 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
     })
 
     const n = overrides.n ?? 1
+    const shouldStream = overrides.stream !== false
 
     try {
-      if (n > 1) {
+      if (shouldStream && n > 1) {
         set({
           streamingContents: {},
           streamingNodeIds: {},
@@ -521,7 +576,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
             })
           },
         )
-      } else {
+      } else if (shouldStream) {
         await api.generateStream(
           treeId,
           parentNodeId,
@@ -566,6 +621,41 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
             })
           },
         )
+      } else {
+        try {
+          await api.generate(treeId, parentNodeId, { ...overrides, n })
+          set({ isGenerating: false, streamingContent: '', regeneratingParentId: null })
+          const tree = await api.getTree(treeId)
+          const newChildren = tree.nodes.filter((nd) => nd.parent_id === parentNodeId)
+          const newest = newChildren[newChildren.length - 1]
+          if (newest) {
+            set((state) => ({
+              currentTree: tree,
+              branchSelections: {
+                ...state.branchSelections,
+                [parentNodeId]: newest.node_id,
+              },
+            }))
+          } else {
+            set({ currentTree: tree })
+          }
+          const trees = await api.listTrees()
+          set({ trees })
+        } catch (error) {
+          set({
+            isGenerating: false,
+            streamingContent: '',
+            regeneratingParentId: null,
+            error: String(error),
+            generationError: {
+              parentNodeId,
+              provider: overrides.provider ?? 'anthropic',
+              model: overrides.model ?? null,
+              systemPrompt: overrides.system_prompt ?? null,
+              errorMessage: String(error),
+            },
+          })
+        }
       }
     } catch (e) {
       set({ isGenerating: false, streamingContent: '', regeneratingParentId: null, error: String(e) })

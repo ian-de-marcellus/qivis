@@ -168,6 +168,26 @@
   font-variant-numeric: tabular-nums;
 }
 
+.fork-setting-toggle {
+  flex-direction: row;
+}
+
+.fork-setting-toggle label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  text-transform: none;
+  font-weight: 400;
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.fork-setting-toggle input[type="checkbox"] {
+  accent-color: var(--accent);
+  cursor: pointer;
+  padding: 0;
+}
+
 .fork-submit-btn {
   padding: var(--space-sm) var(--space-md);
   font-family: var(--font-ui);

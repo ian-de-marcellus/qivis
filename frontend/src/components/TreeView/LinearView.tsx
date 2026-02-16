@@ -130,6 +130,7 @@ export function LinearView() {
                   isGenerating={isGenerating}
                   providers={providers}
                   defaults={branchDefaults}
+                  streamDefault={currentTree.metadata?.stream_responses !== false}
                 />
               )}
             </Fragment>
