@@ -3,6 +3,7 @@ import { TreeList } from './components/Library/TreeList.tsx'
 import { LinearView } from './components/TreeView/LinearView.tsx'
 import { MessageInput } from './components/TreeView/MessageInput.tsx'
 import { SystemPromptInput } from './components/TreeView/SystemPromptInput.tsx'
+import { TreeSettings } from './components/TreeView/TreeSettings.tsx'
 import { useTreeStore } from './store/treeStore.ts'
 import './App.css'
 
@@ -39,6 +40,7 @@ function App() {
 
         {currentTree ? (
           <>
+            <TreeSettings />
             <SystemPromptInput />
             <LinearView />
             <MessageInput />

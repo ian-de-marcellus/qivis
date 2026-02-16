@@ -17,6 +17,16 @@ class CreateTreeRequest(BaseModel):
     default_sampling_params: SamplingParams | None = None
 
 
+class PatchTreeRequest(BaseModel):
+    """Fields to update on a tree. Only fields present in the request body are changed."""
+
+    title: str | None = None
+    default_model: str | None = None
+    default_provider: str | None = None
+    default_system_prompt: str | None = None
+    default_sampling_params: SamplingParams | None = None
+
+
 class CreateNodeRequest(BaseModel):
     content: str
     role: Literal["system", "user", "assistant", "tool", "researcher_note"] = "user"

@@ -8,11 +8,17 @@ from uuid import uuid4
 from qivis.db.connection import Database
 from qivis.events.projector import StateProjector
 from qivis.events.store import EventStore
-from qivis.models import EventEnvelope, NodeCreatedPayload, TreeCreatedPayload
+from qivis.models import (
+    EventEnvelope,
+    NodeCreatedPayload,
+    TreeCreatedPayload,
+    TreeMetadataUpdatedPayload,
+)
 from qivis.trees.schemas import (
     CreateNodeRequest,
     CreateTreeRequest,
     NodeResponse,
+    PatchTreeRequest,
     TreeDetailResponse,
     TreeSummary,
 )
@@ -54,6 +60,67 @@ class TreeService:
         tree = await self._projector.get_tree(tree_id)
         assert tree is not None
         return self._tree_detail_from_row(tree, [])
+
+    async def update_tree(
+        self, tree_id: str, request: PatchTreeRequest
+    ) -> TreeDetailResponse:
+        """Update tree metadata. Emits one TreeMetadataUpdated per changed field."""
+        tree = await self._projector.get_tree(tree_id)
+        if tree is None:
+            raise TreeNotFoundError(tree_id)
+
+        # Map PatchTreeRequest fields to their current projected values
+        field_to_current = {
+            "title": tree["title"],
+            "default_model": tree["default_model"],
+            "default_provider": tree["default_provider"],
+            "default_system_prompt": tree["default_system_prompt"],
+            "default_sampling_params": (
+                json.loads(tree["default_sampling_params"])
+                if isinstance(tree["default_sampling_params"], str)
+                and tree["default_sampling_params"]
+                else None
+            ),
+        }
+
+        now = datetime.now(UTC)
+        events: list[EventEnvelope] = []
+
+        for field_name in request.model_fields_set:
+            new_value = getattr(request, field_name)
+            # Normalize SamplingParams to dict for comparison
+            if hasattr(new_value, "model_dump"):
+                new_value = new_value.model_dump()
+
+            old_value = field_to_current.get(field_name)
+            if new_value == old_value:
+                continue
+
+            payload = TreeMetadataUpdatedPayload(
+                field=field_name,
+                old_value=old_value,
+                new_value=new_value,
+            )
+            event = EventEnvelope(
+                event_id=str(uuid4()),
+                tree_id=tree_id,
+                timestamp=now,
+                device_id="local",
+                event_type="TreeMetadataUpdated",
+                payload=payload.model_dump(),
+            )
+            events.append(event)
+
+        for event in events:
+            await self._store.append(event)
+        if events:
+            await self._projector.project(events)
+
+        # Read back the full tree with nodes
+        updated_tree = await self._projector.get_tree(tree_id)
+        assert updated_tree is not None
+        nodes = await self._projector.get_nodes(tree_id)
+        return self._tree_detail_from_row(updated_tree, nodes)
 
     async def get_tree(self, tree_id: str) -> TreeDetailResponse | None:
         """Get a tree with all its nodes. Returns None if not found."""

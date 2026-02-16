@@ -5,6 +5,7 @@ import * as api from '../api/client.ts'
 import type {
   GenerateRequest,
   NodeResponse,
+  PatchTreeRequest,
   ProviderInfo,
   TreeDetail,
   TreeSummary,
@@ -28,7 +29,12 @@ interface TreeStore {
   fetchTrees: () => Promise<void>
   fetchProviders: () => Promise<void>
   selectTree: (treeId: string) => Promise<void>
-  createTree: (title: string, systemPrompt?: string) => Promise<void>
+  createTree: (title: string, opts?: {
+    systemPrompt?: string
+    defaultProvider?: string
+    defaultModel?: string
+  }) => Promise<void>
+  updateTree: (treeId: string, req: PatchTreeRequest) => Promise<void>
   sendMessage: (content: string) => Promise<void>
   setSystemPromptOverride: (prompt: string | null) => void
   clearError: () => void
@@ -136,12 +142,18 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
     }
   },
 
-  createTree: async (title: string, systemPrompt?: string) => {
+  createTree: async (title: string, opts?: {
+    systemPrompt?: string
+    defaultProvider?: string
+    defaultModel?: string
+  }) => {
     set({ isLoading: true, error: null })
     try {
       const tree = await api.createTree({
         title,
-        default_system_prompt: systemPrompt,
+        default_system_prompt: opts?.systemPrompt,
+        default_provider: opts?.defaultProvider,
+        default_model: opts?.defaultModel,
       })
       const trees = await api.listTrees()
       set({
@@ -154,6 +166,23 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
       })
     } catch (e) {
       set({ error: String(e), isLoading: false })
+    }
+  },
+
+  updateTree: async (treeId: string, req: PatchTreeRequest) => {
+    set({ error: null })
+    try {
+      const updated = await api.updateTree(treeId, req)
+      set((state) => ({
+        currentTree: state.currentTree?.tree_id === treeId ? updated : state.currentTree,
+        trees: state.trees.map((t) =>
+          t.tree_id === treeId
+            ? { ...t, title: updated.title, updated_at: updated.updated_at }
+            : t,
+        ),
+      }))
+    } catch (e) {
+      set({ error: String(e) })
     }
   },
 

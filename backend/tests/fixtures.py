@@ -11,6 +11,7 @@ from qivis.models import (
     NodeCreatedPayload,
     SamplingParams,
     TreeCreatedPayload,
+    TreeMetadataUpdatedPayload,
 )
 
 
@@ -104,6 +105,28 @@ def make_full_node_created_envelope(tree_id: str, parent_id: str | None = None) 
         timestamp=datetime.now(UTC),
         device_id="test",
         event_type="NodeCreated",
+        payload=payload.model_dump(),
+    )
+
+
+def make_tree_metadata_updated_envelope(
+    tree_id: str,
+    field: str,
+    old_value: Any = None,
+    new_value: Any = None,
+) -> EventEnvelope:
+    """Create a TreeMetadataUpdated EventEnvelope for testing."""
+    payload = TreeMetadataUpdatedPayload(
+        field=field,
+        old_value=old_value,
+        new_value=new_value,
+    )
+    return EventEnvelope(
+        event_id=str(uuid4()),
+        tree_id=tree_id,
+        timestamp=datetime.now(UTC),
+        device_id="test",
+        event_type="TreeMetadataUpdated",
         payload=payload.model_dump(),
     )
 

@@ -72,6 +72,14 @@ export interface CreateTreeRequest {
   default_provider?: string
 }
 
+export interface PatchTreeRequest {
+  title?: string | null
+  default_model?: string | null
+  default_provider?: string | null
+  default_system_prompt?: string | null
+  default_sampling_params?: Record<string, unknown> | null
+}
+
 export interface CreateNodeRequest {
   content: string
   role?: 'system' | 'user' | 'assistant' | 'tool' | 'researcher_note'

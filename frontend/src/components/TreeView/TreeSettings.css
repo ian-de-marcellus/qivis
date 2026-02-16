@@ -1,0 +1,175 @@
+/* ---- Tree settings header + expandable panel ---- */
+
+.tree-settings {
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.tree-settings-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  max-width: var(--content-width);
+  margin: 0 auto;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.tree-title-display {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tree-title-input {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+  background: var(--bg-input);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  padding: 0.1rem var(--space-xs);
+  outline: none;
+}
+
+.tree-settings-gear {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.tree-settings-gear:hover {
+  color: var(--text-secondary);
+  border-color: var(--border);
+}
+
+.tree-settings-gear.active {
+  color: var(--text-accent);
+  border-color: var(--accent);
+  background: var(--accent-muted);
+}
+
+.tree-settings-gear svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* ---- Expandable settings panel ---- */
+
+.tree-settings-panel {
+  max-width: var(--content-width);
+  margin: 0 auto;
+  padding: 0 var(--space-md) var(--space-md);
+  animation: settings-slide-in 0.2s ease;
+}
+
+@keyframes settings-slide-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.tree-settings-fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-md);
+  background: var(--bg-secondary);
+  border-radius: var(--radius-md);
+}
+
+.tree-settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.tree-settings-field label {
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+}
+
+.tree-settings-field input,
+.tree-settings-field textarea,
+.tree-settings-field select {
+  padding: var(--space-xs) var(--space-sm);
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-sizing: border-box;
+  transition: border-color 0.15s;
+}
+
+.tree-settings-field input:focus,
+.tree-settings-field textarea:focus,
+.tree-settings-field select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.tree-settings-field textarea {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  resize: vertical;
+}
+
+.tree-settings-field select {
+  cursor: pointer;
+}
+
+.tree-settings-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-sm);
+  margin-top: var(--space-xs);
+}
+
+.tree-settings-save {
+  padding: var(--space-xs) var(--space-md);
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  background: var(--accent);
+  color: var(--accent-text);
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.tree-settings-save:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.tree-settings-save:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}

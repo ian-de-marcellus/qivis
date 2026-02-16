@@ -5,10 +5,18 @@ NodeCreated events. New handlers are added as their subphases arrive.
 """
 
 import json
+import logging
 from collections.abc import Awaitable, Callable
 
 from qivis.db.connection import Database
-from qivis.models import EventEnvelope, NodeCreatedPayload, TreeCreatedPayload
+from qivis.models import (
+    EventEnvelope,
+    NodeCreatedPayload,
+    TreeCreatedPayload,
+    TreeMetadataUpdatedPayload,
+)
+
+logger = logging.getLogger(__name__)
 
 
 class StateProjector:
@@ -18,6 +26,7 @@ class StateProjector:
         self._db = db
         self._handlers: dict[str, Callable[[EventEnvelope], Awaitable[None]]] = {
             "TreeCreated": self._handle_tree_created,
+            "TreeMetadataUpdated": self._handle_tree_metadata_updated,
             "NodeCreated": self._handle_node_created,
             "GenerationStarted": self._handle_generation_started,
         }
@@ -75,6 +84,39 @@ class StateProjector:
                 if hasattr(event.timestamp, "isoformat")
                 else str(event.timestamp),
             ),
+        )
+
+    _UPDATABLE_TREE_FIELDS = {
+        "title",
+        "default_model",
+        "default_provider",
+        "default_system_prompt",
+        "default_sampling_params",
+    }
+
+    async def _handle_tree_metadata_updated(self, event: EventEnvelope) -> None:
+        """Project a TreeMetadataUpdated event: update a single tree column."""
+        payload = TreeMetadataUpdatedPayload.model_validate(event.payload)
+
+        if payload.field not in self._UPDATABLE_TREE_FIELDS:
+            logger.warning(
+                "TreeMetadataUpdated: unknown field %r, skipping", payload.field
+            )
+            return
+
+        value = payload.new_value
+        if payload.field == "default_sampling_params" and value is not None:
+            value = json.dumps(value)
+
+        timestamp = (
+            event.timestamp.isoformat()
+            if hasattr(event.timestamp, "isoformat")
+            else str(event.timestamp)
+        )
+
+        await self._db.execute(
+            f"UPDATE trees SET {payload.field} = ?, updated_at = ? WHERE tree_id = ?",
+            (value, timestamp, event.tree_id),
         )
 
     async def _handle_generation_started(self, event: EventEnvelope) -> None:

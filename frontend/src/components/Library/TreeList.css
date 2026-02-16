@@ -104,6 +104,74 @@
   cursor: not-allowed;
 }
 
+.create-settings-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  background: none;
+  border: none;
+  padding: var(--space-xs) 0;
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.create-settings-toggle:hover {
+  color: var(--text-primary);
+}
+
+.create-settings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-sm);
+  background: var(--bg-secondary);
+  border-radius: var(--radius-sm);
+}
+
+.create-setting-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.create-setting-row label {
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+}
+
+.create-setting-row input,
+.create-setting-row select {
+  padding: var(--space-xs) var(--space-sm);
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-sizing: border-box;
+  transition: border-color 0.15s;
+}
+
+.create-setting-row input:focus,
+.create-setting-row select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.create-setting-row select {
+  cursor: pointer;
+}
+
 .tree-items {
   flex: 1;
   overflow-y: auto;

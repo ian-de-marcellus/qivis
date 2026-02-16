@@ -1,12 +1,23 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useTreeStore } from '../../store/treeStore.ts'
 import './TreeList.css'
 
 export function TreeList() {
-  const { trees, selectedTreeId, selectTree, createTree, isLoading } = useTreeStore()
+  const { trees, selectedTreeId, selectTree, createTree, isLoading, providers, fetchProviders } =
+    useTreeStore()
   const [isCreating, setIsCreating] = useState(false)
   const [newTitle, setNewTitle] = useState('')
   const [newSystemPrompt, setNewSystemPrompt] = useState('')
+  const [showSettings, setShowSettings] = useState(false)
+  const [newProvider, setNewProvider] = useState('')
+  const [newModel, setNewModel] = useState('')
+
+  useEffect(() => {
+    if (isCreating) fetchProviders()
+  }, [isCreating, fetchProviders])
+
+  const selectedProvider = providers.find((p) => p.name === newProvider)
+  const suggestedModels = selectedProvider?.models ?? []
 
   const sorted = [...trees].sort(
     (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
@@ -14,9 +25,16 @@ export function TreeList() {
 
   const handleCreate = async () => {
     if (!newTitle.trim()) return
-    await createTree(newTitle.trim(), newSystemPrompt.trim() || undefined)
+    await createTree(newTitle.trim(), {
+      systemPrompt: newSystemPrompt.trim() || undefined,
+      defaultProvider: newProvider || undefined,
+      defaultModel: newModel || undefined,
+    })
     setNewTitle('')
     setNewSystemPrompt('')
+    setNewProvider('')
+    setNewModel('')
+    setShowSettings(false)
     setIsCreating(false)
   }
 
@@ -58,6 +76,59 @@ export function TreeList() {
             onChange={(e) => setNewSystemPrompt(e.target.value)}
             rows={2}
           />
+
+          <button
+            type="button"
+            className="create-settings-toggle"
+            onClick={() => setShowSettings(!showSettings)}
+          >
+            <span className={`toggle-arrow ${showSettings ? 'expanded' : ''}`}>&#9654;</span>
+            <span>Defaults</span>
+          </button>
+
+          {showSettings && (
+            <div className="create-settings">
+              <div className="create-setting-row">
+                <label>Provider</label>
+                {providers.length > 0 ? (
+                  <select
+                    value={newProvider}
+                    onChange={(e) => {
+                      setNewProvider(e.target.value)
+                      setNewModel('')
+                    }}
+                  >
+                    <option value="">Default</option>
+                    {providers.map((p) => (
+                      <option key={p.name} value={p.name}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <select disabled>
+                    <option>Loading...</option>
+                  </select>
+                )}
+              </div>
+              <div className="create-setting-row">
+                <label>Model</label>
+                <input
+                  type="text"
+                  value={newModel}
+                  onChange={(e) => setNewModel(e.target.value)}
+                  placeholder={suggestedModels[0] ?? 'default'}
+                  list="create-model-suggestions"
+                />
+                <datalist id="create-model-suggestions">
+                  {suggestedModels.map((m) => (
+                    <option key={m} value={m} />
+                  ))}
+                </datalist>
+              </div>
+            </div>
+          )}
+
           <button onClick={handleCreate} disabled={!newTitle.trim()}>
             Create
           </button>

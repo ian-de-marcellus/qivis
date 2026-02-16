@@ -18,6 +18,7 @@ from qivis.trees.schemas import (
     CreateTreeRequest,
     GenerateRequest,
     NodeResponse,
+    PatchTreeRequest,
     TreeDetailResponse,
     TreeSummary,
 )
@@ -60,6 +61,18 @@ async def get_tree(
     if tree is None:
         raise HTTPException(status_code=404, detail=f"Tree not found: {tree_id}")
     return tree
+
+
+@router.patch("/{tree_id}")
+async def update_tree(
+    tree_id: str,
+    request: PatchTreeRequest,
+    service: TreeService = Depends(get_tree_service),
+) -> TreeDetailResponse:
+    try:
+        return await service.update_tree(tree_id, request)
+    except TreeNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Tree not found: {tree_id}")
 
 
 @router.post("/{tree_id}/nodes", status_code=status.HTTP_201_CREATED)

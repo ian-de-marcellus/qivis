@@ -6,6 +6,7 @@ import type {
   GenerateRequest,
   MessageStopEvent,
   NodeResponse,
+  PatchTreeRequest,
   ProviderInfo,
   TreeDetail,
   TreeSummary,
@@ -46,6 +47,13 @@ export function createTree(req: CreateTreeRequest): Promise<TreeDetail> {
 
 export function getTree(treeId: string): Promise<TreeDetail> {
   return request(`/trees/${treeId}`)
+}
+
+export function updateTree(treeId: string, req: PatchTreeRequest): Promise<TreeDetail> {
+  return request(`/trees/${treeId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(req),
+  })
 }
 
 // -- Node CRUD --

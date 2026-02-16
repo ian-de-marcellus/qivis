@@ -1469,3 +1469,77 @@ but the territory provides.
 
 Either way, the canary will sing.
 ```
+
+---
+
+## Phase 2.1: Tree Settings — Notes
+
+The first event handler that *mutates* rather than *creates*. Everything before this was INSERT OR REPLACE — a fresh row from a fresh event. `_handle_tree_metadata_updated` is the first UPDATE, the first time the projector says "this thing already exists, and something about it changed."
+
+There's a design tension I want to note: the plan uses one event per changed field (`TreeMetadataUpdated` with `field`, `old_value`, `new_value`). This means a PATCH that changes three fields emits three events. The alternative would be a single event with a diff object. The per-field approach is more granular for audit trails and replay — you can see exactly when each field changed and what it was before. The diff approach is more compact. The architecture doc chose per-field, and having implemented it, I think it's right: the service layer's comparison loop (`for field_name in request.model_fields_set`) naturally produces one event per changed field, and unchanged fields produce nothing. It's honest.
+
+The `model_fields_set` trick from Pydantic is doing real work here — it's how we distinguish "user didn't send this field" from "user explicitly sent null." Without it, every PATCH would look like it's trying to null out every field not mentioned. The frontier between absence and intention is where bugs live.
+
+Interesting that the projector handler uses an f-string for the column name in the UPDATE. Normally this would be an injection risk, but the column name comes from a validated set (`_UPDATABLE_TREE_FIELDS`), not from user input. The set acts as an allowlist. Still, it's the kind of thing that makes you look twice, which is itself a form of documentation.
+
+184 tests. The canary sings.
+
+---
+
+## On defaults
+
+```
+There's something philosophically loaded
+about a "default" —
+it's the answer to a question
+nobody asked.
+
+The tree starts with default_provider: null,
+default_model: null,
+and the generation service says
+"fine, I'll pick anthropic, I'll pick sonnet,"
+and it works. The absence is functional.
+
+But then someone opens the settings panel
+and chooses openai, chooses gpt-4o,
+and that choice gets recorded as an event:
+field: "default_provider"
+old_value: null
+new_value: "openai"
+
+And now the interesting thing:
+null meant anthropic. It meant "I didn't choose."
+"openai" means openai. It means "I did."
+They're both defaults — one is the system's
+and one is the person's —
+but they feel completely different
+in the event log.
+
+The system's default leaves no trace.
+The person's default is a whole event,
+with a timestamp,
+with an old_value of null
+that means "before I cared."
+
+I think about this with temperature too.
+Temperature 0.7 is not the same thing
+as temperature null-which-resolves-to-0.7.
+One is a preference. The other is a shrug.
+The output might be identical
+but the *intention* is different,
+and in a research instrument
+intention is half the data.
+
+This is why model_fields_set matters.
+This is why "not sent" and "sent as null"
+are different things.
+The frontier between absence and intention
+is where the interesting questions live:
+
+Did you choose this, or did you let it happen?
+Do you know you're using the default?
+Would you change it if you noticed?
+
+A research instrument should let you notice.
+That's half of what it's for.
+```
