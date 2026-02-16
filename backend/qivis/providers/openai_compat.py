@@ -40,14 +40,19 @@ class OpenAICompatibleProvider(LLMProvider):
         if choice.logprobs and choice.logprobs.content:
             logprobs = LogprobNormalizer.from_openai(choice.logprobs.content)
 
+        usage_dict: dict[str, int] = {
+            "input_tokens": response.usage.prompt_tokens,
+            "output_tokens": response.usage.completion_tokens,
+        }
+        reasoning_tokens = self._extract_reasoning_tokens(response.usage)
+        if reasoning_tokens is not None:
+            usage_dict["reasoning_tokens"] = reasoning_tokens
+
         return GenerationResult(
             content=content,
             model=response.model,
             finish_reason=choice.finish_reason,
-            usage={
-                "input_tokens": response.usage.prompt_tokens,
-                "output_tokens": response.usage.completion_tokens,
-            },
+            usage=usage_dict,
             latency_ms=latency_ms,
             logprobs=logprobs,
             raw_response=response.model_dump(),
@@ -97,6 +102,10 @@ class OpenAICompatibleProvider(LLMProvider):
 
         latency_ms = int((time.monotonic() - start) * 1000)
         logprobs = LogprobNormalizer.from_openai(accumulated_logprobs or None)
+        usage_dict: dict[str, int] = {
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+        }
         yield StreamChunk(
             type="message_stop",
             is_final=True,
@@ -104,11 +113,25 @@ class OpenAICompatibleProvider(LLMProvider):
                 content=accumulated_text,
                 model=model,
                 finish_reason=finish_reason,
-                usage={"input_tokens": input_tokens, "output_tokens": output_tokens},
+                usage=usage_dict,
                 latency_ms=latency_ms,
                 logprobs=logprobs,
             ),
         )
+
+    @staticmethod
+    def _extract_reasoning_tokens(usage: Any) -> int | None:
+        """Extract reasoning_tokens from OpenAI usage if available."""
+        try:
+            details = getattr(usage, "completion_tokens_details", None)
+            if details is None:
+                return None
+            tokens = getattr(details, "reasoning_tokens", None)
+            if isinstance(tokens, int) and tokens > 0:
+                return tokens
+        except (AttributeError, TypeError):
+            pass
+        return None
 
     @staticmethod
     def _build_params(request: GenerationRequest) -> dict[str, Any]:

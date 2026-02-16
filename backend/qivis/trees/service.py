@@ -282,6 +282,7 @@ class TreeService:
             context_usage=maybe_json(row["context_usage"]),
             participant_id=row["participant_id"],
             participant_name=row["participant_name"],
+            thinking_content=row.get("thinking_content"),
             created_at=row["created_at"],
             archived=row["archived"],
             sibling_index=si,

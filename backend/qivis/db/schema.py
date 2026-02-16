@@ -48,6 +48,7 @@ CREATE TABLE IF NOT EXISTS nodes (
     context_usage TEXT,
     participant_id TEXT,
     participant_name TEXT,
+    thinking_content TEXT,
     created_at TEXT NOT NULL,
     archived INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY (tree_id) REFERENCES trees(tree_id)
@@ -56,3 +57,17 @@ CREATE TABLE IF NOT EXISTS nodes (
 CREATE INDEX IF NOT EXISTS idx_nodes_tree_id ON nodes(tree_id);
 CREATE INDEX IF NOT EXISTS idx_nodes_parent_id ON nodes(parent_id);
 """
+
+# Migrations for existing databases that already have the nodes table.
+_MIGRATIONS = [
+    "ALTER TABLE nodes ADD COLUMN thinking_content TEXT",
+]
+
+
+async def run_migrations(db: object) -> None:
+    """Run schema migrations safely. Ignores errors for already-applied migrations."""
+    for sql in _MIGRATIONS:
+        try:
+            await db.execute(sql)
+        except Exception:
+            pass  # Column already exists or other expected error

@@ -175,8 +175,12 @@ async def _stream_sse(
                         if chunk.result.raw_response
                         else None
                     ),
+                    "thinking_content": chunk.result.thinking_content,
                 }
                 yield f"event: message_stop\ndata: {json_module.dumps(data)}\n\n"
+            elif chunk.type == "thinking_delta" and chunk.thinking:
+                data = {"type": "thinking_delta", "thinking": chunk.thinking}
+                yield f"event: thinking_delta\ndata: {json_module.dumps(data)}\n\n"
             elif chunk.text:
                 data = {"type": "text_delta", "text": chunk.text}
                 yield f"event: text_delta\ndata: {json_module.dumps(data)}\n\n"
@@ -237,9 +241,20 @@ async def _stream_n_sse(
                         if chunk.result.raw_response
                         else None
                     ),
+                    "thinking_content": chunk.result.thinking_content,
                 }
                 yield (
                     f"event: message_stop\n"
+                    f"data: {json_module.dumps(data)}\n\n"
+                )
+            elif chunk.type == "thinking_delta" and chunk.thinking:
+                data = {
+                    "type": "thinking_delta",
+                    "thinking": chunk.thinking,
+                    "completion_index": chunk.completion_index,
+                }
+                yield (
+                    f"event: thinking_delta\n"
                     f"data: {json_module.dumps(data)}\n\n"
                 )
             elif chunk.text:

@@ -2,7 +2,7 @@
 
 import aiosqlite
 
-from qivis.db.schema import SCHEMA_SQL
+from qivis.db.schema import SCHEMA_SQL, run_migrations
 
 
 class Database:
@@ -27,6 +27,7 @@ class Database:
         """Create tables if they don't exist. Idempotent."""
         await self._conn.executescript(SCHEMA_SQL)
         await self._conn.commit()
+        await run_migrations(self)
 
     async def execute(self, sql: str, params: tuple | None = None) -> aiosqlite.Cursor:
         """Execute a single SQL statement."""

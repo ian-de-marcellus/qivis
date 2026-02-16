@@ -15,6 +15,10 @@ interface ForkPanelProps {
     systemPrompt: string | null
   }
   streamDefault: boolean
+  thinkingDefaults?: {
+    extendedThinking: boolean
+    thinkingBudget: number
+  }
 }
 
 export function ForkPanel({
@@ -26,6 +30,7 @@ export function ForkPanel({
   providers,
   defaults,
   streamDefault,
+  thinkingDefaults,
 }: ForkPanelProps) {
   const [content, setContent] = useState('')
   const [showSettings, setShowSettings] = useState(mode === 'regenerate')
@@ -44,6 +49,10 @@ export function ForkPanel({
   const [temperature, setTemperature] = useState('')
   const [count, setCount] = useState('1')
   const [stream, setStream] = useState(streamDefault)
+  const [extendedThinking, setExtendedThinking] = useState(thinkingDefaults?.extendedThinking ?? false)
+  const [thinkingBudget, setThinkingBudget] = useState(
+    String(thinkingDefaults?.thinkingBudget ?? 10000),
+  )
 
   const canSubmit =
     mode === 'regenerate'
@@ -56,11 +65,18 @@ export function ForkPanel({
     const parsedCount = parseInt(count, 10)
     const n = parsedCount > 1 ? parsedCount : undefined
 
+    const samplingParams: Record<string, unknown> = {}
+    if (temperature) samplingParams.temperature = parseFloat(temperature)
+    if (extendedThinking) {
+      samplingParams.extended_thinking = true
+      samplingParams.thinking_budget = parseInt(thinkingBudget, 10) || 10000
+    }
+
     const overrides: GenerateRequest = {
       provider: provider || undefined,
       model: model || undefined,
       system_prompt: systemPrompt || undefined,
-      sampling_params: temperature ? { temperature: parseFloat(temperature) } : undefined,
+      sampling_params: Object.keys(samplingParams).length > 0 ? samplingParams : undefined,
       n,
       stream,
     }
@@ -197,6 +213,29 @@ export function ForkPanel({
                 Stream
               </label>
             </div>
+            <div className="fork-setting-row fork-setting-toggle">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={extendedThinking}
+                  onChange={(e) => setExtendedThinking(e.target.checked)}
+                />
+                Extended thinking
+              </label>
+            </div>
+            {extendedThinking && (
+              <div className="fork-setting-row">
+                <label>Thinking budget</label>
+                <input
+                  type="number"
+                  min="1024"
+                  step="1024"
+                  value={thinkingBudget}
+                  onChange={(e) => setThinkingBudget(e.target.value)}
+                  placeholder="10000"
+                />
+              </div>
+            )}
           </div>
         )}
 

@@ -109,21 +109,22 @@ Pure frontend — all backend logprob infrastructure was already complete (Logpr
 
 No backend changes, 211 tests unchanged.
 
-### 3.2 — Thinking Tokens 🔀
+### 3.2 — Thinking Tokens ✅
 
 See the model's reasoning process.
 
-**Tasks:**
-- Provider-layer support: request extended thinking (Anthropic), reasoning tokens (OpenAI)
-- New fields on `NodeCreated`: `thinking_content`, `thinking_tokens` (count)
-- Projector + API: expose thinking content on node responses
-- Frontend: collapsible "Thinking" section on assistant messages (collapsed by default)
-- Context builder: configurable whether thinking content is included in subsequent context (tree-level or per-generation setting)
-- Graceful degradation: no thinking section when thinking content is null
+**What was built:**
+- `SamplingParams`: `extended_thinking: bool`, `thinking_budget: int | None` — opt-in per generation
+- `GenerationResult.thinking_content`, `StreamChunk.thinking` — carrier types for thinking data
+- `NodeCreatedPayload.thinking_content` → stored in `thinking_content TEXT` column (with migration for existing DBs)
+- **Anthropic provider**: `_build_params` adds `thinking` parameter + forces `temperature=1` when extended thinking enabled. `_extract_thinking()` collects thinking blocks. Streaming: tracks `current_block_type` via `content_block_start`/`content_block_stop`, yields `thinking_delta` chunks for thinking blocks
+- **OpenAI provider**: `_extract_reasoning_tokens()` safely extracts `reasoning_tokens` count from `usage.completion_tokens_details` (content not exposed by API)
+- **SSE protocol**: `thinking_delta` events stream thinking content to frontend. `message_stop` includes full `thinking_content`
+- **Context builder**: `include_thinking` parameter prepends `[Model thinking: ...]` to assistant messages when tree-level `include_thinking_in_context` is enabled
+- **Frontend**: `ThinkingSection` component — collapsible display with expand/collapse toggle, word count badge, monospace rendering. Auto-expanded during streaming with cursor. Two-phase streaming in LinearView (thinking phase → text phase). Extended thinking checkbox + budget input in ForkPanel. Tree-level settings: "Extended thinking by default", "Thinking budget", "Include thinking in context"
+- Graceful degradation: no ThinkingSection when `thinking_content` is null. Existing nodes unaffected.
 
-**Blockers:** None — can parallel with 3.1.
-
-✅ Thinking tokens captured from providers that support them. Collapsible display. Researcher controls whether thinking is in context.
+35 new tests. 246 tests at completion.
 
 ### 3.3 — Sampling Controls 🔀
 

@@ -3,6 +3,7 @@ import type { LogprobData, NodeResponse } from '../../api/types.ts'
 import { BranchIndicator } from './BranchIndicator.tsx'
 import { ContextBar } from './ContextBar.tsx'
 import { LogprobOverlay, averageCertainty, uncertaintyColor } from './LogprobOverlay.tsx'
+import { ThinkingSection } from './ThinkingSection.tsx'
 import './MessageRow.css'
 
 function formatTimestamp(isoString: string): string {
@@ -61,6 +62,9 @@ export function MessageRow({ node, siblings, onSelectSibling, onFork }: MessageR
           {node.role === 'assistant' ? 'Regen' : 'Fork'}
         </button>
       </div>
+      {node.thinking_content && (
+        <ThinkingSection thinkingContent={node.thinking_content} />
+      )}
       <div className="message-content">
         {showLogprobs && logprobs ? (
           <LogprobOverlay logprobs={logprobs} />

@@ -66,6 +66,7 @@ class NodeResponse(BaseModel):
     context_usage: dict | None = None
     participant_id: str | None = None
     participant_name: str | None = None
+    thinking_content: str | None = None
     created_at: str
     archived: int = 0
     sibling_count: int = 1

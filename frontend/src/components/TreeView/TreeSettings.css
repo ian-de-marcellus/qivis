@@ -163,6 +163,15 @@
   cursor: pointer;
 }
 
+.tree-settings-note {
+  display: block;
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  margin-left: calc(var(--space-sm) + 13px);
+  margin-top: 0.15rem;
+}
+
 .tree-settings-actions {
   display: flex;
   justify-content: flex-end;

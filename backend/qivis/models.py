@@ -25,6 +25,8 @@ class SamplingParams(BaseModel):
     presence_penalty: float | None = None
     logprobs: bool = True
     top_logprobs: int | None = 5
+    extended_thinking: bool = False
+    thinking_budget: int | None = None
 
 
 class AlternativeToken(BaseModel):
@@ -148,6 +150,9 @@ class NodeCreatedPayload(BaseModel):
     finish_reason: str | None = None
     logprobs: LogprobData | None = None
     context_usage: ContextUsage | None = None
+
+    # Thinking / reasoning
+    thinking_content: str | None = None
 
     # Multi-agent identity
     participant_id: str | None = None

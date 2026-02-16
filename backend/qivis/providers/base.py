@@ -28,14 +28,16 @@ class GenerationResult(BaseModel):
     usage: dict[str, int] | None = None
     latency_ms: int | None = None
     logprobs: LogprobData | None = None
+    thinking_content: str | None = None
     raw_response: dict[str, Any] | None = None
 
 
 class StreamChunk(BaseModel):
     """A single delta in a streaming response."""
 
-    type: str  # "text_delta", "message_stop", "generation_complete"
+    type: str  # "text_delta", "thinking_delta", "message_stop", "generation_complete"
     text: str = ""
+    thinking: str = ""
     is_final: bool = False
     result: GenerationResult | None = None
     completion_index: int | None = None

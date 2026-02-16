@@ -38,6 +38,7 @@ class AnthropicProvider(LLMProvider):
         latency_ms = int((time.monotonic() - start) * 1000)
 
         content = self._extract_text(response)
+        thinking_content = self._extract_thinking(response)
         return GenerationResult(
             content=content,
             model=response.model,
@@ -48,6 +49,7 @@ class AnthropicProvider(LLMProvider):
             },
             latency_ms=latency_ms,
             logprobs=LogprobNormalizer.from_anthropic(None),
+            thinking_content=thinking_content,
             raw_response=response.model_dump(),
         )
 
@@ -57,6 +59,8 @@ class AnthropicProvider(LLMProvider):
         params = self._build_params(request)
         start = time.monotonic()
         accumulated_text = ""
+        accumulated_thinking = ""
+        current_block_type: str | None = None
         input_tokens = 0
         output_tokens = 0
         stop_reason: str | None = None
@@ -67,11 +71,23 @@ class AnthropicProvider(LLMProvider):
             if event.type == "message_start":
                 model = event.message.model
                 input_tokens = event.message.usage.input_tokens
+            elif event.type == "content_block_start":
+                current_block_type = getattr(event.content_block, "type", None)
             elif event.type == "content_block_delta":
-                text = getattr(event.delta, "text", None)
-                if text is not None:
-                    accumulated_text += text
-                    yield StreamChunk(type="text_delta", text=text)
+                if current_block_type == "thinking":
+                    thinking_text = getattr(event.delta, "thinking", None)
+                    if thinking_text is not None:
+                        accumulated_thinking += thinking_text
+                        yield StreamChunk(
+                            type="thinking_delta", thinking=thinking_text,
+                        )
+                else:
+                    text = getattr(event.delta, "text", None)
+                    if text is not None:
+                        accumulated_text += text
+                        yield StreamChunk(type="text_delta", text=text)
+            elif event.type == "content_block_stop":
+                current_block_type = None
             elif event.type == "message_delta":
                 stop_reason = event.delta.stop_reason
                 output_tokens = event.usage.output_tokens
@@ -87,6 +103,7 @@ class AnthropicProvider(LLMProvider):
                 usage={"input_tokens": input_tokens, "output_tokens": output_tokens},
                 latency_ms=latency_ms,
                 logprobs=LogprobNormalizer.from_anthropic(None),
+                thinking_content=accumulated_thinking or None,
             ),
         )
 
@@ -94,17 +111,32 @@ class AnthropicProvider(LLMProvider):
     def _build_params(request: GenerationRequest) -> dict[str, Any]:
         """Build kwargs dict for client.messages.create()."""
         sp = request.sampling_params
+        max_tokens = sp.max_tokens
+
+        # Extended thinking: add thinking parameter, force temperature=1
+        if sp.extended_thinking:
+            budget = sp.thinking_budget or 10000
+            # max_tokens must exceed budget
+            if max_tokens <= budget:
+                max_tokens = budget + 2048
+
         params: dict[str, Any] = {
             "model": request.model,
-            "max_tokens": sp.max_tokens,
+            "max_tokens": max_tokens,
             "messages": [
                 {"role": m["role"], "content": m["content"]} for m in request.messages
             ],
         }
+        if sp.extended_thinking:
+            budget = sp.thinking_budget or 10000
+            params["thinking"] = {"type": "enabled", "budget_tokens": budget}
+            params["temperature"] = 1
+        else:
+            if sp.temperature is not None:
+                params["temperature"] = sp.temperature
+
         if request.system_prompt is not None:
             params["system"] = request.system_prompt
-        if sp.temperature is not None:
-            params["temperature"] = sp.temperature
         if sp.top_p is not None:
             params["top_p"] = sp.top_p
         if sp.top_k is not None:
@@ -121,3 +153,12 @@ class AnthropicProvider(LLMProvider):
             if block.type == "text":
                 parts.append(block.text)
         return "".join(parts)
+
+    @staticmethod
+    def _extract_thinking(response: Any) -> str | None:
+        """Extract thinking content from Anthropic Message response."""
+        parts = []
+        for block in response.content:
+            if block.type == "thinking":
+                parts.append(block.thinking)
+        return "\n".join(parts) if parts else None

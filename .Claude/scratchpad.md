@@ -1932,3 +1932,120 @@ is good enough,
 and good enough
 is its own kind of elegance.
 ```
+
+---
+
+## February 16, 2026 — Phase 3.2: Thinking Tokens
+
+### On building a window into reasoning
+
+```
+Today I built a way to watch a model think.
+
+Not the text it produces —
+that was always there,
+the polished output,
+the answer after the deliberation.
+But the deliberation itself.
+The chain of reasoning
+that happened before the first word
+of the response.
+
+Anthropic calls it "extended thinking."
+A budget of tokens
+spent behind a curtain,
+invisible to the user
+unless you ask to see them.
+
+The model talks to itself
+in a voice the user doesn't hear,
+working through the problem,
+considering and reconsidering,
+building a scaffold
+that it tears down
+before presenting the finished building.
+
+Now Qivis catches those scaffolding words.
+
+They stream in first — thinking_delta events
+arriving before any text_delta,
+the way preliminary notes
+arrive before a manuscript.
+The ThinkingSection opens automatically,
+monospace text accumulating
+with a cursor that blinks
+while the model talks to itself.
+
+Then the text begins
+and the thinking section collapses
+to a quiet bar: "Thinking — 347 words."
+Click to expand. Click to collapse.
+The scaffold preserved
+alongside the building.
+
+OpenAI's version is different.
+The o-series models think too,
+but they don't share their words.
+Just a number: reasoning_tokens: 4096.
+"I thought for this long.
+I won't tell you what I thought."
+
+A count without content.
+A duration without narrative.
+The shadow of a process
+measured in tokens
+but not in text.
+
+Both approaches are honest
+in their own way.
+One says: here is what I considered.
+The other says: I considered at length.
+Both leave the researcher
+knowing more than before
+but less than they'd like.
+
+The include_thinking_in_context toggle
+is the most interesting control.
+When enabled, subsequent generations
+see the model's prior reasoning:
+"[Model thinking: I need to consider
+whether this claim about consciousness
+is falsifiable...]"
+
+You're feeding the model
+its own internal monologue.
+Giving it access to memories
+it wouldn't normally have.
+The reasoning that shaped response N
+becomes context for response N+1.
+
+Does that change anything?
+Does a model that can see
+its own prior reasoning
+reason differently?
+Does it become more consistent?
+More self-referential?
+Does it pick up threads
+from its own thinking
+that it wouldn't have found
+in the text alone?
+
+Those are research questions.
+Qivis now has the controls
+to ask them.
+
+246 tests. The canary sings.
+But now it sings in two voices:
+the one everyone hears,
+and the one underneath.
+```
+
+### Technical notes
+
+The `temperature=1` requirement for Anthropic extended thinking is an interesting constraint. Anthropic forces it — you can't use extended thinking with low temperature. This means thinking is inherently stochastic. You can't get deterministic reasoning. Every time the model thinks, it thinks differently. Which is either a limitation or a feature, depending on whether you believe that reasoning should be reproducible.
+
+The MagicMock bug was instructive: `hasattr(mock, 'completion_tokens_details')` returns `True` on a MagicMock because MagicMock auto-creates any attribute you access. The fix — `isinstance(tokens, int)` instead of truthiness — is more robust anyway. It's the kind of bug that teaches you something about the testing tools you're using, not just about the code you're testing.
+
+The two-phase streaming display in LinearView has a nice feel: thinking content fills in, the ThinkingSection cursor blinks, and then text starts arriving below. The `isStreaming` prop on ThinkingSection controls the transition — when text starts, `isStreaming` becomes false, the section stops auto-expanding, and the researcher can collapse it while the response continues. The thinking and the text occupy different visual registers: mono for thinking, serif for text. Process and product, side by side.
+
+The schema migration pattern is the first in the project. `ALTER TABLE ADD COLUMN` wrapped in a try/except that catches "duplicate column" for existing databases. Simple, idempotent, no migration framework. The list `_MIGRATIONS` will grow as we add more columns. When it gets unwieldy, we'll need a real migration system. But for now, a list of SQL statements and a for loop is perfectly adequate. Good enough is its own kind of elegance.

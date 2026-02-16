@@ -28,7 +28,9 @@ interface TreeStore {
   isLoading: boolean
   isGenerating: boolean
   streamingContent: string
+  streamingThinkingContent: string
   streamingContents: Record<number, string>
+  streamingThinkingContents: Record<number, string>
   streamingNodeIds: Record<number, string>
   streamingTotal: number
   activeStreamIndex: number
@@ -116,7 +118,9 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
   isLoading: false,
   isGenerating: false,
   streamingContent: '',
+  streamingThinkingContent: '',
   streamingContents: {},
+  streamingThinkingContents: {},
   streamingNodeIds: {},
   streamingTotal: 0,
   activeStreamIndex: 0,
@@ -238,17 +242,25 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
           : null,
       }))
 
-      set({ isGenerating: true, streamingContent: '' })
+      set({ isGenerating: true, streamingContent: '', streamingThinkingContent: '' })
 
       // Branch-local defaults: prefer last assistant's provider/model over tree defaults
       const lastAssistant = [...activePath].reverse().find((n) => n.role === 'assistant')
       const resolvedProvider = lastAssistant?.provider ?? currentTree.default_provider
       const resolvedModel = lastAssistant?.model ?? currentTree.default_model
 
+      // Build sampling params from tree metadata defaults
+      const samplingParams: Record<string, unknown> = {}
+      if (currentTree.metadata?.extended_thinking) {
+        samplingParams.extended_thinking = true
+        samplingParams.thinking_budget = Number(currentTree.metadata?.thinking_budget ?? 10000)
+      }
+
       const generateReq: GenerateRequest = {
         ...(resolvedProvider ? { provider: resolvedProvider } : {}),
         ...(resolvedModel ? { model: resolvedModel } : {}),
         ...(systemPromptOverride != null ? { system_prompt: systemPromptOverride } : {}),
+        ...(Object.keys(samplingParams).length > 0 ? { sampling_params: samplingParams } : {}),
       }
 
       const shouldStream = currentTree.metadata?.stream_responses !== false
@@ -262,7 +274,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
             set((state) => ({ streamingContent: state.streamingContent + text }))
           },
           () => {
-            set({ isGenerating: false, streamingContent: '' })
+            set({ isGenerating: false, streamingContent: '', streamingThinkingContent: '' })
             api.getTree(treeId).then((tree) => {
               set({ currentTree: tree })
             })
@@ -274,6 +286,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
             set({
               isGenerating: false,
               streamingContent: '',
+              streamingThinkingContent: '',
               error: String(error),
               generationError: {
                 parentNodeId: userNode.node_id,
@@ -284,11 +297,16 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
               },
             })
           },
+          (thinking) => {
+            set((state) => ({
+              streamingThinkingContent: state.streamingThinkingContent + thinking,
+            }))
+          },
         )
       } else {
         try {
           await api.generate(treeId, userNode.node_id, generateReq)
-          set({ isGenerating: false, streamingContent: '' })
+          set({ isGenerating: false, streamingContent: '', streamingThinkingContent: '' })
           const tree = await api.getTree(treeId)
           set({ currentTree: tree })
           const trees = await api.listTrees()
@@ -297,6 +315,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
           set({
             isGenerating: false,
             streamingContent: '',
+            streamingThinkingContent: '',
             error: String(error),
             generationError: {
               parentNodeId: userNode.node_id,
@@ -309,7 +328,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
         }
       }
     } catch (e) {
-      set({ isGenerating: false, streamingContent: '', error: String(e) })
+      set({ isGenerating: false, streamingContent: '', streamingThinkingContent: '', error: String(e) })
     }
   },
 
@@ -360,7 +379,9 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
         set({
           isGenerating: true,
           streamingContent: '',
+          streamingThinkingContent: '',
           streamingContents: {},
+          streamingThinkingContents: {},
           streamingNodeIds: {},
           streamingTotal: n,
           activeStreamIndex: 0,
@@ -391,7 +412,9 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
             set({
               isGenerating: false,
               streamingContent: '',
+              streamingThinkingContent: '',
               streamingContents: {},
+              streamingThinkingContents: {},
               streamingNodeIds: {},
               streamingTotal: 0,
               activeStreamIndex: 0,
@@ -407,7 +430,9 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
             set({
               isGenerating: false,
               streamingContent: '',
+              streamingThinkingContent: '',
               streamingContents: {},
+              streamingThinkingContents: {},
               streamingNodeIds: {},
               streamingTotal: 0,
               activeStreamIndex: 0,
@@ -421,9 +446,17 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
               },
             })
           },
+          (thinking, idx) => {
+            set((state) => ({
+              streamingThinkingContents: {
+                ...state.streamingThinkingContents,
+                [idx]: (state.streamingThinkingContents[idx] ?? '') + thinking,
+              },
+            }))
+          },
         )
       } else if (shouldStream) {
-        set({ isGenerating: true, streamingContent: '' })
+        set({ isGenerating: true, streamingContent: '', streamingThinkingContent: '' })
         await api.generateStream(
           treeId,
           userNode.node_id,
@@ -432,7 +465,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
             set((state) => ({ streamingContent: state.streamingContent + text }))
           },
           () => {
-            set({ isGenerating: false, streamingContent: '' })
+            set({ isGenerating: false, streamingContent: '', streamingThinkingContent: '' })
             api.getTree(treeId).then((tree) => {
               set({ currentTree: tree })
             })
@@ -444,6 +477,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
             set({
               isGenerating: false,
               streamingContent: '',
+              streamingThinkingContent: '',
               error: String(error),
               generationError: {
                 parentNodeId: userNode.node_id,
@@ -454,12 +488,17 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
               },
             })
           },
+          (thinking) => {
+            set((state) => ({
+              streamingThinkingContent: state.streamingThinkingContent + thinking,
+            }))
+          },
         )
       } else {
-        set({ isGenerating: true, streamingContent: '' })
+        set({ isGenerating: true, streamingContent: '', streamingThinkingContent: '' })
         try {
           await api.generate(treeId, userNode.node_id, { ...overrides, n })
-          set({ isGenerating: false, streamingContent: '' })
+          set({ isGenerating: false, streamingContent: '', streamingThinkingContent: '' })
           const tree = await api.getTree(treeId)
           set({ currentTree: tree })
           const trees = await api.listTrees()
@@ -468,6 +507,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
           set({
             isGenerating: false,
             streamingContent: '',
+            streamingThinkingContent: '',
             error: String(error),
             generationError: {
               parentNodeId: userNode.node_id,
@@ -480,7 +520,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
         }
       }
     } catch (e) {
-      set({ isGenerating: false, streamingContent: '', error: String(e) })
+      set({ isGenerating: false, streamingContent: '', streamingThinkingContent: '', error: String(e) })
     }
   },
 
@@ -491,7 +531,8 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
     const treeId = currentTree.tree_id
     set({
       error: null, generationError: null,
-      isGenerating: true, streamingContent: '', regeneratingParentId: parentNodeId,
+      isGenerating: true, streamingContent: '', streamingThinkingContent: '',
+      regeneratingParentId: parentNodeId,
     })
 
     const n = overrides.n ?? 1
@@ -501,6 +542,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
       if (shouldStream && n > 1) {
         set({
           streamingContents: {},
+          streamingThinkingContents: {},
           streamingNodeIds: {},
           streamingTotal: n,
           activeStreamIndex: 0,
@@ -531,7 +573,9 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
             set({
               isGenerating: false,
               streamingContent: '',
+              streamingThinkingContent: '',
               streamingContents: {},
+              streamingThinkingContents: {},
               streamingNodeIds: {},
               streamingTotal: 0,
               activeStreamIndex: 0,
@@ -560,7 +604,9 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
             set({
               isGenerating: false,
               streamingContent: '',
+              streamingThinkingContent: '',
               streamingContents: {},
+              streamingThinkingContents: {},
               streamingNodeIds: {},
               streamingTotal: 0,
               activeStreamIndex: 0,
@@ -574,6 +620,14 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
                 errorMessage: String(error),
               },
             })
+          },
+          (thinking, idx) => {
+            set((state) => ({
+              streamingThinkingContents: {
+                ...state.streamingThinkingContents,
+                [idx]: (state.streamingThinkingContents[idx] ?? '') + thinking,
+              },
+            }))
           },
         )
       } else if (shouldStream) {
@@ -585,7 +639,10 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
             set((state) => ({ streamingContent: state.streamingContent + text }))
           },
           () => {
-            set({ isGenerating: false, streamingContent: '', regeneratingParentId: null })
+            set({
+              isGenerating: false, streamingContent: '', streamingThinkingContent: '',
+              regeneratingParentId: null,
+            })
             api.getTree(treeId).then((tree) => {
               const newChildren = tree.nodes.filter((nd) => nd.parent_id === parentNodeId)
               const newest = newChildren[newChildren.length - 1]
@@ -609,6 +666,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
             set({
               isGenerating: false,
               streamingContent: '',
+              streamingThinkingContent: '',
               regeneratingParentId: null,
               error: String(error),
               generationError: {
@@ -620,11 +678,19 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
               },
             })
           },
+          (thinking) => {
+            set((state) => ({
+              streamingThinkingContent: state.streamingThinkingContent + thinking,
+            }))
+          },
         )
       } else {
         try {
           await api.generate(treeId, parentNodeId, { ...overrides, n })
-          set({ isGenerating: false, streamingContent: '', regeneratingParentId: null })
+          set({
+            isGenerating: false, streamingContent: '', streamingThinkingContent: '',
+            regeneratingParentId: null,
+          })
           const tree = await api.getTree(treeId)
           const newChildren = tree.nodes.filter((nd) => nd.parent_id === parentNodeId)
           const newest = newChildren[newChildren.length - 1]
@@ -645,6 +711,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
           set({
             isGenerating: false,
             streamingContent: '',
+            streamingThinkingContent: '',
             regeneratingParentId: null,
             error: String(error),
             generationError: {
@@ -658,7 +725,10 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
         }
       }
     } catch (e) {
-      set({ isGenerating: false, streamingContent: '', regeneratingParentId: null, error: String(e) })
+      set({
+        isGenerating: false, streamingContent: '', streamingThinkingContent: '',
+        regeneratingParentId: null, error: String(e),
+      })
     }
   },
 }))

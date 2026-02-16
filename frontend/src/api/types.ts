@@ -25,6 +25,7 @@ export interface NodeResponse {
   latency_ms: number | null
   finish_reason: string | null
   logprobs: LogprobData | null
+  thinking_content: string | null
   context_usage: ContextUsage | null
   participant_id: string | null
   participant_name: string | null
@@ -123,6 +124,12 @@ export interface TextDeltaEvent {
   completion_index?: number
 }
 
+export interface ThinkingDeltaEvent {
+  type: 'thinking_delta'
+  thinking: string
+  completion_index?: number
+}
+
 export interface MessageStopEvent {
   type: 'message_stop'
   content: string
@@ -130,6 +137,7 @@ export interface MessageStopEvent {
   usage: Record<string, number> | null
   latency_ms: number | null
   node_id: string | null
+  thinking_content: string | null
   completion_index?: number
 }
 
@@ -137,4 +145,4 @@ export interface GenerationCompleteEvent {
   type: 'generation_complete'
 }
 
-export type SSEEvent = TextDeltaEvent | MessageStopEvent | GenerationCompleteEvent
+export type SSEEvent = TextDeltaEvent | ThinkingDeltaEvent | MessageStopEvent | GenerationCompleteEvent

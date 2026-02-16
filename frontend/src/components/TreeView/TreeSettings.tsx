@@ -197,6 +197,69 @@ export function TreeSettings() {
               </label>
             </div>
 
+            <div className="tree-settings-toggle">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={!!currentTree.metadata?.extended_thinking}
+                  onChange={async (e) => {
+                    await updateTree(currentTree.tree_id, {
+                      metadata: {
+                        ...currentTree.metadata,
+                        extended_thinking: e.target.checked,
+                      },
+                    })
+                  }}
+                />
+                Extended thinking by default
+              </label>
+            </div>
+
+            {!!currentTree.metadata?.extended_thinking && (
+              <div className="tree-settings-field">
+                <label>Thinking budget</label>
+                <input
+                  type="number"
+                  min="1024"
+                  step="1024"
+                  value={Number(currentTree.metadata?.thinking_budget ?? 10000)}
+                  onChange={async (e) => {
+                    const budget = parseInt(e.target.value, 10)
+                    if (budget >= 1024) {
+                      await updateTree(currentTree.tree_id, {
+                        metadata: {
+                          ...currentTree.metadata,
+                          thinking_budget: budget,
+                        },
+                      })
+                    }
+                  }}
+                  placeholder="10000"
+                />
+              </div>
+            )}
+
+            <div className="tree-settings-toggle">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={!!currentTree.metadata?.include_thinking_in_context}
+                  onChange={async (e) => {
+                    await updateTree(currentTree.tree_id, {
+                      metadata: {
+                        ...currentTree.metadata,
+                        include_thinking_in_context: e.target.checked,
+                      },
+                    })
+                  }}
+                />
+                Include thinking in context
+              </label>
+              <span className="tree-settings-note">
+                Feed reasoning traces back into subsequent context. Uses significant tokens.
+              </span>
+            </div>
+
             <div className="tree-settings-actions">
               <button
                 className="tree-settings-save"

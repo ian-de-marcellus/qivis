@@ -3,6 +3,7 @@ import type { GenerateRequest, NodeResponse } from '../../api/types.ts'
 import { getActivePath, useTreeStore } from '../../store/treeStore.ts'
 import { ForkPanel } from './ForkPanel.tsx'
 import { MessageRow } from './MessageRow.tsx'
+import { ThinkingSection } from './ThinkingSection.tsx'
 import './LinearView.css'
 
 interface ForkTarget {
@@ -16,7 +17,9 @@ export function LinearView() {
     providers,
     isGenerating,
     streamingContent,
+    streamingThinkingContent,
     streamingContents,
+    streamingThinkingContents,
     streamingNodeIds,
     streamingTotal,
     activeStreamIndex,
@@ -63,7 +66,7 @@ export function LinearView() {
   const activeMultiContent = streamingContents[activeStreamIndex]
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [path.length, streamingContent, activeMultiContent])
+  }, [path.length, streamingContent, streamingThinkingContent, activeMultiContent])
 
   if (!currentTree) return null
 
@@ -131,6 +134,10 @@ export function LinearView() {
                   providers={providers}
                   defaults={branchDefaults}
                   streamDefault={currentTree.metadata?.stream_responses !== false}
+                  thinkingDefaults={{
+                    extendedThinking: !!currentTree.metadata?.extended_thinking,
+                    thinkingBudget: Number(currentTree.metadata?.thinking_budget ?? 10000),
+                  }}
                 />
               )}
             </Fragment>
@@ -161,6 +168,12 @@ export function LinearView() {
                 </button>
               </div>
             </div>
+            {streamingThinkingContents[activeStreamIndex] && (
+              <ThinkingSection
+                thinkingContent={streamingThinkingContents[activeStreamIndex]}
+                isStreaming={!streamingContents[activeStreamIndex]}
+              />
+            )}
             <div className="message-content">
               {streamingContents[activeStreamIndex]
                 ? (
@@ -171,23 +184,40 @@ export function LinearView() {
                     )}
                   </>
                 )
-                : <span className="thinking">Thinking...</span>
+                : streamingThinkingContents[activeStreamIndex]
+                  ? null
+                  : <span className="thinking">Thinking...</span>
               }
             </div>
           </div>
         )}
 
-        {isGenerating && streamingTotal <= 1 && streamingContent && (
+        {isGenerating && streamingTotal <= 1 && (streamingContent || streamingThinkingContent) && (
           <div className="message-row assistant">
             <div className="message-role">assistant</div>
+            {streamingThinkingContent && (
+              <ThinkingSection
+                thinkingContent={streamingThinkingContent}
+                isStreaming={!streamingContent}
+              />
+            )}
             <div className="message-content">
-              {streamingContent}
-              <span className="streaming-cursor" />
+              {streamingContent
+                ? (
+                  <>
+                    {streamingContent}
+                    <span className="streaming-cursor" />
+                  </>
+                )
+                : streamingThinkingContent
+                  ? null
+                  : <span className="thinking">Thinking...</span>
+              }
             </div>
           </div>
         )}
 
-        {isGenerating && streamingTotal <= 1 && !streamingContent && (
+        {isGenerating && streamingTotal <= 1 && !streamingContent && !streamingThinkingContent && (
           <div className="message-row assistant">
             <div className="message-role">assistant</div>
             <div className="message-content thinking">Thinking...</div>

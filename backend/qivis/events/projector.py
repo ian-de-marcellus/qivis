@@ -133,8 +133,8 @@ class StateProjector:
                 (node_id, tree_id, parent_id, role, content, model, provider,
                  system_prompt, sampling_params, mode, usage, latency_ms,
                  finish_reason, logprobs, context_usage, participant_id,
-                 participant_name, created_at, archived)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+                 participant_name, thinking_content, created_at, archived)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
             """,
             (
                 payload.node_id,
@@ -160,6 +160,7 @@ class StateProjector:
                 else None,
                 payload.participant_id,
                 payload.participant_name,
+                payload.thinking_content,
                 event.timestamp.isoformat()
                 if hasattr(event.timestamp, "isoformat")
                 else str(event.timestamp),

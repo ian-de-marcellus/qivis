@@ -45,7 +45,7 @@ class GenerationService:
         sampling_params: SamplingParams | None = None,
     ) -> NodeResponse:
         """Generate a non-streaming response and store as a new node."""
-        tree, nodes, resolved_model, resolved_prompt, resolved_params, include_ts = (
+        tree, nodes, resolved_model, resolved_prompt, resolved_params, include_ts, include_think = (
             await self._resolve_context(tree_id, node_id, model, system_prompt, sampling_params)
         )
         context_limit = get_model_context_limit(resolved_model)
@@ -55,6 +55,7 @@ class GenerationService:
             system_prompt=resolved_prompt,
             model_context_limit=context_limit,
             include_timestamps=include_ts,
+            include_thinking=include_think,
         )
         generation_id = str(uuid4())
 
@@ -89,7 +90,7 @@ class GenerationService:
         sampling_params: SamplingParams | None = None,
     ) -> list[NodeResponse]:
         """Generate N responses in parallel and store as sibling nodes."""
-        tree, nodes, resolved_model, resolved_prompt, resolved_params, include_ts = (
+        tree, nodes, resolved_model, resolved_prompt, resolved_params, include_ts, include_think = (
             await self._resolve_context(tree_id, node_id, model, system_prompt, sampling_params)
         )
         context_limit = get_model_context_limit(resolved_model)
@@ -99,6 +100,7 @@ class GenerationService:
             system_prompt=resolved_prompt,
             model_context_limit=context_limit,
             include_timestamps=include_ts,
+            include_thinking=include_think,
         )
         generation_id = str(uuid4())
 
@@ -138,7 +140,7 @@ class GenerationService:
         sampling_params: SamplingParams | None = None,
     ) -> AsyncIterator[StreamChunk]:
         """Stream N responses simultaneously, yielding tagged chunks."""
-        tree, nodes, resolved_model, resolved_prompt, resolved_params, include_ts = (
+        tree, nodes, resolved_model, resolved_prompt, resolved_params, include_ts, include_think = (
             await self._resolve_context(
                 tree_id, node_id, model, system_prompt, sampling_params
             )
@@ -151,6 +153,7 @@ class GenerationService:
                 system_prompt=resolved_prompt,
                 model_context_limit=context_limit,
                 include_timestamps=include_ts,
+                include_thinking=include_think,
             )
         )
         generation_id = str(uuid4())
@@ -252,7 +255,7 @@ class GenerationService:
         sampling_params: SamplingParams | None = None,
     ) -> AsyncIterator[StreamChunk]:
         """Generate a streaming response, yielding chunks."""
-        tree, nodes, resolved_model, resolved_prompt, resolved_params, include_ts = (
+        tree, nodes, resolved_model, resolved_prompt, resolved_params, include_ts, include_think = (
             await self._resolve_context(tree_id, node_id, model, system_prompt, sampling_params)
         )
         context_limit = get_model_context_limit(resolved_model)
@@ -262,6 +265,7 @@ class GenerationService:
             system_prompt=resolved_prompt,
             model_context_limit=context_limit,
             include_timestamps=include_ts,
+            include_thinking=include_think,
         )
         generation_id = str(uuid4())
 
@@ -308,7 +312,7 @@ class GenerationService:
         model: str | None,
         system_prompt: str | None,
         sampling_params: SamplingParams | None,
-    ) -> tuple[dict, list[dict], str, str | None, SamplingParams, bool]:
+    ) -> tuple[dict, list[dict], str, str | None, SamplingParams, bool, bool]:
         """Validate tree/node and resolve parameters from request or tree defaults."""
         tree = await self._projector.get_tree(tree_id)
         if tree is None:
@@ -336,8 +340,9 @@ class GenerationService:
         else:
             metadata = metadata_raw or {}
         include_timestamps = bool(metadata.get("include_timestamps", False))
+        include_thinking = bool(metadata.get("include_thinking_in_context", False))
 
-        return tree, nodes, resolved_model, resolved_prompt, resolved_params, include_timestamps
+        return tree, nodes, resolved_model, resolved_prompt, resolved_params, include_timestamps, include_thinking
 
     async def _emit_generation_started(
         self,
@@ -399,6 +404,7 @@ class GenerationService:
             latency_ms=result.latency_ms,
             finish_reason=result.finish_reason,
             logprobs=result.logprobs,
+            thinking_content=result.thinking_content,
             context_usage=context_usage,
             raw_response=result.raw_response,
         )

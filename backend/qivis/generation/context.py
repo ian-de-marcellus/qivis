@@ -61,6 +61,7 @@ class ContextBuilder:
         model_context_limit: int,
         *,
         include_timestamps: bool = False,
+        include_thinking: bool = False,
         # Phase 3+ parameters — accepted but ignored in 0.5
         excluded_ids: set[str] | None = None,
         digression_groups: dict | None = None,
@@ -81,11 +82,16 @@ class ContextBuilder:
         path = self._walk_path(nodes, target_node_id)
 
         # 2. Filter to API-sendable roles (exclude system, researcher_note)
-        messages = [
-            {"role": n["role"], "content": self._maybe_prepend_timestamp(n, include_timestamps)}
-            for n in path
-            if n["role"] in ("user", "assistant", "tool")
-        ]
+        messages = []
+        for n in path:
+            if n["role"] not in ("user", "assistant", "tool"):
+                continue
+            content = self._maybe_prepend_timestamp(n, include_timestamps)
+            if include_thinking and n["role"] == "assistant":
+                thinking = n.get("thinking_content")
+                if thinking:
+                    content = f"[Model thinking: {thinking}]\n\n{content}"
+            messages.append({"role": n["role"], "content": content})
         # Keep node_ids aligned with messages for eviction reporting
         message_node_ids = [
             n["node_id"]

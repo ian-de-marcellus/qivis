@@ -92,6 +92,7 @@ export async function generateStream(
   onDelta: (text: string) => void,
   onComplete: (event: MessageStopEvent) => void,
   onError?: (error: Error) => void,
+  onThinkingDelta?: (thinking: string) => void,
 ): Promise<void> {
   const res = await fetch(`${BASE}/trees/${treeId}/nodes/${nodeId}/generate`, {
     method: 'POST',
@@ -136,7 +137,9 @@ export async function generateStream(
           const data = line.slice(6)
           try {
             const parsed = JSON.parse(data) as Record<string, unknown>
-            if (currentEvent === 'text_delta' && typeof parsed.text === 'string') {
+            if (currentEvent === 'thinking_delta' && typeof parsed.thinking === 'string') {
+              onThinkingDelta?.(parsed.thinking)
+            } else if (currentEvent === 'text_delta' && typeof parsed.text === 'string') {
               onDelta(parsed.text)
             } else if (currentEvent === 'message_stop') {
               receivedComplete = true
@@ -171,6 +174,7 @@ export async function generateMultiStream(
   onStreamComplete: (event: MessageStopEvent) => void,
   onAllComplete: () => void,
   onError?: (error: Error, completionIndex?: number) => void,
+  onThinkingDelta?: (thinking: string, completionIndex: number) => void,
 ): Promise<void> {
   const res = await fetch(`${BASE}/trees/${treeId}/nodes/${nodeId}/generate`, {
     method: 'POST',
@@ -211,7 +215,9 @@ export async function generateMultiStream(
           const data = line.slice(6)
           try {
             const parsed = JSON.parse(data) as SSEParsed
-            if (currentEvent === 'text_delta' && typeof parsed.text === 'string') {
+            if (currentEvent === 'thinking_delta' && typeof parsed.thinking === 'string') {
+              onThinkingDelta?.(parsed.thinking, parsed.completion_index as number)
+            } else if (currentEvent === 'text_delta' && typeof parsed.text === 'string') {
               onDelta(parsed.text, parsed.completion_index as number)
             } else if (currentEvent === 'message_stop') {
               onStreamComplete(parsed as unknown as MessageStopEvent)
