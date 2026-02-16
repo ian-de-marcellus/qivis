@@ -227,6 +227,21 @@
   font-style: italic;
 }
 
+.fork-panel-hint {
+  font-family: var(--font-ui);
+  font-size: 0.65rem;
+  color: var(--text-tertiary);
+  opacity: 0.6;
+}
+
+.fork-panel-kindness {
+  font-family: var(--font-ui);
+  font-size: 0.65rem;
+  font-style: italic;
+  color: var(--text-tertiary);
+  opacity: 0.5;
+}
+
 .fork-submit-btn {
   padding: var(--space-sm) var(--space-md);
   font-family: var(--font-ui);

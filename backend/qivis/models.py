@@ -141,7 +141,7 @@ class NodeCreatedPayload(BaseModel):
     provider: str | None = None
     system_prompt: str | None = None
     sampling_params: SamplingParams | None = None
-    mode: Literal["chat", "completion"] = "chat"
+    mode: Literal["chat", "completion", "manual"] = "chat"
     prompt_text: str | None = None
 
     # Response metadata

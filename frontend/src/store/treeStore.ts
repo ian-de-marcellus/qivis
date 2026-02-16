@@ -56,6 +56,7 @@ interface TreeStore {
   }) => Promise<void>
   updateTree: (treeId: string, req: PatchTreeRequest) => Promise<void>
   sendMessage: (content: string) => Promise<void>
+  sendMessageOnly: (content: string) => Promise<void>
   setSystemPromptOverride: (prompt: string | null) => void
   clearError: () => void
   clearGenerationError: () => void
@@ -75,6 +76,7 @@ interface TreeStore {
     parentNodeId: string,
     overrides: GenerateRequest,
   ) => Promise<void>
+  prefillAssistant: (parentId: string, content: string) => Promise<void>
 }
 
 /**
@@ -335,6 +337,34 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
       }
     } catch (e) {
       set({ isGenerating: false, streamingContent: '', streamingThinkingContent: '', error: String(e) })
+    }
+  },
+
+  sendMessageOnly: async (content: string) => {
+    const { currentTree, branchSelections } = get()
+    if (!currentTree) return
+
+    const treeId = currentTree.tree_id
+    set({ error: null })
+
+    try {
+      const activePath = getActivePath(currentTree.nodes, branchSelections)
+      const leafNode = activePath.length > 0 ? activePath[activePath.length - 1] : null
+      const parentId = leafNode?.node_id
+
+      const userNode = await api.createNode(treeId, {
+        content,
+        role: 'user',
+        parent_id: parentId,
+      })
+
+      set((state) => ({
+        currentTree: state.currentTree
+          ? { ...state.currentTree, nodes: [...state.currentTree.nodes, userNode] }
+          : null,
+      }))
+    } catch (e) {
+      set({ error: String(e) })
     }
   },
 
@@ -795,6 +825,35 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
         isGenerating: false, streamingContent: '', streamingThinkingContent: '',
         regeneratingParentId: null, error: String(e),
       })
+    }
+  },
+
+  prefillAssistant: async (parentId: string, content: string) => {
+    const { currentTree } = get()
+    if (!currentTree) return
+
+    const treeId = currentTree.tree_id
+    set({ error: null })
+
+    try {
+      const node = await api.createNode(treeId, {
+        content,
+        role: 'assistant',
+        parent_id: parentId || undefined,
+        mode: 'manual',
+      })
+
+      set((state) => ({
+        currentTree: state.currentTree
+          ? { ...state.currentTree, nodes: [...state.currentTree.nodes, node] }
+          : null,
+        branchSelections: {
+          ...state.branchSelections,
+          [parentId]: node.node_id,
+        },
+      }))
+    } catch (err: unknown) {
+      set({ error: err instanceof Error ? err.message : String(err) })
     }
   },
 }))

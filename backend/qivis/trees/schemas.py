@@ -32,6 +32,7 @@ class CreateNodeRequest(BaseModel):
     content: str
     role: Literal["system", "user", "assistant", "tool", "researcher_note"] = "user"
     parent_id: str | None = None
+    mode: Literal["chat", "completion", "manual"] = "chat"
 
 
 class PatchNodeContentRequest(BaseModel):

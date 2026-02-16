@@ -48,12 +48,14 @@ interface MessageRowProps {
   siblings: NodeResponse[]
   onSelectSibling: (siblingId: string) => void
   onFork: () => void
+  onPrefill?: () => void
+  onGenerate?: () => void
   onCompare?: () => void
   onEdit?: (nodeId: string, editedContent: string | null) => void
   highlightClass?: 'highlight-used' | 'highlight-other'
 }
 
-export function MessageRow({ node, siblings, onSelectSibling, onFork, onCompare, onEdit, highlightClass }: MessageRowProps) {
+export function MessageRow({ node, siblings, onSelectSibling, onFork, onPrefill, onGenerate, onCompare, onEdit, highlightClass }: MessageRowProps) {
   const [showLogprobs, setShowLogprobs] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
   const [editValue, setEditValue] = useState('')
@@ -67,6 +69,7 @@ export function MessageRow({ node, siblings, onSelectSibling, onFork, onCompare,
   const logprobs: LogprobData | null = node.logprobs
   const avgCertainty = logprobs ? averageCertainty(logprobs) : null
 
+  const isManual = node.role === 'assistant' && node.mode === 'manual'
   const hasEdit = node.edited_content != null
   const hasEditHistory = hasEdit || (editHistoryCache[node.node_id]?.length ?? 0) > 0
   const rowClasses = ['message-row', node.role, highlightClass].filter(Boolean).join(' ')
@@ -89,6 +92,16 @@ export function MessageRow({ node, siblings, onSelectSibling, onFork, onCompare,
         <button className="fork-btn" onClick={onFork} aria-label={node.role === 'assistant' ? 'Regenerate' : 'Fork'}>
           {node.role === 'assistant' ? 'Regen' : 'Fork'}
         </button>
+        {onPrefill && node.role === 'user' && (
+          <button className="prefill-btn" onClick={onPrefill} aria-label="Prefill response">
+            Prefill
+          </button>
+        )}
+        {onGenerate && node.role === 'user' && (
+          <button className="generate-btn" onClick={onGenerate} aria-label="Generate response">
+            Generate
+          </button>
+        )}
         {onEdit && !isEditing && (
           <button
             className="edit-btn"
@@ -139,25 +152,36 @@ export function MessageRow({ node, siblings, onSelectSibling, onFork, onCompare,
               Cancel
             </button>
             <span className="edit-hint">Cmd+Enter to save, Esc to cancel</span>
+            <span className="edit-kindness">You're rewriting the model's memory. Be kind.</span>
           </div>
         </div>
       ) : (
         <>
-          {/* Original content — always primary, always the truth */}
-          <div className="message-content">
-            {showLogprobs && logprobs ? (
-              <LogprobOverlay logprobs={logprobs} />
-            ) : (
-              node.content
-            )}
-          </div>
-
-          {/* Edit overlay — the correction slip */}
-          {hasEdit && (
+          {isManual ? (
+            /* Manual node — the whole content is fabricated, so it lives inside the slip */
             <div className="edit-overlay">
-              <div className="edit-overlay-label">model sees</div>
-              <div className="edit-overlay-content">{node.edited_content}</div>
+              <div className="edit-overlay-label">researcher authored</div>
+              <div className="edit-overlay-content">{node.content}</div>
             </div>
+          ) : (
+            <>
+              {/* Original content — always primary, always the truth */}
+              <div className="message-content">
+                {showLogprobs && logprobs ? (
+                  <LogprobOverlay logprobs={logprobs} />
+                ) : (
+                  node.content
+                )}
+              </div>
+
+              {/* Edit overlay — the correction slip */}
+              {hasEdit && (
+                <div className="edit-overlay">
+                  <div className="edit-overlay-label">model sees</div>
+                  <div className="edit-overlay-content">{node.edited_content}</div>
+                </div>
+              )}
+            </>
           )}
 
           {/* Collapsible edit history — visible when edited or when cache has entries */}

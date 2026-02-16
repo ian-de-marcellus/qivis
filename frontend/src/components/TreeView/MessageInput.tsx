@@ -3,26 +3,38 @@ import { useTreeStore } from '../../store/treeStore.ts'
 import './MessageInput.css'
 
 export function MessageInput() {
-  const { sendMessage, isGenerating, currentTree } = useTreeStore()
+  const { sendMessage, sendMessageOnly, isGenerating, currentTree } = useTreeStore()
   const [content, setContent] = useState('')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   const canSend = content.trim().length > 0 && !isGenerating && currentTree != null
 
-  const handleSend = () => {
-    if (!canSend) return
-    sendMessage(content.trim())
+  const resetInput = () => {
     setContent('')
-    // Reset textarea height
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto'
     }
   }
 
+  const handleSend = () => {
+    if (!canSend) return
+    sendMessage(content.trim())
+    resetInput()
+  }
+
+  const handleSendOnly = () => {
+    if (!canSend) return
+    sendMessageOnly(content.trim())
+    resetInput()
+  }
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === 'Enter' && !e.shiftKey && !(e.metaKey || e.ctrlKey)) {
       e.preventDefault()
       handleSend()
+    } else if (e.key === 'Enter' && !e.shiftKey && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault()
+      handleSendOnly()
     }
   }
 
@@ -48,6 +60,14 @@ export function MessageInput() {
         />
         <button onClick={handleSend} disabled={!canSend}>
           Send
+        </button>
+        <button
+          className="send-only-btn"
+          onClick={handleSendOnly}
+          disabled={!canSend}
+          title="Send without generating a response (Cmd+Enter)"
+        >
+          No gen
         </button>
       </div>
     </div>

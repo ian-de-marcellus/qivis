@@ -4,9 +4,10 @@ import { SAMPLING_PRESETS, detectPreset, type PresetName } from './samplingPrese
 import './ForkPanel.css'
 
 interface ForkPanelProps {
-  mode: 'fork' | 'regenerate'
+  mode: 'fork' | 'regenerate' | 'prefill' | 'generate'
   onForkSubmit: (content: string, overrides: GenerateRequest) => void
   onRegenerateSubmit: (overrides: GenerateRequest) => void
+  onPrefillSubmit?: (content: string) => void
   onCancel: () => void
   isGenerating: boolean
   providers: ProviderInfo[]
@@ -23,6 +24,7 @@ export function ForkPanel({
   mode,
   onForkSubmit,
   onRegenerateSubmit,
+  onPrefillSubmit,
   onCancel,
   isGenerating,
   providers,
@@ -31,7 +33,7 @@ export function ForkPanel({
   samplingDefaults,
 }: ForkPanelProps) {
   const [content, setContent] = useState('')
-  const [showSettings, setShowSettings] = useState(mode === 'regenerate')
+  const [showSettings, setShowSettings] = useState(mode === 'regenerate' || mode === 'generate')
 
   // Default to tree's provider if it's available, otherwise first provider
   const defaultProvider =
@@ -68,9 +70,52 @@ export function ForkPanel({
   const [stream, setStream] = useState(streamDefault)
 
   const canSubmit =
-    mode === 'regenerate'
+    mode === 'regenerate' || mode === 'generate'
       ? !isGenerating
       : content.trim().length > 0 && !isGenerating
+
+  // Prefill mode: simple submit, no generation
+  if (mode === 'prefill') {
+    const handlePrefillKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault()
+        if (content.trim()) onPrefillSubmit?.(content.trim())
+      } else if (e.key === 'Escape') {
+        onCancel()
+      }
+    }
+
+    return (
+      <div className="fork-panel">
+        <div className="fork-panel-header">
+          <span className="fork-panel-title">Prefill assistant response</span>
+          <button className="fork-panel-close" onClick={onCancel}>
+            Cancel
+          </button>
+        </div>
+        <div className="fork-panel-body">
+          <textarea
+            className="fork-panel-input"
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+            onKeyDown={handlePrefillKeyDown}
+            placeholder="Write the assistant's response..."
+            rows={3}
+            autoFocus
+          />
+          <span className="fork-panel-hint">Cmd+Enter to save, Esc to cancel</span>
+          <span className="fork-panel-kindness">You're writing the model's memory. Be kind.</span>
+          <button
+            className="fork-submit-btn"
+            onClick={() => content.trim() && onPrefillSubmit?.(content.trim())}
+            disabled={!content.trim()}
+          >
+            Save
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   const handlePresetChange = (presetName: PresetName) => {
     if (presetName === 'custom') return
@@ -114,7 +159,7 @@ export function ForkPanel({
       stream,
     }
 
-    if (mode === 'regenerate') {
+    if (mode === 'regenerate' || mode === 'generate') {
       onRegenerateSubmit(overrides)
     } else {
       onForkSubmit(content.trim(), overrides)
@@ -130,8 +175,12 @@ export function ForkPanel({
     }
   }
 
-  const title = mode === 'regenerate' ? 'Regenerate response' : 'Fork conversation'
-  const submitLabel = mode === 'regenerate' ? 'Regenerate' : 'Fork & Generate'
+  const title = mode === 'regenerate' ? 'Regenerate response'
+    : mode === 'generate' ? 'Generate response'
+    : 'Fork conversation'
+  const submitLabel = mode === 'regenerate' ? 'Regenerate'
+    : mode === 'generate' ? 'Generate'
+    : 'Fork & Generate'
 
   return (
     <div className="fork-panel">

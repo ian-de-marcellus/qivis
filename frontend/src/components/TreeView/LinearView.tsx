@@ -9,7 +9,7 @@ import './LinearView.css'
 
 interface ForkTarget {
   parentId: string
-  mode: 'fork' | 'regenerate'
+  mode: 'fork' | 'regenerate' | 'prefill' | 'generate'
 }
 
 export function LinearView() {
@@ -32,6 +32,7 @@ export function LinearView() {
     setActiveStreamIndex,
     forkAndGenerate,
     regenerate,
+    prefillAssistant,
     clearGenerationError,
     fetchProviders,
     selectedEditVersion,
@@ -160,6 +161,13 @@ export function LinearView() {
     }
   }
 
+  const handlePrefillSubmit = (content: string) => {
+    if (forkTarget != null) {
+      prefillAssistant(forkTarget.parentId, content)
+      setForkTarget(null)
+    }
+  }
+
   return (
     <div className="linear-view">
       <div className="messages">
@@ -176,6 +184,20 @@ export function LinearView() {
                   handleSelectSibling(nodeParentKey, siblingId)
                 }
                 onFork={() => handleFork(nodeParentKey, node.role)}
+                onPrefill={node.role === 'user' ? () => {
+                  if (forkTarget?.parentId === node.node_id && forkTarget.mode === 'prefill') {
+                    setForkTarget(null)
+                  } else {
+                    setForkTarget({ parentId: node.node_id, mode: 'prefill' })
+                  }
+                } : undefined}
+                onGenerate={node.role === 'user' ? () => {
+                  if (forkTarget?.parentId === node.node_id && forkTarget.mode === 'generate') {
+                    setForkTarget(null)
+                  } else {
+                    setForkTarget({ parentId: node.node_id, mode: 'generate' })
+                  }
+                } : undefined}
                 onEdit={(nodeId, editedContent) => editNodeContent(nodeId, editedContent)}
                 onCompare={siblings.length > 1 ? () => setComparingAtParent(
                   comparingAtParent === nodeParentKey ? null : nodeParentKey,
@@ -193,11 +215,16 @@ export function LinearView() {
                   onDismiss={() => setComparingAtParent(null)}
                 />
               )}
-              {!isGenerating && forkTarget?.parentId === nodeParentKey && (
+              {!isGenerating && forkTarget != null && (
+                forkTarget.mode === 'prefill' || forkTarget.mode === 'generate'
+                  ? forkTarget.parentId === node.node_id
+                  : forkTarget.parentId === nodeParentKey
+              ) && (
                 <ForkPanel
                   mode={forkTarget.mode}
                   onForkSubmit={handleForkSubmit}
                   onRegenerateSubmit={handleRegenerateSubmit}
+                  onPrefillSubmit={handlePrefillSubmit}
                   onCancel={() => setForkTarget(null)}
                   isGenerating={isGenerating}
                   providers={providers}

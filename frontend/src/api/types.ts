@@ -137,6 +137,7 @@ export interface CreateNodeRequest {
   content: string
   role?: 'system' | 'user' | 'assistant' | 'tool' | 'researcher_note'
   parent_id?: string
+  mode?: 'chat' | 'completion' | 'manual'
 }
 
 export interface GenerateRequest {

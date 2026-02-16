@@ -178,6 +178,7 @@ class TreeService:
             parent_id=request.parent_id,
             role=request.role,
             content=request.content,
+            mode=request.mode,
         )
 
         event = EventEnvelope(
