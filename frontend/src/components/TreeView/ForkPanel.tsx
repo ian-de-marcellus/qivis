@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import type { GenerateRequest, ProviderInfo } from '../../api/types.ts'
+import type { GenerateRequest, ProviderInfo, SamplingParams } from '../../api/types.ts'
+import { SAMPLING_PRESETS, detectPreset, type PresetName } from './samplingPresets.ts'
 import './ForkPanel.css'
 
 interface ForkPanelProps {
@@ -15,10 +16,7 @@ interface ForkPanelProps {
     systemPrompt: string | null
   }
   streamDefault: boolean
-  thinkingDefaults?: {
-    extendedThinking: boolean
-    thinkingBudget: number
-  }
+  samplingDefaults: SamplingParams | null
 }
 
 export function ForkPanel({
@@ -30,7 +28,7 @@ export function ForkPanel({
   providers,
   defaults,
   streamDefault,
-  thinkingDefaults,
+  samplingDefaults,
 }: ForkPanelProps) {
   const [content, setContent] = useState('')
   const [showSettings, setShowSettings] = useState(mode === 'regenerate')
@@ -46,18 +44,45 @@ export function ForkPanel({
   const selectedProvider = providers.find((p) => p.name === provider)
   const suggestedModels = selectedProvider?.models ?? []
   const [systemPrompt, setSystemPrompt] = useState(defaults.systemPrompt ?? '')
-  const [temperature, setTemperature] = useState('')
+
+  // Sampling state — initialize from tree defaults
+  const sp = samplingDefaults ?? {}
+  const [temperature, setTemperature] = useState(sp.temperature != null ? String(sp.temperature) : '')
+  const [topP, setTopP] = useState(sp.top_p != null ? String(sp.top_p) : '')
+  const [topK, setTopK] = useState(sp.top_k != null ? String(sp.top_k) : '')
+  const [maxTokens, setMaxTokens] = useState(sp.max_tokens != null ? String(sp.max_tokens) : '')
+  const [frequencyPenalty, setFrequencyPenalty] = useState(
+    sp.frequency_penalty != null ? String(sp.frequency_penalty) : '',
+  )
+  const [presencePenalty, setPresencePenalty] = useState(
+    sp.presence_penalty != null ? String(sp.presence_penalty) : '',
+  )
+  const [extendedThinking, setExtendedThinking] = useState(sp.extended_thinking ?? false)
+  const [thinkingBudget, setThinkingBudget] = useState(
+    String(sp.thinking_budget ?? 10000),
+  )
+
   const [count, setCount] = useState('1')
   const [stream, setStream] = useState(streamDefault)
-  const [extendedThinking, setExtendedThinking] = useState(thinkingDefaults?.extendedThinking ?? false)
-  const [thinkingBudget, setThinkingBudget] = useState(
-    String(thinkingDefaults?.thinkingBudget ?? 10000),
-  )
 
   const canSubmit =
     mode === 'regenerate'
       ? !isGenerating
       : content.trim().length > 0 && !isGenerating
+
+  const handlePresetChange = (presetName: PresetName) => {
+    if (presetName === 'custom') return
+    const preset = SAMPLING_PRESETS[presetName]
+    if (!preset) return
+    setTemperature(preset.temperature != null ? String(preset.temperature) : '')
+    setTopP(preset.top_p != null ? String(preset.top_p) : '')
+    if (preset.top_k != null) setTopK(String(preset.top_k))
+    if (preset.max_tokens != null) setMaxTokens(String(preset.max_tokens))
+    if (preset.frequency_penalty != null) setFrequencyPenalty(String(preset.frequency_penalty))
+    if (preset.presence_penalty != null) setPresencePenalty(String(preset.presence_penalty))
+  }
+
+  const currentPreset = detectPreset(temperature, topP)
 
   const handleSubmit = () => {
     if (!canSubmit) return
@@ -65,8 +90,14 @@ export function ForkPanel({
     const parsedCount = parseInt(count, 10)
     const n = parsedCount > 1 ? parsedCount : undefined
 
-    const samplingParams: Record<string, unknown> = {}
+    // Build sampling_params from all fields — only include explicitly set values
+    const samplingParams: SamplingParams = {}
     if (temperature) samplingParams.temperature = parseFloat(temperature)
+    if (topP) samplingParams.top_p = parseFloat(topP)
+    if (topK) samplingParams.top_k = parseInt(topK, 10)
+    if (maxTokens) samplingParams.max_tokens = parseInt(maxTokens, 10)
+    if (frequencyPenalty) samplingParams.frequency_penalty = parseFloat(frequencyPenalty)
+    if (presencePenalty) samplingParams.presence_penalty = parseFloat(presencePenalty)
     if (extendedThinking) {
       samplingParams.extended_thinking = true
       samplingParams.thinking_budget = parseInt(thinkingBudget, 10) || 10000
@@ -180,18 +211,103 @@ export function ForkPanel({
                 placeholder="Override system prompt..."
               />
             </div>
+
+            <div className="fork-settings-divider" />
+
             <div className="fork-setting-row">
-              <label>Temperature</label>
-              <input
-                type="number"
-                step="0.1"
-                min="0"
-                max="2"
-                value={temperature}
-                onChange={(e) => setTemperature(e.target.value)}
-                placeholder="default"
-              />
+              <label>Preset</label>
+              <select
+                value={currentPreset}
+                onChange={(e) => handlePresetChange(e.target.value as PresetName)}
+              >
+                {Object.entries(SAMPLING_PRESETS).map(([key, p]) => (
+                  <option key={key} value={key}>{p.label}</option>
+                ))}
+                <option value="custom">Custom</option>
+              </select>
             </div>
+
+            <div className="fork-setting-row-pair">
+              <div className="fork-setting-row">
+                <label>Temperature</label>
+                <input
+                  type="number"
+                  step="0.05"
+                  min="0"
+                  max="2"
+                  value={temperature}
+                  onChange={(e) => setTemperature(e.target.value)}
+                  placeholder="default"
+                />
+              </div>
+              <div className="fork-setting-row">
+                <label>Top P</label>
+                <input
+                  type="number"
+                  step="0.05"
+                  min="0"
+                  max="1"
+                  value={topP}
+                  onChange={(e) => setTopP(e.target.value)}
+                  placeholder="default"
+                />
+              </div>
+            </div>
+
+            <div className="fork-setting-row-pair">
+              <div className="fork-setting-row">
+                <label>Top K</label>
+                <input
+                  type="number"
+                  step="1"
+                  min="0"
+                  value={topK}
+                  onChange={(e) => setTopK(e.target.value)}
+                  placeholder="default"
+                />
+              </div>
+              <div className="fork-setting-row">
+                <label>Max tokens</label>
+                <input
+                  type="number"
+                  step="256"
+                  min="1"
+                  value={maxTokens}
+                  onChange={(e) => setMaxTokens(e.target.value)}
+                  placeholder="2048"
+                />
+              </div>
+            </div>
+
+            <div className="fork-setting-row-pair">
+              <div className="fork-setting-row">
+                <label>Freq penalty</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  min="-2"
+                  max="2"
+                  value={frequencyPenalty}
+                  onChange={(e) => setFrequencyPenalty(e.target.value)}
+                  placeholder="default"
+                />
+              </div>
+              <div className="fork-setting-row">
+                <label>Pres penalty</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  min="-2"
+                  max="2"
+                  value={presencePenalty}
+                  onChange={(e) => setPresencePenalty(e.target.value)}
+                  placeholder="default"
+                />
+              </div>
+            </div>
+
+            <div className="fork-settings-divider" />
+
             <div className="fork-setting-row">
               <label>Count</label>
               <input

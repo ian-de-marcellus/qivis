@@ -143,6 +143,40 @@
   cursor: pointer;
 }
 
+.tree-settings-divider {
+  height: 1px;
+  background: var(--border-subtle);
+  margin: var(--space-xs) 0;
+}
+
+.tree-settings-section-label {
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-tertiary);
+}
+
+.tree-settings-row-pair {
+  display: flex;
+  gap: var(--space-sm);
+}
+
+.tree-settings-row-pair .tree-settings-field {
+  flex: 1;
+  min-width: 0;
+}
+
+.tree-settings-row-pair input[type="number"] {
+  width: 100%;
+}
+
+.tree-settings-field input[type="number"] {
+  max-width: 10rem;
+  font-variant-numeric: tabular-nums;
+}
+
 .tree-settings-toggle {
   display: flex;
   align-items: center;

@@ -1,5 +1,21 @@
 /** TypeScript interfaces matching backend Pydantic schemas. */
 
+// -- Canonical data structures --
+
+export interface SamplingParams {
+  temperature?: number | null
+  top_p?: number | null
+  top_k?: number | null
+  max_tokens?: number
+  stop_sequences?: string[] | null
+  frequency_penalty?: number | null
+  presence_penalty?: number | null
+  logprobs?: boolean
+  top_logprobs?: number | null
+  extended_thinking?: boolean
+  thinking_budget?: number | null
+}
+
 // -- Responses --
 
 export interface TreeSummary {
@@ -19,7 +35,7 @@ export interface NodeResponse {
   model: string | null
   provider: string | null
   system_prompt: string | null
-  sampling_params: Record<string, unknown> | null
+  sampling_params: SamplingParams | null
   mode: string | null
   usage: Record<string, number> | null
   latency_ms: number | null
@@ -69,7 +85,7 @@ export interface TreeDetail {
   default_model: string | null
   default_provider: string | null
   default_system_prompt: string | null
-  default_sampling_params: Record<string, unknown> | null
+  default_sampling_params: SamplingParams | null
   conversation_mode: string
   created_at: string
   updated_at: string
@@ -98,7 +114,7 @@ export interface PatchTreeRequest {
   default_model?: string | null
   default_provider?: string | null
   default_system_prompt?: string | null
-  default_sampling_params?: Record<string, unknown> | null
+  default_sampling_params?: SamplingParams | null
 }
 
 export interface CreateNodeRequest {
@@ -111,7 +127,7 @@ export interface GenerateRequest {
   provider?: string
   model?: string
   system_prompt?: string
-  sampling_params?: Record<string, unknown>
+  sampling_params?: SamplingParams
   stream?: boolean
   n?: number
 }

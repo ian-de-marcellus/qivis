@@ -1,8 +1,10 @@
 """Generation service: orchestrates LLM calls and event emission."""
 
 import asyncio
+import json as json_mod
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
+from typing import Any
 from uuid import uuid4
 
 from qivis.events.projector import StateProjector
@@ -18,6 +20,65 @@ from qivis.models import (
 from qivis.providers.base import GenerationRequest, GenerationResult, LLMProvider, StreamChunk
 from qivis.trees.schemas import NodeResponse
 from qivis.trees.service import TreeService
+
+
+# ---------------------------------------------------------------------------
+# Sampling parameter resolution
+# ---------------------------------------------------------------------------
+
+
+def _parse_json_field(raw: str | dict | None) -> dict[str, Any] | None:
+    """Parse a JSON string or dict into a dict, returning None on failure."""
+    if raw is None:
+        return None
+    if isinstance(raw, dict):
+        return raw if raw else None
+    if isinstance(raw, str):
+        try:
+            parsed = json_mod.loads(raw)
+            if isinstance(parsed, dict) and parsed:
+                return parsed
+        except (ValueError, TypeError):
+            pass
+    return None
+
+
+def merge_sampling_params(
+    request_params: SamplingParams | None,
+    tree_defaults_raw: str | dict | None,
+    *,
+    metadata: dict | None = None,
+) -> SamplingParams:
+    """Merge sampling params: request overrides > tree defaults > SamplingParams() base.
+
+    Uses Pydantic's model_fields_set on request_params to only apply fields
+    that were explicitly provided, preserving tree defaults for the rest.
+    """
+    base = SamplingParams()
+
+    tree_dict = _parse_json_field(tree_defaults_raw)
+
+    # Backward compat: if no default_sampling_params but metadata has extended_thinking
+    if not tree_dict and metadata:
+        if metadata.get("extended_thinking"):
+            tree_dict = {
+                "extended_thinking": True,
+                "thinking_budget": metadata.get("thinking_budget", 10000),
+            }
+
+    # Layer 1: apply tree defaults over base
+    if tree_dict:
+        tree_sp = SamplingParams.model_validate(tree_dict)
+        for field_name in tree_dict:
+            if field_name in SamplingParams.model_fields:
+                setattr(base, field_name, getattr(tree_sp, field_name))
+
+    # Layer 2: apply request overrides (only explicitly set fields)
+    if request_params is not None:
+        for field_name in request_params.model_fields_set:
+            setattr(base, field_name, getattr(request_params, field_name))
+
+    return base
 
 
 class GenerationService:
@@ -327,18 +388,18 @@ class GenerationService:
         resolved_prompt = system_prompt if system_prompt is not None else tree.get(
             "default_system_prompt"
         )
-        resolved_params = sampling_params or SamplingParams()
 
-        # Tree-level setting: include timestamps in context
-        metadata_raw = tree.get("metadata")
-        if isinstance(metadata_raw, str):
-            import json as json_mod
-            try:
-                metadata = json_mod.loads(metadata_raw)
-            except (ValueError, TypeError):
-                metadata = {}
-        else:
-            metadata = metadata_raw or {}
+        # Parse metadata
+        metadata = _parse_json_field(tree.get("metadata")) or {}
+
+        # Three-layer merge: request > tree defaults > base
+        resolved_params = merge_sampling_params(
+            sampling_params,
+            tree.get("default_sampling_params"),
+            metadata=metadata,
+        )
+
+        # Tree-level settings from metadata
         include_timestamps = bool(metadata.get("include_timestamps", False))
         include_thinking = bool(metadata.get("include_thinking_in_context", False))
 

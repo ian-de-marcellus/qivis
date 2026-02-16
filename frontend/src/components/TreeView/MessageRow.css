@@ -77,3 +77,10 @@
   color: var(--text-accent);
   border-color: var(--text-accent);
 }
+
+/* ---- Sampling param tags in meta line ---- */
+.sampling-meta {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}

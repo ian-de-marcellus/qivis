@@ -1,10 +1,24 @@
 import { useState } from 'react'
-import type { LogprobData, NodeResponse } from '../../api/types.ts'
+import type { LogprobData, NodeResponse, SamplingParams } from '../../api/types.ts'
 import { BranchIndicator } from './BranchIndicator.tsx'
 import { ContextBar } from './ContextBar.tsx'
 import { LogprobOverlay, averageCertainty, uncertaintyColor } from './LogprobOverlay.tsx'
 import { ThinkingSection } from './ThinkingSection.tsx'
 import './MessageRow.css'
+
+/** Short labels for sampling params that differ from defaults. */
+function formatSamplingMeta(sp: SamplingParams | null | undefined): string[] {
+  if (!sp) return []
+  const parts: string[] = []
+  if (sp.temperature != null) parts.push(`temp ${sp.temperature}`)
+  if (sp.top_p != null) parts.push(`top_p ${sp.top_p}`)
+  if (sp.top_k != null) parts.push(`top_k ${sp.top_k}`)
+  if (sp.max_tokens != null && sp.max_tokens !== 2048) parts.push(`max_tok ${sp.max_tokens}`)
+  if (sp.frequency_penalty != null) parts.push(`freq_pen ${sp.frequency_penalty}`)
+  if (sp.presence_penalty != null) parts.push(`pres_pen ${sp.presence_penalty}`)
+  if (sp.extended_thinking) parts.push('thinking')
+  return parts
+}
 
 function formatTimestamp(isoString: string): string {
   const date = new Date(isoString)
@@ -83,6 +97,9 @@ export function MessageRow({ node, siblings, onSelectSibling, onFork }: MessageR
             {node.usage && ` \u00b7 ${node.usage.input_tokens.toLocaleString()}+${node.usage.output_tokens.toLocaleString()} tok`}
           </>
         )}
+        {node.role === 'assistant' && formatSamplingMeta(node.sampling_params).map((label) => (
+          <span key={label} className="sampling-meta">{` \u00b7 ${label}`}</span>
+        ))}
         {avgCertainty != null && (
           <>
             {' \u00b7 '}

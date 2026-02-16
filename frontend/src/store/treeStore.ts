@@ -249,18 +249,12 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
       const resolvedProvider = lastAssistant?.provider ?? currentTree.default_provider
       const resolvedModel = lastAssistant?.model ?? currentTree.default_model
 
-      // Build sampling params from tree metadata defaults
-      const samplingParams: Record<string, unknown> = {}
-      if (currentTree.metadata?.extended_thinking) {
-        samplingParams.extended_thinking = true
-        samplingParams.thinking_budget = Number(currentTree.metadata?.thinking_budget ?? 10000)
-      }
-
+      // Backend handles merge resolution: tree defaults > base
+      // Only pass explicit overrides here (provider, model, system_prompt)
       const generateReq: GenerateRequest = {
         ...(resolvedProvider ? { provider: resolvedProvider } : {}),
         ...(resolvedModel ? { model: resolvedModel } : {}),
         ...(systemPromptOverride != null ? { system_prompt: systemPromptOverride } : {}),
-        ...(Object.keys(samplingParams).length > 0 ? { sampling_params: samplingParams } : {}),
       }
 
       const shouldStream = currentTree.metadata?.stream_responses !== false

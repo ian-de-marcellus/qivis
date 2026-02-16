@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
-import type { PatchTreeRequest } from '../../api/types.ts'
+import type { PatchTreeRequest, SamplingParams } from '../../api/types.ts'
 import { useTreeStore } from '../../store/treeStore.ts'
+import { SAMPLING_PRESETS, detectPreset, type PresetName } from './samplingPresets.ts'
 import './TreeSettings.css'
 
 export function TreeSettings() {
@@ -14,6 +15,16 @@ export function TreeSettings() {
   const [model, setModel] = useState('')
   const [systemPrompt, setSystemPrompt] = useState('')
 
+  // Sampling defaults state
+  const [temperature, setTemperature] = useState('')
+  const [topP, setTopP] = useState('')
+  const [topK, setTopK] = useState('')
+  const [maxTokens, setMaxTokens] = useState('')
+  const [frequencyPenalty, setFrequencyPenalty] = useState('')
+  const [presencePenalty, setPresencePenalty] = useState('')
+  const [extendedThinking, setExtendedThinking] = useState(false)
+  const [thinkingBudget, setThinkingBudget] = useState('10000')
+
   // Sync form state when tree changes or panel opens
   useEffect(() => {
     if (currentTree) {
@@ -21,6 +32,23 @@ export function TreeSettings() {
       setProvider(currentTree.default_provider ?? '')
       setModel(currentTree.default_model ?? '')
       setSystemPrompt(currentTree.default_system_prompt ?? '')
+
+      // Sampling defaults — read from default_sampling_params, fall back to metadata
+      const sp = currentTree.default_sampling_params
+      const meta = currentTree.metadata
+      setTemperature(sp?.temperature != null ? String(sp.temperature) : '')
+      setTopP(sp?.top_p != null ? String(sp.top_p) : '')
+      setTopK(sp?.top_k != null ? String(sp.top_k) : '')
+      setMaxTokens(sp?.max_tokens != null ? String(sp.max_tokens) : '')
+      setFrequencyPenalty(sp?.frequency_penalty != null ? String(sp.frequency_penalty) : '')
+      setPresencePenalty(sp?.presence_penalty != null ? String(sp.presence_penalty) : '')
+
+      // Extended thinking: prefer default_sampling_params, fall back to metadata
+      const thinkingOn = sp?.extended_thinking ?? !!meta?.extended_thinking
+      setExtendedThinking(thinkingOn)
+      setThinkingBudget(
+        String(sp?.thinking_budget ?? (meta?.thinking_budget as number | undefined) ?? 10000),
+      )
     }
   }, [currentTree?.tree_id, isOpen])
 
@@ -34,11 +62,47 @@ export function TreeSettings() {
   const selectedProvider = providers.find((p) => p.name === provider)
   const suggestedModels = selectedProvider?.models ?? []
 
+  // Build what the current sampling params "should be" from form
+  const formSamplingParams: SamplingParams = {}
+  if (temperature) formSamplingParams.temperature = parseFloat(temperature)
+  if (topP) formSamplingParams.top_p = parseFloat(topP)
+  if (topK) formSamplingParams.top_k = parseInt(topK, 10)
+  if (maxTokens) formSamplingParams.max_tokens = parseInt(maxTokens, 10)
+  if (frequencyPenalty) formSamplingParams.frequency_penalty = parseFloat(frequencyPenalty)
+  if (presencePenalty) formSamplingParams.presence_penalty = parseFloat(presencePenalty)
+  if (extendedThinking) {
+    formSamplingParams.extended_thinking = true
+    formSamplingParams.thinking_budget = parseInt(thinkingBudget, 10) || 10000
+  }
+
+  // Compare form sampling params to current tree
+  const currentSp = currentTree.default_sampling_params ?? {}
+  const samplingChanged = JSON.stringify(formSamplingParams) !== JSON.stringify(
+    Object.fromEntries(
+      Object.entries(currentSp).filter(([, v]) => v != null && v !== false),
+    ),
+  )
+
   const hasChanges =
     title !== (currentTree.title ?? '') ||
     provider !== (currentTree.default_provider ?? '') ||
     model !== (currentTree.default_model ?? '') ||
-    systemPrompt !== (currentTree.default_system_prompt ?? '')
+    systemPrompt !== (currentTree.default_system_prompt ?? '') ||
+    samplingChanged
+
+  const handlePresetChange = (presetName: PresetName) => {
+    if (presetName === 'custom') return
+    const preset = SAMPLING_PRESETS[presetName]
+    if (!preset) return
+    setTemperature(preset.temperature != null ? String(preset.temperature) : '')
+    setTopP(preset.top_p != null ? String(preset.top_p) : '')
+    if (preset.top_k != null) setTopK(String(preset.top_k))
+    if (preset.max_tokens != null) setMaxTokens(String(preset.max_tokens))
+    if (preset.frequency_penalty != null) setFrequencyPenalty(String(preset.frequency_penalty))
+    if (preset.presence_penalty != null) setPresencePenalty(String(preset.presence_penalty))
+  }
+
+  const currentPreset = detectPreset(temperature, topP)
 
   const handleSave = async () => {
     if (!hasChanges) return
@@ -50,6 +114,21 @@ export function TreeSettings() {
       req.default_model = model || null
     if (systemPrompt !== (currentTree.default_system_prompt ?? ''))
       req.default_system_prompt = systemPrompt || null
+
+    if (samplingChanged) {
+      req.default_sampling_params = Object.keys(formSamplingParams).length > 0
+        ? formSamplingParams
+        : null
+    }
+
+    // If metadata still has extended_thinking, clear it now that we use default_sampling_params
+    if (currentTree.metadata?.extended_thinking != null) {
+      const cleanMeta = { ...currentTree.metadata }
+      delete cleanMeta.extended_thinking
+      delete cleanMeta.thinking_budget
+      req.metadata = cleanMeta
+    }
+
     await updateTree(currentTree.tree_id, req)
     setIsOpen(false)
   }
@@ -161,6 +240,129 @@ export function TreeSettings() {
               />
             </div>
 
+            <div className="tree-settings-divider" />
+
+            <div className="tree-settings-section-label">Sampling defaults</div>
+
+            <div className="tree-settings-field">
+              <label>Preset</label>
+              <select
+                value={currentPreset}
+                onChange={(e) => handlePresetChange(e.target.value as PresetName)}
+              >
+                {Object.entries(SAMPLING_PRESETS).map(([key, p]) => (
+                  <option key={key} value={key}>{p.label}</option>
+                ))}
+                <option value="custom">Custom</option>
+              </select>
+            </div>
+
+            <div className="tree-settings-row-pair">
+              <div className="tree-settings-field">
+                <label>Temperature</label>
+                <input
+                  type="number"
+                  step="0.05"
+                  min="0"
+                  max="2"
+                  value={temperature}
+                  onChange={(e) => setTemperature(e.target.value)}
+                  placeholder="default"
+                />
+              </div>
+              <div className="tree-settings-field">
+                <label>Top P</label>
+                <input
+                  type="number"
+                  step="0.05"
+                  min="0"
+                  max="1"
+                  value={topP}
+                  onChange={(e) => setTopP(e.target.value)}
+                  placeholder="default"
+                />
+              </div>
+            </div>
+
+            <div className="tree-settings-row-pair">
+              <div className="tree-settings-field">
+                <label>Top K</label>
+                <input
+                  type="number"
+                  step="1"
+                  min="0"
+                  value={topK}
+                  onChange={(e) => setTopK(e.target.value)}
+                  placeholder="default"
+                />
+              </div>
+              <div className="tree-settings-field">
+                <label>Max tokens</label>
+                <input
+                  type="number"
+                  step="256"
+                  min="1"
+                  value={maxTokens}
+                  onChange={(e) => setMaxTokens(e.target.value)}
+                  placeholder="2048"
+                />
+              </div>
+            </div>
+
+            <div className="tree-settings-row-pair">
+              <div className="tree-settings-field">
+                <label>Freq penalty</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  min="-2"
+                  max="2"
+                  value={frequencyPenalty}
+                  onChange={(e) => setFrequencyPenalty(e.target.value)}
+                  placeholder="default"
+                />
+              </div>
+              <div className="tree-settings-field">
+                <label>Pres penalty</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  min="-2"
+                  max="2"
+                  value={presencePenalty}
+                  onChange={(e) => setPresencePenalty(e.target.value)}
+                  placeholder="default"
+                />
+              </div>
+            </div>
+
+            <div className="tree-settings-toggle">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={extendedThinking}
+                  onChange={(e) => setExtendedThinking(e.target.checked)}
+                />
+                Extended thinking
+              </label>
+            </div>
+
+            {extendedThinking && (
+              <div className="tree-settings-field">
+                <label>Thinking budget</label>
+                <input
+                  type="number"
+                  min="1024"
+                  step="1024"
+                  value={thinkingBudget}
+                  onChange={(e) => setThinkingBudget(e.target.value)}
+                  placeholder="10000"
+                />
+              </div>
+            )}
+
+            <div className="tree-settings-divider" />
+
             <div className="tree-settings-toggle">
               <label>
                 <input
@@ -196,48 +398,6 @@ export function TreeSettings() {
                 Stream responses
               </label>
             </div>
-
-            <div className="tree-settings-toggle">
-              <label>
-                <input
-                  type="checkbox"
-                  checked={!!currentTree.metadata?.extended_thinking}
-                  onChange={async (e) => {
-                    await updateTree(currentTree.tree_id, {
-                      metadata: {
-                        ...currentTree.metadata,
-                        extended_thinking: e.target.checked,
-                      },
-                    })
-                  }}
-                />
-                Extended thinking by default
-              </label>
-            </div>
-
-            {!!currentTree.metadata?.extended_thinking && (
-              <div className="tree-settings-field">
-                <label>Thinking budget</label>
-                <input
-                  type="number"
-                  min="1024"
-                  step="1024"
-                  value={Number(currentTree.metadata?.thinking_budget ?? 10000)}
-                  onChange={async (e) => {
-                    const budget = parseInt(e.target.value, 10)
-                    if (budget >= 1024) {
-                      await updateTree(currentTree.tree_id, {
-                        metadata: {
-                          ...currentTree.metadata,
-                          thinking_budget: budget,
-                        },
-                      })
-                    }
-                  }}
-                  placeholder="10000"
-                />
-              </div>
-            )}
 
             <div className="tree-settings-toggle">
               <label>

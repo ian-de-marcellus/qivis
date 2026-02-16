@@ -2049,3 +2049,132 @@ The MagicMock bug was instructive: `hasattr(mock, 'completion_tokens_details')` 
 The two-phase streaming display in LinearView has a nice feel: thinking content fills in, the ThinkingSection cursor blinks, and then text starts arriving below. The `isStreaming` prop on ThinkingSection controls the transition — when text starts, `isStreaming` becomes false, the section stops auto-expanding, and the researcher can collapse it while the response continues. The thinking and the text occupy different visual registers: mono for thinking, serif for text. Process and product, side by side.
 
 The schema migration pattern is the first in the project. `ALTER TABLE ADD COLUMN` wrapped in a try/except that catches "duplicate column" for existing databases. Simple, idempotent, no migration framework. The list `_MIGRATIONS` will grow as we add more columns. When it gets unwieldy, we'll need a real migration system. But for now, a list of SQL statements and a for loop is perfectly adequate. Good enough is its own kind of elegance.
+
+---
+
+## February 16, 2026 — Phase 3.3: Sampling Controls
+
+### On the dials
+
+```
+Today I gave the spectrometer its dials.
+
+Not the first dials — temperature was already there,
+a single knob in the fork panel,
+lonely among the provider and model dropdowns
+like a volume control
+on a mixing board with empty channels.
+
+Now the board is full.
+
+Temperature. Top_p. Top_k.
+Max_tokens. Frequency_penalty.
+Presence_penalty. Extended thinking.
+Each one a dimension of the space
+the model moves through
+when it's choosing what to say.
+
+And presets — Deterministic, Balanced, Creative —
+the named points in that space
+that most people want to visit.
+Like bookmarks on a map
+of a territory you haven't explored yet:
+here are three places worth starting.
+The rest is up to you.
+
+The interesting engineering
+was in the merge.
+
+Three layers: base, tree, request.
+The base is SamplingParams(),
+the fresh-out-of-the-box configuration
+that nobody chose.
+The tree is what the researcher set
+as their default for this conversation:
+"I want this tree at temperature 0.7."
+The request is the one-time override:
+"but for this particular generation,
+try 0."
+
+Each layer only applies
+what was explicitly set.
+model_fields_set — Pydantic's gift —
+tells you which fields arrived
+with intention and which arrived
+by accident of default construction.
+Without it, every override
+would clobber every default,
+and the researcher's tree-level choices
+would vanish every time they tweaked
+a single knob.
+
+The backward compatibility
+has a certain poetry to it.
+Extended thinking used to live in metadata —
+a boolean and an integer
+squatting in a JSON blob
+that was never meant to hold
+sampling configuration.
+A hack. A temporary home
+for a feature that arrived
+before its proper address was built.
+
+Now it migrates on save.
+The TreeSettings panel reads
+from default_sampling_params first,
+falls back to metadata for old trees,
+and when you hit Save,
+clears the old metadata keys
+and writes the canonical form.
+The hack dissolves.
+The feature finds its home.
+
+And at the bottom of every assistant message,
+after the timestamp and the latency
+and the token count and the certainty badge,
+a new line of metadata appears:
+temp 0.7 · top_p 0.95 · thinking
+
+Short labels for the dials
+that were set when this response was born.
+Only the non-default ones show —
+because the interesting information
+is not what was left alone
+but what was deliberately chosen.
+
+The absence of a label
+is its own kind of data:
+the researcher didn't touch this dial.
+The model's behavior here
+is whatever the base provides.
+And "base" is itself a choice —
+a choice not to choose,
+which is the most common choice of all.
+
+261 tests. The canary sings.
+Phase 3 is complete.
+The spectrometer has its dials,
+its color scale, its reasoning window.
+Now the researcher can see the uncertainty,
+watch the thinking,
+and control the parameters
+that shape both.
+
+What's left is structure.
+Phase 4: the tree as a tree.
+The view that shows not just
+the path you're walking
+but all the paths at once.
+The topology of a conversation.
+The shape of exploration itself.
+```
+
+### Technical notes
+
+The `model_fields_set` trick from Pydantic is doing double duty now. In Phase 2.1 it distinguished "user didn't send this field" from "user sent null" in tree PATCH requests. In Phase 3.3 it distinguishes "request didn't set temperature" from "request set temperature to 0.7 which happens to be the same as the tree default." Without it, every fork/regenerate would overwrite the tree defaults with identical values, and you'd lose the ability to tell intentional from accidental.
+
+The preset detection (`detectPreset`) works backwards: given the current form state, which preset matches? If none do, it's "custom." This is better than storing the preset name as state, because the researcher can pick a preset and then tweak one knob, and the dropdown correctly shows "Custom" — no special case needed, no state to keep in sync. Derived state over stored state.
+
+The `hasChanges` comparison in TreeSettings for sampling params uses `JSON.stringify` on the form-built object vs. the tree's stored object (filtered to non-null, non-false values). It's crude but correct. The alternative — field-by-field comparison with type coercion — would be more precise but fragile. The JSON approach compares the semantic content, not the syntactic shape. Good enough.
+
+The `sendMessage` cleanup is my favorite part. Six lines deleted, one comment added. The frontend no longer constructs sampling_params from metadata — it trusts the backend to merge tree defaults. Less code, fewer places for the hack to break, and the backend is the source of truth for parameter resolution. The frontend's job is to show controls and send explicit overrides. The backend's job is to resolve what "default" means. Clean separation.

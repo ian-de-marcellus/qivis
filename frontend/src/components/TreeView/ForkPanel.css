@@ -168,6 +168,27 @@
   font-variant-numeric: tabular-nums;
 }
 
+.fork-setting-row-pair {
+  display: flex;
+  gap: var(--space-sm);
+}
+
+.fork-setting-row-pair .fork-setting-row {
+  flex: 1;
+  min-width: 0;
+}
+
+.fork-setting-row-pair input[type="number"] {
+  max-width: none;
+  width: 100%;
+}
+
+.fork-settings-divider {
+  height: 1px;
+  background: var(--border-subtle);
+  margin: var(--space-xs) 0;
+}
+
 .fork-setting-toggle {
   flex-direction: row;
 }

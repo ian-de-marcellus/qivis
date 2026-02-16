@@ -126,20 +126,21 @@ See the model's reasoning process.
 
 35 new tests. 246 tests at completion.
 
-### 3.3 — Sampling Controls 🔀
+### 3.3 — Sampling Controls ✅
 
 The dials on the spectrometer.
 
-**Tasks:**
-- UI panel: temperature, top_p, top_k, max_tokens, frequency/presence penalty sliders
-- Per-tree defaults (stored in tree metadata via `TreeMetadataUpdated` events)
-- Per-generation overrides (pre-filled with current defaults, editable before generating)
-- Presets: "deterministic" (temp=0), "creative" (temp=1.0), "balanced" (temp=0.7), custom
-- Display actual params used on each node (in metadata, visible on hover or in detail view)
+**What was built:**
+- **Backend merge resolution**: `merge_sampling_params()` with three-layer merge: request overrides > tree `default_sampling_params` > `SamplingParams()` base. Uses Pydantic's `model_fields_set` to only apply explicitly-set request fields, preserving tree defaults for the rest. `_parse_json_field()` utility handles JSON strings, dicts, and malformed data gracefully.
+- **Backward compatibility**: Trees with `metadata.extended_thinking` (the old hack) still work when no `default_sampling_params` set. TreeSettings migrates metadata thinking to `default_sampling_params` on save and cleans up the old metadata keys.
+- **Typed `SamplingParams` interface**: Frontend TypeScript interface matching backend model. `NodeResponse.sampling_params`, `TreeDetail.default_sampling_params`, `GenerateRequest.sampling_params`, `PatchTreeRequest.default_sampling_params` all typed.
+- **Presets**: Deterministic (temp=0, top_p=1), Balanced (temp=0.7), Creative (temp=1.0, top_p=0.95). `detectPreset()` auto-detects current preset from form state. Shared between ForkPanel and TreeSettings.
+- **ForkPanel**: Full sampling controls — temperature, top_p, top_k, max_tokens, frequency_penalty, presence_penalty. Paired layout for compact display. Preset dropdown. Extended thinking + budget. All initialized from `samplingDefaults` prop (tree's `default_sampling_params`).
+- **TreeSettings**: "Sampling defaults" section with preset dropdown, paired number inputs for all params, extended thinking toggle + budget. Saves to `default_sampling_params` via PATCH. Change detection includes sampling params.
+- **Node params display**: `formatSamplingMeta()` on assistant messages shows non-default params in the meta line (temp, top_p, top_k, max_tok, freq_pen, pres_pen, thinking). Monospace font, subtle tertiary color.
+- **Store cleanup**: `sendMessage` no longer constructs `sampling_params` from metadata — backend merge resolution handles it.
 
-**Blockers:** 2.1 (tree settings must support sampling params). Can parallel with 3.1/3.2.
-
-✅ Can adjust sampling params per generation. Presets work. Node detail shows what was used. **Phase 3 complete.**
+15 new tests. 261 tests at completion. **Phase 3 complete.**
 
 ---
 

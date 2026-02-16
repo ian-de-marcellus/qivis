@@ -134,10 +134,7 @@ export function LinearView() {
                   providers={providers}
                   defaults={branchDefaults}
                   streamDefault={currentTree.metadata?.stream_responses !== false}
-                  thinkingDefaults={{
-                    extendedThinking: !!currentTree.metadata?.extended_thinking,
-                    thinkingBudget: Number(currentTree.metadata?.thinking_budget ?? 10000),
-                  }}
+                  samplingDefaults={currentTree.default_sampling_params}
                 />
               )}
             </Fragment>
