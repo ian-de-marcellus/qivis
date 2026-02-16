@@ -6,650 +6,543 @@ Detailed breakdown of the architecture document's build phases into discrete, im
 
 ---
 
-## Phase 0: Foundation (Week 1-2)
+## Completed Phases
+
+### Phase 0: Foundation ✅
 
 _Goal: Talk to Claude through your own tool._
 
-### 0.1 — Project Scaffolding 🔒
+All subphases (0.1–0.6) complete. Event sourcing with CQRS, SQLite/WAL, tree/node CRUD, Anthropic provider with streaming, basic context builder with boundary-safe truncation, minimal React frontend with Zustand state management. 115 tests at completion.
 
-Set up the monorepo structure, dependency management, and dev tooling.
+**What was built:**
+- Event store (append-only, sequence numbers, JSON payloads)
+- State projector (incremental materialization of events into trees/nodes tables)
+- Pydantic models for all event types and canonical data structures
+- FastAPI routes: tree CRUD, node creation, generation with SSE streaming
+- `AnthropicProvider` implementing `LLMProvider` ABC
+- `ContextBuilder.build()` with boundary-safe truncation and `ContextUsage` tracking
+- React frontend: tree list, linear chat view, message input, system prompt input, streaming display
 
-**Tasks:**
-- Initialize git repo with the file structure from the architecture doc
-- Backend: `pyproject.toml` with FastAPI, uvicorn, httpx, aiosqlite, pydantic
-- Frontend: Vite + React + TypeScript project via `npm create vite@latest`
-- Docker Compose for local dev (backend + frontend, SQLite volume mount)
-- `.env.example` with `ANTHROPIC_API_KEY` placeholder
-- `providers.yml.example`
-- Basic CI: linting (ruff), type checking (pyright), formatting (black)
-
-**Blockers:** None — this is the starting point.
-
-✅ `uvicorn loom.main:app` starts, frontend `npm run dev` serves, both reachable.
-
-### 0.2 — Database + Event Store 🔒
-
-The foundation everything else builds on. Get events flowing and projecting.
-
-**Tasks:**
-- SQLite connection manager with WAL mode
-- `events` table: `event_id`, `tree_id`, `timestamp`, `device_id`, `user_id`, `event_type`, `payload` (JSON), `sequence_num` (autoincrement)
-- `trees` materialized view table: `tree_id`, `title`, `metadata`, `default_model`, `default_provider`, `default_system_prompt`, `default_sampling_params`, `conversation_mode`, `created_at`, `updated_at`, `archived`
-- `nodes` materialized view table: `node_id`, `tree_id`, `parent_id`, `role`, `content`, `model`, `provider`, `system_prompt`, `sampling_params`, `mode`, `usage`, `latency_ms`, `finish_reason`, `logprobs`, `context_usage`, `participant_id`, `participant_name`, `created_at`, `archived`
-- Event store: `append(event)`, `get_events(tree_id)`, `get_events_since(sequence_num)`
-- State projector: listens to new events, updates materialized tables incrementally
-- Pydantic models for all event types (`TreeCreated`, `NodeCreated`, etc.)
-- Pydantic models for canonical data structures (`SamplingParams`, `LogprobData`, `ContextUsage`)
-
-**Blockers:** 0.1 (project structure must exist).
-
-✅ Can append events, read them back, and query projected state. Unit tests pass for event append → projection round-trip.
-
-### 0.3 — Tree + Node CRUD 🔒
-
-Basic API for creating trees and adding messages. No generation yet — just storing user-written content.
-
-**Tasks:**
-- FastAPI router: `POST /api/trees`, `GET /api/trees`, `GET /api/trees/{id}`
-- FastAPI router: `POST /api/trees/{id}/nodes` (add a user message with parent_id)
-- Tree service: create tree (emits `TreeCreated`), get tree with all nodes
-- Node service: create node (emits `NodeCreated` with `role: "user"`, null generation fields)
-- Response models: tree with nested node list, individual node detail
-- Basic error handling: 404 for missing tree/node, 400 for invalid parent_id
-
-**Blockers:** 0.2 (event store + projected tables must work).
-
-✅ Can create a tree via API, add user messages, retrieve the tree with its messages in order. Postman/curl workflow works.
-
-### 0.4 — Anthropic Provider 🔒
-
-First LLM provider. Just make it generate responses.
-
-**Tasks:**
-- `LLMProvider` ABC in `providers/base.py`
-- `AnthropicProvider` in `providers/anthropic.py`: implements `generate()` and `generate_stream()`
-- Provider registry: loads from `providers.yml`, returns configured providers
-- `LogprobNormalizer.from_anthropic()` (even if Anthropic beta logprobs aren't available yet, build the plumbing)
-- `LogprobNormalizer.empty()` for graceful fallback
-- Generation endpoint: `POST /api/trees/{id}/nodes/{nid}/generate`
-  - Reads path from root to `{nid}`
-  - Assembles messages array (simple: just role + content for now)
-  - Calls Anthropic API
-  - Emits `GenerationStarted` + `NodeCreated` events
-  - Returns the new node
-- SSE streaming endpoint variant (or same endpoint with `Accept: text/event-stream`)
-
-**Blockers:** 0.3 (need tree/node CRUD to have something to generate from).
-
-✅ Can create a tree, add a user message, hit generate, get a Claude response stored as a new node. Streaming works.
-
-### 0.5 — Basic Context Builder 🔒
-
-Assemble the messages array properly — the simplest correct version.
-
-**Tasks:**
-- `ContextBuilder.build()` — walks root-to-node path, assembles `[{"role": ..., "content": ...}]`
-- System prompt handling: tree default, passed as first system message or via API system parameter
-- Boundary-aware safety: if total tokens exceed model limit, truncate from the beginning but never mid-message, always preserve system prompt
-- `ContextUsage` computation: count tokens per role, compute total vs. model limit
-- Store `context_usage` on `NodeCreated` events
-- Wire into the generation endpoint (replace the simple assembly from 0.4)
-
-**Blockers:** 0.4 (need generation working to have something to build context for).
-
-✅ Multi-turn conversations work — context is assembled correctly, token counts are tracked, system prompt is always preserved. A 3+ turn conversation with Claude produces coherent responses.
-
-### 0.6 — Minimal Frontend 🔀
-
-Can be started in parallel with 0.4/0.5 using mocked API responses.
-
-**Tasks:**
-- API client module: typed fetch wrappers for all Phase 0 endpoints
-- Tree list view: show all trees, create new tree button
-- Linear chat view: display messages in order for a selected tree
-- Message input: text area + send button, calls `POST /api/trees/{id}/nodes` then `POST .../generate`
-- Streaming display: SSE connection for token-by-token rendering
-- System prompt input: editable field at the top of the tree
-- Basic styling: readable, functional, nothing fancy yet
-
-**Blockers:** 0.3 at minimum for real API integration (can start with mocks earlier).
-
-✅ Can open the app, create a tree, type a message, see Claude's streaming response, continue the conversation. **Phase 0 complete.**
-
----
-
-## Phase 1: Branching + Provider Selection (Week 3-5)
+### Phase 1: Branching + Provider Selection ✅
 
 _Goal: Fork, try different models/prompts, compare._
 
-### 1.1 — Branching Data Model 🔒
+Sibling metadata (sibling_count/sibling_index), branch navigation UI with fork/regenerate, per-node generation overrides (provider, model, system prompt, temperature), context usage bar with token breakdown, OpenAI + OpenRouter providers (`OpenAICompatibleProvider` base class), provider selection UI (dropdown + datalist for models). 164 tests at completion.
 
-Make the tree actually a tree, not just a list.
+**What was built:**
+- Sibling awareness: nodes know their position among siblings
+- Branch navigation: `branchSelections` map preserving position at every fork independently
+- Fork panel on user messages: creates alternative sibling + generates with configurable params
+- Regenerate on assistant messages: re-generates with different provider/model/system prompt/temperature
+- Context usage bar: color-coded (green/yellow/red) with expandable token breakdown
+- `OpenAIProvider` and `OpenRouterProvider` with `LogprobNormalizer.from_openai()`
+- `GET /api/providers` endpoint with auto-discovery from environment variables
+- Provider dropdown + model datalist in fork/regen panel
 
-**Tasks:**
-- Node creation now accepts any existing node as `parent_id` (not just the latest)
-- Tree state projection correctly builds parent→children relationships
-- API: `GET /api/trees/{id}` returns full tree structure (nodes with `children` arrays or adjacency info)
-- Path computation: given a node, compute root-to-node path (for context assembly and display)
-- Sibling awareness: nodes know their siblings (same parent)
+**Deviations from original plan:** Context usage bar implemented alongside branch navigation (not separate). n>1 generation deferred. Provider selection UI added as 1.5 (not in original plan).
 
-**Blockers:** Phase 0 complete.
+### Phase 1b: Frontend Aesthetic Overhaul ✅
 
-✅ Can create a node with any existing node as parent. Tree structure query returns correct topology. Path computation works for any node.
+_Goal: The conversation as published text._
 
-### 1.2 — Branch Navigation UI 🔒
-
-**Tasks:**
-- Linear view: add branch indicators where siblings exist (e.g., "← 1/3 →" navigation)
-- Clicking a branch indicator switches to that sibling's subtree
-- "Fork here" button on any message: creates a new user message as a sibling
-- Current path highlighting: clearly show which path through the tree is active
-- Breadcrumb or path indicator showing the active branch
-
-**Blockers:** 1.1 (need branching data model).
-
-✅ Can fork at any message, navigate between branches, always know which branch is active.
-
-### 1.3 — Per-Node Generation Overrides 🔀
-
-**Tasks:**
-- Generation endpoint accepts optional `model`, `provider`, `system_prompt`, `sampling_params` in request body
-- These override the tree defaults for this specific generation
-- Store the actual values used (not just "default") on the `NodeCreated` event
-- `n > 1` generation: request multiple sibling completions in one call, each gets its own `NodeCreated`
-- UI: model/provider selector dropdown in generation controls
-- UI: system prompt override field (pre-filled with tree default, editable per generation)
-
-**Blockers:** 1.1 (branching must work for n>1 to make sense).
-
-✅ Can generate 3 different responses from the same point, each potentially with different models. Metadata on each node shows what was actually used.
-
-### 1.4 — OpenAI + OpenRouter Providers 🔀
-
-Can be done in parallel with 1.2/1.3.
-
-**Tasks:**
-- `OpenAIProvider`: chat + completion modes, logprob normalization via `LogprobNormalizer.from_openai()`
-- `OpenRouterProvider`: similar to OpenAI but with model routing, handles the `HTTP-Referer` header
-- Provider registry: auto-discovers configured providers from `providers.yml`
-- Health check endpoint: `GET /api/providers` returns status of each configured provider
-- UI: provider/model list dynamically populated from `GET /api/providers`
-
-**Blockers:** 0.4 (provider ABC must exist). Independent of 1.1-1.3.
-
-✅ Can switch between Anthropic, OpenAI, and OpenRouter models. Provider health visible in UI.
-
-### 1.5 — Context Usage Bar 🔀
-
-**Tasks:**
-- Frontend component: thin bar on each assistant node, color-coded (green/yellow/red)
-- Reads `context_usage` from node data
-- Click to expand: token breakdown panel (system, user, assistant, tool, excluded, remaining)
-- Pre-generation estimate: compute approximate usage for the current path before generating
-- Adapt to model context window (different models have different limits)
-
-**Blockers:** 0.5 (context usage must be computed and stored). Independent of 1.1-1.4.
-
-✅ Every assistant message shows context %, clicking shows breakdown. Bar turns yellow/red appropriately. **Phase 1 complete.**
+Editorial/typographic redesign. Newsreader (display), Source Serif 4 (body), DM Sans (UI), JetBrains Mono (code). Warm paper/ink palette with sienna/copper accents, system-adaptive light/dark via `prefers-color-scheme`. No chat bubbles — messages are typographic units with role labels. Breathing streaming cursor. Collapsible sidebar. Model attribution on assistant messages. 164 tests (no backend changes).
 
 ---
 
-## Phase 2: Local Models + Logprobs (Week 6-8)
+## Phase 2: Essentials
 
-_Goal: Compare cloud vs. local with uncertainty visualization._
+_Goal: Make the existing tool properly usable._
 
-### 2.1 — Ollama + llama.cpp Providers 🔒
+The gaps identified during Phase 1 manual testing. Small phase, focused on filling holes before building new features.
+
+### 2.1 — Tree Settings 🔒
+
+Allow editing a tree's defaults after creation.
+
+**Tasks:**
+- `PATCH /api/trees/{id}` endpoint accepting partial updates (default_provider, default_model, default_system_prompt, default_sampling_params, title)
+- `TreeMetadataUpdated` events for each changed field (preserving old/new values)
+- Projector handler for `TreeMetadataUpdated`
+- Settings panel UI — accessible from tree header or sidebar, edits default provider/model/system prompt
+- Wire provider dropdown + model datalist (reuse from ForkPanel) into settings panel
+
+**Blockers:** Phase 1 complete.
+
+✅ Can change a tree's default provider, model, and system prompt after creation. Changes reflected in subsequent generations.
+
+### 2.2 — Generation UX 🔒
+
+Error recovery, smarter defaults, batch generation.
+
+**Tasks:**
+- **Error recovery**: When generation fails, preserve the failed attempt as a UI state with: error message text, retry button, ability to change provider/model/params before retry. Currently errors vanish into a toast.
+- **Branch-local model default**: Walk the active path to find the last assistant node's provider/model. Use those as defaults for the next generation and in ForkPanel, falling back to tree defaults. Researcher switches to GPT-4o mid-branch, subsequent messages keep using it.
+- **n>1 generation**: Backend `n` parameter on generate endpoint, fan-out to create multiple sibling `NodeCreated` events. Frontend UI to request N completions. Sibling navigator already handles display. Originally scoped for Phase 1.3.
+
+**Blockers:** 2.1 (tree settings must work for defaults to make sense).
+
+✅ Failed generations show error with retry. Branch defaults follow the most recent model. Can generate 3+ responses from the same point in one action.
+
+### 2.3 — Small Polish 🔀
+
+Standalone improvements that don't depend on each other.
+
+**Tasks:**
+- **Message timestamps**: Display `created_at` on each message. Include a toggle (tree-level setting) for whether timestamps are prepended to message content in the context sent to the model.
+- **Light/dark mode toggle**: Manual override in the UI (light / dark / system). Persisted in localStorage. Overrides `prefers-color-scheme` when set.
+
+**Blockers:** None — can be done alongside 2.1 or 2.2.
+
+✅ Timestamps visible. Theme manually switchable. **Phase 2 complete.**
+
+---
+
+## Phase 3: Seeing Uncertainty
+
+_Goal: See the model's process — token-level confidence, reasoning traces, parameter effects._
+
+### 3.1 — Logprob Visualization 🔒
+
+The feature that makes Qivis a spectrometer.
+
+**Tasks:**
+- `LogprobOverlay` component: renders token-level heatmap on assistant messages
+- Color mapping: `uncertaintyColor(logprob)` — transparent for high confidence, warm highlight for low
+- Hover tooltip: top-N alternative tokens with probabilities for any token
+- Per-message certainty badge: average/min confidence indicator
+- Toggle: enable/disable the overlay (visual noise when you don't need it)
+- Graceful degradation: no overlay, no badge, no visual noise when logprobs are null
+- Works with existing OpenAI logprobs; Anthropic logprobs used when/if available
+
+**Blockers:** Phase 2 complete (stable generation UX needed).
+
+✅ Token heatmap renders on assistant messages with logprob data. Hover shows alternatives. Badge shows node confidence. No visual noise when logprobs absent.
+
+### 3.2 — Thinking Tokens 🔀
+
+See the model's reasoning process.
+
+**Tasks:**
+- Provider-layer support: request extended thinking (Anthropic), reasoning tokens (OpenAI)
+- New fields on `NodeCreated`: `thinking_content`, `thinking_tokens` (count)
+- Projector + API: expose thinking content on node responses
+- Frontend: collapsible "Thinking" section on assistant messages (collapsed by default)
+- Context builder: configurable whether thinking content is included in subsequent context (tree-level or per-generation setting)
+- Graceful degradation: no thinking section when thinking content is null
+
+**Blockers:** None — can parallel with 3.1.
+
+✅ Thinking tokens captured from providers that support them. Collapsible display. Researcher controls whether thinking is in context.
+
+### 3.3 — Sampling Controls 🔀
+
+The dials on the spectrometer.
+
+**Tasks:**
+- UI panel: temperature, top_p, top_k, max_tokens, frequency/presence penalty sliders
+- Per-tree defaults (stored in tree metadata via `TreeMetadataUpdated` events)
+- Per-generation overrides (pre-filled with current defaults, editable before generating)
+- Presets: "deterministic" (temp=0), "creative" (temp=1.0), "balanced" (temp=0.7), custom
+- Display actual params used on each node (in metadata, visible on hover or in detail view)
+
+**Blockers:** 2.1 (tree settings must support sampling params). Can parallel with 3.1/3.2.
+
+✅ Can adjust sampling params per generation. Presets work. Node detail shows what was used. **Phase 3 complete.**
+
+---
+
+## Phase 4: Seeing Structure
+
+_Goal: See the tree as a tree. Compare branches side by side._
+
+### 4.1 — Graph View 🔒
+
+The tree topology made visible.
+
+**Tasks:**
+- Tree layout algorithm (d3-hierarchy or custom) for positioning nodes
+- SVG or canvas rendering with zoom/pan
+- Node display: truncated content preview, role indicator, model badge
+- Click-to-navigate: clicking a node in graph view navigates the linear view to that path
+- Branch highlighting: active path visually distinct, hover highlights full branch
+- Visual density indicators: where did the researcher branch most? Dead ends vs. active branches
+- Toggle between linear view and graph view (or side-by-side split)
+
+**Blockers:** Phase 3 complete (want the reading experience solid before adding a new view mode).
+
+✅ Can see the full tree topology. Click any node to navigate there. Visual structure reveals patterns of exploration.
+
+### 4.2 — Side-by-Side Comparison 🔀
+
+Hold two responses up next to each other.
+
+**Tasks:**
+- Select 2–3 sibling nodes from the branch navigator (multi-select mode)
+- Split pane opens inline within the tree view (not a separate page)
+- Diff highlighting: text differences between responses
+- Metadata comparison: model, provider, latency, token usage side by side
+- Logprob comparison (if available): certainty badges, heatmap differences
+- Dismiss to return to single-branch view
+
+**Blockers:** 3.1 (logprob visualization enriches comparison). Can start alongside 4.1.
+
+✅ Can compare sibling responses side by side with diff highlighting. **Phase 4 complete.**
+
+---
+
+## Phase 5: Context Transparency
+
+_Goal: See — and control — the gap between what happened and what the model knows._
+
+### 5.1 — Message Editing 🔒
+
+Retroactive edits as research interventions.
+
+**Tasks:**
+- `NodeContentEdited` event: stores node_id, original_content, new_content, timestamp
+- `PATCH /api/trees/{id}/nodes/{nid}/content` endpoint
+- Projector: node stores both `content` (original, always primary) and `edited_content` (current edit, null if unedited)
+- Context builder: uses `edited_content` when present, falls back to `content`
+- Frontend: edit button on any message, inline editor, save/cancel
+- **Original message always remains the primary display** in the conversation view; subtle "edited" indicator when an edit exists
+- For downstream messages: edit persists in context. "Restore" button reverts to original for future context. "Edit" button to change to something else. Both available per-node alongside the message.
+
+**Blockers:** Phase 4 complete.
+
+✅ Can edit any message. Original preserved and always primary in the conversation view. Model sees edited version. Edits restorable per-node.
+
+### 5.2 — "What the Model Saw" 🔒
+
+The overlay that reveals the model's reality.
+
+**Tasks:**
+- Per-message or per-conversation toggle: "what did the model see?"
+- In this mode: original message dimmed, edited content shown prominently (different color/style)
+- Context diff badge on assistant messages: lights up when generation context differed from expectations (system prompt override, different model/provider, different params, edited upstream messages)
+- Click badge to see specifics: what was different, what the model actually received
+- Edited messages upstream shown with their edited content highlighted
+- Unedited messages shown normally
+- When context exclusion lands (Phase 6.3): excluded nodes ghosted in this view
+
+**Blockers:** 5.1 (editing must work for the view to have content to show).
+
+✅ Can see exactly what any model saw during generation. Edits, overrides, and differences all visible. **Phase 5 complete.**
+
+---
+
+## Phase 6: Research Instrumentation
+
+_Goal: Annotate, bookmark, manage context, export._
+
+### 6.1 — Annotation System 🔒
+
+**Tasks:**
+- `annotations` table: annotation_id, node_id, tag, value, notes, created_at
+- `AnnotationAdded` / `AnnotationRemoved` events, API endpoints
+- Taxonomy loaded from `annotation_taxonomy.yml` (coherence scale, basin type, behavioral markers)
+- Runtime taxonomy extension via API
+- Frontend: annotation panel on nodes, quick-tag buttons, free-form research notes
+
+**Blockers:** Phase 5 complete.
+
+✅ Can annotate any node with taxonomy tags or custom tags. Annotations queryable via API. UI lets you annotate without leaving the conversation view.
+
+### 6.2 — Bookmarks + Summaries 🔀
+
+**Tasks:**
+- `bookmarks` table, `BookmarkCreated` / `BookmarkRemoved` events, API endpoints
+- Bookmark button on any node, bookmark list in sidebar
+- Haiku-generated branch summaries (root to bookmarked node), stored on bookmark, regeneratable
+- Bookmarks browsable and searchable by summary content
+
+**Blockers:** 6.1 (annotation infrastructure establishes event patterns). Can start in parallel if comfortable.
+
+✅ Can bookmark nodes, browse bookmarks with summaries. Summarize button works.
+
+### 6.3 — Context Exclusion + Digression Groups 🔒
+
+**Tasks:**
+- `NodeContextExcluded` / `NodeContextIncluded` events, `DigressionGroupCreated` / `DigressionGroupToggled` events
+- Context builder respects exclusions and toggled-off groups
+- Exclude toggle on each node, visual indicator for excluded nodes
+- Select message range, create digression group, label it, toggle in/out
+- Context preview: `GET /api/trees/{id}/context-preview/{nid}` shows what the model would see
+- **Extends Phase 5.2**: excluded nodes ghosted in "what the model saw" view
+
+**Blockers:** 5.2 (context transparency view to extend). 6.1 (annotation infrastructure).
+
+✅ Can exclude nodes, create digression groups, toggle them. Context preview accurate. Excluded nodes visible in transparency view.
+
+### 6.4 — Smart Eviction + Export 🔀
+
+**Tasks:**
+- **Smart eviction**: Protected ranges (first N turns, last N turns, bookmarked nodes), middle-turn eviction as whole messages, optional Haiku summarization of evicted content, `EvictionReport` in context panel, configurable `EvictionStrategy` per tree, warning at threshold
+- **Export**: `GET /api/trees/{id}/export?format=json|csv`, full tree with all metadata, annotations, bookmarks, logprobs. CSV flattened (one row per node). `GET /api/trees/{id}/paths` enumerates all root-to-leaf paths.
+
+**Blockers:** 6.2 (bookmarks for bookmark-aware protection), 6.3 (exclusions run before eviction).
+
+✅ Long conversations gracefully handle context limits. Researcher sees what was evicted. Full export works. **Phase 6 complete.**
+
+---
+
+## Phase 7: Corpus & Search
+
+_Goal: Build and search a research corpus._
+
+### 7.1 — FTS5 Search 🔒
+
+**Tasks:**
+- FTS5 virtual table on node content + system prompts (porter tokenizer + unicode61)
+- `GET /api/search?q=keyword` — matching nodes with tree context
+- Search UI: bar in sidebar, results with surrounding context and highlighting, click-to-navigate
+- Advanced filters: model, provider, date range, tree scope, role
+
+**Blockers:** Phase 6 complete (annotations should be searchable).
+
+✅ Can search across all conversations by keyword with filters.
+
+### 7.2 — Conversation Import 🔀
+
+**Tasks:**
+- Parsers for Claude.ai JSON export and ChatGPT export format
+- `POST /api/import` with file upload
+- Graceful handling of missing fields (no logprobs, no context_usage, approximate timestamps)
+- Events emitted as if the conversation happened natively (`TreeCreated` + `NodeCreated`)
+- Import wizard UI with format selection and preview
+- Stress-tests data model with "information not available" patterns
+
+**Blockers:** 6.1 (imported conversations should be annotatable). Can parallel with 7.1.
+
+✅ Can import conversations from Claude.ai and ChatGPT. Imported trees fully functional.
+
+### 7.3 — Manual Summarization 🔀
+
+**Tasks:**
+- Branch / subtree / selection summaries with configurable prompts and summary types (concise, detailed, key points, custom)
+- `SummaryGenerated` events, stored and searchable
+- UI: right-click or menu on node, "Summarize..." with options
+- Shares summarization infrastructure with bookmark summaries (6.2)
+
+**Blockers:** 6.2 (bookmark summary infrastructure).
+
+✅ Can summarize branches, subtrees, selections with various prompts. **Phase 7 complete.**
+
+---
+
+## Phase 8: Multimodal
+
+_Goal: Images, files, and rich content in conversations._
+
+### 8.1 — Content Block Model 🔒
+
+**Tasks:**
+- Content becomes `string | ContentBlock[]` in events, projections, context builder
+- Backward-compatible: plain strings still valid
+- ContentBlock types: text, image, file (PDF, markdown, etc.)
+- Frontend renders mixed content inline
+
+**Blockers:** Phase 7 complete (text-based research workflow should be solid first).
+
+✅ Data model supports mixed content. Existing conversations unaffected.
+
+### 8.2 — File Uploads + Provider Support 🔒
+
+**Tasks:**
+- Upload API + storage (local filesystem or configurable)
+- Frontend: drag-and-drop or file picker in message input
+- Inline rendering: images displayed, PDFs previewed, markdown rendered
+- Provider adapters: pass multimodal content to APIs that support it (Claude, GPT-4V, etc.)
+- Graceful degradation: providers that don't support images get text-only context
+
+**Blockers:** 8.1 (content block model).
+
+✅ Can include images and files in conversations. Providers handle multimodal input. **Phase 8 complete.**
+
+---
+
+## Phase 9: Multi-Agent
+
+_Goal: Run model-to-model conversations AnimaChat-style._
+
+### 9.1 — Participants + Context 🔒
+
+**Tasks:**
+- Participant CRUD: model + provider + system prompt + sampling params per participant
+- `conversation_mode: "multi_agent"` on tree creation with initial participants
+- Per-participant context assembly: own messages as `role: "assistant"`, others as `role: "user"` with `[Name]: ` prefix
+- `visible_to` field on researcher notes for selective visibility
+- Participant configuration panel UI
+
+**Blockers:** Core generation infrastructure (Phase 2+).
+
+✅ Multi-agent trees with correct per-participant context. Selective visibility works.
+
+### 9.2 — Directed Generation + Injection 🔒
+
+**Tasks:**
+- "Who responds?" selector before generating (dropdown of participants)
+- Researcher injection: add message with per-participant visibility control
+- Participant visual identity: colors, name badges on messages
+
+**Blockers:** 9.1.
+
+✅ Can direct any participant to respond. Can inject selectively visible messages.
+
+### 9.3 — Auto-Run + Turn Controls 🔀
+
+**Tasks:**
+- `POST /api/trees/{id}/multi/run` — run N turns with configurable turn order (round-robin or specified)
+- SSE streaming as each turn completes, stop button to halt
+- Fork from any point in a multi-agent conversation with different participant responding
+- Per-participant context usage bars
+
+**Blockers:** 9.2.
+
+✅ Automated multi-agent conversations with live streaming. **Phase 9 complete.**
+
+---
+
+## Phase 10: Local Models
+
+_Goal: Local inference with rich logprob data._
+
+### 10.1 — Local Providers 🔒
 
 **Tasks:**
 - `OllamaProvider`: chat + completion, auto-discover models via Ollama API (`/api/tags`)
 - `LlamaCppProvider`: completion mode, logprob extraction from `completion_probabilities`
 - `GenericOpenAIProvider`: any OpenAI-compatible endpoint (vLLM, LM Studio, text-generation-webui)
-- `LogprobNormalizer.from_llamacpp()` — handle full vocabulary distributions
-- Provider config: `base_url`, model list (auto-discover where possible)
-- Handle provider-specific quirks: Ollama's different streaming format, llama.cpp's token handling
+- Handle provider-specific quirks: Ollama's streaming format, llama.cpp's token handling
 
-**Blockers:** 1.4 (provider pattern established with OpenAI/OpenRouter).
+**Blockers:** Provider pattern established (Phase 1). Independent of Phases 2–9.
 
-✅ Can generate from local Ollama and llama.cpp models. Logprobs captured from llama.cpp with full vocab data.
+✅ Can generate from local Ollama and llama.cpp models.
 
-### 2.2 — Completion Mode 🔀
+### 10.2 — Completion Mode + Full-Vocab Logprobs 🔒
 
 **Tasks:**
-- Support `mode: "completion"` in generation requests
-- For completion mode: send the full conversation as a single text prompt (not chat messages)
+- `mode: "completion"` support: full conversation as single text prompt
 - `prompt_text` stored on `NodeCreated` — the exact string sent
-- Provider adapters handle mode switching (some only support one mode)
-- `LLMProvider.supports_mode()` used to validate requests
+- `LLMProvider.supports_mode()` validation
+- `LogprobNormalizer.from_llamacpp()` — full vocabulary distributions
+- Enriches Phase 3 logprob visualization with complete alternative data
 
-**Blockers:** 2.1 (completion mode is primarily useful for local/base models).
+**Blockers:** 10.1.
 
-✅ Can send completion-mode requests to base models. Full prompt text stored and viewable.
-
-### 2.3 — Logprob Visualization 🔀
-
-**Tasks:**
-- `LogprobOverlay` component: renders token-level heatmap on assistant messages
-- Color mapping: `uncertaintyColor(logprob)` function, transparent for high confidence → warm highlight for low
-- Hover tooltip: show top-N alternatives with probabilities for any token
-- Node-level certainty badge: small indicator showing average/min confidence
-- Toggle: researcher can enable/disable the overlay (it's visual noise if you don't need it)
-- Graceful degradation: no overlay, no badge, no visual noise when logprobs are null
-
-**Blockers:** LogprobData must be stored on nodes (exists since 0.4). Independent of 2.1/2.2, but richer with local model logprobs.
-
-✅ Token heatmap renders on assistant messages. Hover shows alternatives. Badge shows node confidence. No visual noise when logprobs absent.
-
-### 2.4 — Sampling Parameter Controls 🔀
-
-**Tasks:**
-- UI panel: temperature slider, top_p, top_k, max_tokens, frequency/presence penalty
-- Per-tree defaults (saved on tree metadata)
-- Per-generation overrides (UI shows current values, editable before generating)
-- Display actual params used on each node (in node detail view)
-- Presets: "deterministic" (temp=0), "creative" (temp=1.0), "balanced" (temp=0.7), custom
-
-**Blockers:** 1.3 (per-node overrides must work). Independent of 2.1-2.3.
-
-✅ Can adjust sampling params per generation. Presets work. Node detail shows what was used. **Phase 2 complete.**
+✅ Completion mode works. Full-vocab logprobs from llama.cpp enrich visualization. **Phase 10 complete.**
 
 ---
 
-## Phase 3: Research Instrumentation (Week 9-11)
-
-_Goal: Annotate, manage context, search, export._
-
-### 3.1 — Annotation System 🔒
-
-**Tasks:**
-- `annotations` table: `annotation_id`, `node_id`, `tag`, `value`, `notes`, `created_at`
-- API: `POST /api/nodes/{nid}/annotations`, `GET /api/annotations?tag=...`
-- Load taxonomy from `annotation_taxonomy.yml`
-- API: `GET /api/taxonomy`, `POST /api/taxonomy` (extend at runtime)
-- Events: `AnnotationAdded`, `AnnotationRemoved`
-- UI: annotation panel on node detail — shows existing annotations, add new ones
-- Quick-tag buttons for common tags (coherence scale, basin type radio buttons, boolean toggles)
-- Free-form research note field
-
-**Blockers:** Phase 2 complete (or at least 1.x — annotations are independent of logprobs, but the milestone ordering keeps things focused).
-
-✅ Can annotate any node with taxonomy tags or custom tags. Annotations queryable via API. UI lets you annotate without leaving the conversation view.
-
-### 3.2 — Bookmarks + Summaries 🔀
-
-**Tasks:**
-- `bookmarks` table: `bookmark_id`, `node_id`, `label`, `notes`, `summary`, `created_at`
-- API: `POST /api/nodes/{nid}/bookmarks`, `GET /api/bookmarks`
-- UI: bookmark button on any node, bookmark list in sidebar
-- `POST /api/bookmarks/{bid}/summarize` — calls Haiku to summarize root→bookmarked node
-- Store summary on bookmark (via `BookmarkSummaryGenerated` event)
-- Bookmark list shows summaries, making them browsable without re-reading branches
-
-**Blockers:** 3.1 (annotation infrastructure establishes the event patterns). Can start in parallel if comfortable.
-
-✅ Can bookmark nodes, see bookmark list with labels and summaries. Summarize button works.
-
-### 3.3 — Context Exclusion + Digression Groups 🔒
-
-**Tasks:**
-- Events: `NodeContextExcluded`, `NodeContextIncluded`, `DigressionGroupCreated`, `DigressionGroupToggled`
-- `context_exclusions` table: tracks which nodes are excluded and scope
-- `digression_groups` table: group_id, node_ids, label, included status
-- Update `ContextBuilder.build()` to filter excluded nodes and toggled-off groups
-- API: `POST /api/nodes/{nid}/exclude`, `POST /api/nodes/{nid}/include`
-- API: `POST /api/trees/{id}/digression-groups`, `PATCH .../digression-groups/{gid}`
-- UI: exclude toggle on each node (with visual indicator for excluded nodes)
-- UI: select range of messages → "Create digression group" → label it → toggle in/out
-- Context preview: `GET /api/trees/{id}/context-preview/{nid}` shows what the model would see
-
-**Blockers:** 0.5 (context builder must exist). Practically depends on having conversations worth managing.
-
-✅ Can exclude individual nodes, create digression groups, toggle them. Context preview accurately reflects what model will see.
-
-### 3.4 — Smart Eviction 🔒
-
-**Tasks:**
-- Implement `ContextBuilder._smart_evict()` per the architecture spec
-- Protected ranges: first N turns, last N turns, bookmarked nodes
-- Middle-turn eviction: whole messages, oldest first
-- Optional summarization of evicted content via Haiku
-- `EvictionReport` returned with every generation
-- UI: eviction report shown in context usage panel when eviction occurs
-- `EvictionStrategy` configurable per tree (stored in tree metadata)
-- Warning when approaching threshold (default 85%)
-
-**Blockers:** 3.3 (exclusions must work first — they're "free" eviction that runs before smart eviction). 3.2 (bookmarks must exist for bookmark-aware protection).
-
-✅ Long conversations gracefully handle context limits. Researcher sees exactly what was evicted. Summary insertion works.
-
-### 3.5 — Manual Summarization 🔀
-
-**Tasks:**
-- API: `POST /api/trees/{id}/summarize` with body specifying type, nodes, summary_type, custom_prompt
-- Branch summary: root → selected node
-- Subtree summary: all branches below a node
-- Selection summary: arbitrary node selection
-- Custom prompt: researcher provides their own summarization instructions
-- Events: `SummaryGenerated` stored and searchable
-- UI: right-click or menu action on node → "Summarize..." → options dialog
-
-**Blockers:** 3.2 (bookmark summary infrastructure). Can share the same Haiku summarization service.
-
-✅ Can summarize branches, subtrees, selections with various prompts. Summaries stored and findable.
-
-### 3.6 — Export 🔀
-
-**Tasks:**
-- `GET /api/trees/{id}/export?format=json` — full tree with all metadata, annotations, bookmarks
-- `GET /api/trees/{id}/export?format=csv` — flattened: one row per node with columns for all metadata
-- `GET /api/trees/{id}/paths` — enumerate all root-to-leaf paths
-- UI: export button on tree view with format selector
-- Include logprobs in export (JSON), summary statistics in CSV
-
-**Blockers:** 3.1 (annotations should exist to be exportable). Otherwise independent.
-
-✅ Can export a fully annotated tree as JSON or CSV. Data is complete and analysis-ready.
-
-### 3.7 — Keyword Search + Comparison View 🔀
-
-**Tasks:**
-- FTS5 virtual table on node content + system prompts
-- API: `GET /api/search?q=keyword` — returns matching nodes with tree context
-- Search results UI: list of matching nodes with surrounding context, click to navigate
-- Comparison view: `GET /api/trees/{id}/compare?nodes=a,b,c`
-- UI: select 2-3 sibling nodes → side-by-side comparison view
-- Diff-style highlighting of differences between responses
-
-**Blockers:** 3.1 (annotation search is part of this). FTS5 setup is independent.
-
-✅ Can search across all conversations by keyword. Can compare sibling responses side-by-side. **Phase 3 complete.**
-
----
-
-## Phase 4: Multi-Agent (Week 12-15)
-
-_Goal: Run model-to-model conversations AnimaChat-style._
-
-### 4.1 — Participant Management 🔒
-
-**Tasks:**
-- API: `POST /api/trees/{id}/participants`, `DELETE .../participants/{pid}`
-- Store participants on tree (via `TreeMetadataUpdated` or dedicated event)
-- Participant: just model + provider + system prompt + sampling params
-- Tree creation can specify `conversation_mode: "multi_agent"` with initial participants
-- UI: participant configuration panel — add/remove participants, edit their system prompts
-- Display: participant names and colors on messages
-
-**Blockers:** Phase 3 complete (or at least 1.x). Multi-agent builds on the existing generation and context infrastructure.
-
-✅ Can create a multi-agent tree with 2+ participants. Participants visible in UI with distinct visual identity.
-
-### 4.2 — Per-Participant Context Assembly 🔒
-
-**Tasks:**
-- Update `ContextBuilder` to handle `participant` parameter:
-  - Own messages as `role: "assistant"`
-  - Others' messages as `role: "user"` with `[Name]: ` prefix
-  - Researcher notes filtered by `visible_to`
-- Context usage computed per-participant (different models have different windows)
-- `visible_to` field on `NodeCreated` for researcher notes with selective visibility
-
-**Blockers:** 4.1 (participants must exist).
-
-✅ Each participant sees the conversation from its own perspective. Selective visibility works. Context usage accurate per participant.
-
-### 4.3 — Directed Generation + Researcher Injection 🔒
-
-**Tasks:**
-- `POST /api/trees/{id}/nodes/{nid}/generate` with `participant_id` — specifies who responds
-- `POST /api/trees/{id}/multi/inject` — researcher injects a message with `visible_to` control
-- `ConversationRunner.generate_from()`: generate from a specific participant
-- `ConversationRunner.researcher_inject()`: add researcher note with visibility
-- UI: "Who responds?" selector before generating — dropdown of participants
-- UI: inject button with visibility checkboxes (which participants see this?)
-
-**Blockers:** 4.2 (context must be correct per-participant).
-
-✅ Can direct any participant to respond at any point. Can inject researcher messages visible to all or specific participants.
-
-### 4.4 — Auto-Run + Turn Controls 🔀
-
-**Tasks:**
-- `POST /api/trees/{id}/multi/run` — run N turns automatically
-- Turn order: specified list of participant IDs, or round-robin
-- SSE stream: emits events as each turn completes (for live UI updates)
-- Auto-pause: configurable conditions (N turns, or manual stop)
-- UI: "Run N turns" button with turn order configuration
-- UI: live update as turns come in, stop button to halt
-
-**Blockers:** 4.3 (single-turn directed generation must work first).
-
-✅ Can auto-run conversations between models. Live streaming UI. Stop button works.
-
-### 4.5 — Multi-Agent UI Polish 🔀
-
-**Tasks:**
-- Distinct visual identity per participant (color, avatar/icon, name badge)
-- Multi-agent tree view: messages attributed to participants with visual differentiation
-- Participant panel: shows all participants, their models, current turn
-- Context usage bars per-participant
-- Fork from any point in a multi-agent conversation: branch with different participant responding
-
-**Blockers:** 4.3/4.4 (core functionality must work).
-
-✅ Multi-agent conversations are visually clear, easy to follow, easy to control. **Phase 4 complete.**
-
----
-
-## Phase 5: Search + Analysis (Week 16-18)
+## Phase 11: Analysis & Intelligence
 
 _Goal: AI-assisted corpus analysis._
 
-### 5.1 — Semantic Embedding Index 🔒
+### 11.1 — Semantic Search 🔒
 
 **Tasks:**
-- Install sentence-transformers, download `all-MiniLM-L6-v2`
-- `embeddings` table: `node_id`, `embedding` (binary blob)
-- Embed all existing nodes on first run (batch job)
-- Embed new nodes incrementally as they're created
-- hnswlib index: build from embeddings, persist to disk, rebuild on startup
-- Configurable embedding model in `config.py`
-
-**Blockers:** Phase 4 complete (or at least Phase 3 — need a corpus worth searching).
-
-✅ All nodes have embeddings. Index loads on startup. Embedding happens automatically for new nodes.
-
-### 5.2 — Hybrid Search 🔒
-
-**Tasks:**
-- `SearchService.embedding_search()`: query → embed → hnswlib nearest neighbors
-- `SearchService.hybrid_merge()`: combine FTS5 and embedding results with configurable weighting
+- Embedding index: sentence-transformers (`all-MiniLM-L6-v2`), hnswlib, incremental embedding of new nodes
+- `SearchService.hybrid_merge()`: combine FTS5 + embedding results with configurable weighting
 - `SearchQuery` with `semantic: bool` flag
-- API: `GET /api/search?q=...&semantic=true` for semantic search
-- API: `POST /api/search` for complex structured queries (tags + text + semantic + filters)
-- `agent_search()` convenience method: always semantic, higher limit
+- Structured queries: tags + text + semantic + model/date filters
+- "Similar nodes" feature: click any node, find semantically similar across corpus
+- `agent_search()` convenience method for LLM agents
 
-**Blockers:** 5.1 (embeddings must exist). 3.7 (FTS5 must exist for hybrid).
+**Blockers:** 7.1 (FTS5 must exist for hybrid search).
 
-✅ Keyword search, semantic search, and hybrid search all work. Structured queries with tag/model/date filters work.
+✅ Keyword, semantic, and hybrid search all work.
 
-### 5.3 — Analysis Skills 🔀
+### 11.2 — Analysis Skills + Templates 🔀
 
 **Tasks:**
 - `AnalysisSkill` ABC: `name`, `analyze(nodes) -> AnalysisResult`
-- `LinguisticMarkerSkill`: detect hedging, denial scripts, defensive language patterns
-- `CoherenceScoreSkill`: estimate internal coherence (heuristic or LLM-based)
-- `LogprobAnalysisSkill`: uncertainty pattern detection, entropy analysis
-- Skill registry: discover built-in + plugin skills from `skills/` directory
-- API: `POST /api/skills/{name}/run` with node selection
-- UI: skill runner panel — select nodes, pick skill, see results
-- Results stored as annotations (connecting skills to the annotation system)
+- Built-in skills: `LinguisticMarkerSkill` (hedging, denial, defensive language), `CoherenceScoreSkill`, `LogprobAnalysisSkill` (uncertainty patterns, entropy)
+- Plugin system: load skills from `skills/` directory
+- Skill runner UI: select nodes, pick skill, see results (stored as annotations)
+- **Conversation templates / research protocols**: pre-built tree starters for specific research questions (sycophancy testing, persona consistency, emotional response patterns). Shareable as JSON.
 
-**Blockers:** 3.1 (annotation system for storing results). Independent of 5.1/5.2.
+**Blockers:** 6.1 (annotations for storing skill results).
 
-✅ Built-in skills produce useful analysis. Plugin skills loadable from directory.
-
-### 5.4 — Search UI 🔀
-
-**Tasks:**
-- Search bar in sidebar: keyword, semantic toggle, filters
-- Search results: node excerpts with context, highlighting, click-to-navigate
-- Advanced search: tag filters, model filters, date range, tree scope
-- "Similar nodes" feature: click any node → find semantically similar across corpus
-
-**Blockers:** 5.2 (hybrid search must work).
-
-✅ Researcher can find anything across their entire corpus. **Phase 5 complete.**
+✅ Built-in skills produce useful analysis. Templates shareable. **Phase 11 complete.**
 
 ---
 
-## Phase 6: MCP + Ecosystem (Week 19+)
+## Phase 12: Ecosystem
 
 _Goal: Community-deployable research tool._
 
-### 6.1 — MCP Client 🔒
+### 12.1 — MCP 🔀
 
 **Tasks:**
-- Integrate Python MCP SDK
-- Load MCP server configs from `mcp_servers.yml`
-- Connect to configured servers, discover available tools
-- Wire tools into generation: model can call tools, results stored as `role: "tool"` nodes
-- API: `GET /api/mcp/servers`, `GET /api/mcp/servers/{name}/tools`
-- UI: MCP server status, tool availability per generation
+- MCP client: connect to configured servers (`mcp_servers.yml`), discover tools, wire into generation. Tool calls and results stored as `role: "tool"` nodes.
+- MCP server: expose Qivis as MCP server. Tools: `search_conversations`, `get_tree`, `get_node_context`, `get_annotations`, `add_annotation`.
 
-**Blockers:** Phase 5 complete. MCP client is a significant feature that builds on stable generation infrastructure.
+**Blockers:** 11.1 (search for MCP server's `search_conversations` tool).
 
-✅ Models can use external tools during generation. Tool calls and results visible in tree.
+✅ Models can use external tools. External agents can query and annotate the Qivis corpus.
 
-### 6.2 — MCP Server 🔀
+### 12.2 — Maintenance + Deployment 🔀
 
 **Tasks:**
-- Expose Qivis as an MCP server via the Python SDK
-- Tools: `search_conversations`, `get_tree`, `get_node_context`, `get_annotations`, `add_annotation`
-- External LLM agents can query and annotate the research corpus
-- Configuration: which tools to expose, authentication
-
-**Blockers:** 5.2 (search must work for `search_conversations`). Can parallel with 6.1.
-
-✅ External agents can search and annotate the Qivis corpus via MCP.
-
-### 6.3 — Garbage Collection 🔀
-
-**Tasks:**
-- `POST /api/maintenance/gc` — the big red button
-- Reference checker: find archived items with zero live references (no non-archived children, bookmarks, or annotations)
-- `GET /api/maintenance/gc/preview` — show what would be deleted, require confirmation
-- Grace period: `GarbageCollected` event records deletions with `recoverable_until`
-- `POST /api/maintenance/gc/purge` — purge items past grace period
-- UI: maintenance panel with preview, confirm, and purge controls
-
-**Blockers:** 3.1/3.2 (annotations and bookmarks must exist for reference checking).
-
-✅ Can safely GC orphaned content. Preview shows exactly what would go. Grace period works.
-
-### 6.4 — Conversation Import 🔀
-
-**Tasks:**
-- Survey export formats: Claude.ai JSON, ChatGPT export, AnimaChat transcripts
-- Importer for each format: parse → emit `TreeCreated` + `NodeCreated` events
-- API: `POST /api/import` with file upload
-- Handle format quirks: ChatGPT's conversation structure, Claude.ai's format, etc.
-- UI: import wizard with format selection and preview
-
-**Blockers:** 0.2 (event store). Practically independent of everything else.
-
-✅ Can import conversations from major platforms. Imported trees are indistinguishable from native ones.
-
-### 6.5 — Multi-Device Sync 🔀
-
-**Tasks:**
-- Sync protocol: exchange events between instances
-- Conflict resolution: evaluate whether timestamps + UUIDs suffice or hybrid logical clocks are needed (tree structure resolves most conflicts naturally)
-- Sync API: push/pull event ranges
-- Offline support: queue events locally, sync when connected
-
-**Blockers:** All of the above. This is the last piece.
-
-✅ Two instances can sync their event logs and converge to the same state.
-
-### 6.6 — Deployment + Documentation 🔀
-
-**Tasks:**
+- Garbage collection: `POST /api/maintenance/gc` with preview, confirmation, and grace period before purge. Logged as `GarbageCollected` events.
+- Multi-device sync: event exchange between instances, conflict resolution (tree structure resolves most conflicts naturally)
 - Docker image: single `docker-compose up` for the full stack
-- Deployment guide: local, cloud (single instance), multi-user (Postgres migration)
-- Provider setup guides: Anthropic, OpenAI, Ollama, llama.cpp
-- Research workflow guide: how to use Qivis for AI personality research
-- API documentation: auto-generated from FastAPI + manual examples
-- Plugin development guide: writing custom analysis skills
+- Deployment guide, provider setup guides, research workflow guide, API documentation
 
-**Blockers:** Nothing technical — but should reflect the actual state of the tool.
+**Blockers:** Everything else should be stable.
 
-✅ A new researcher can go from zero to running Qivis with one page of instructions. **Phase 6 complete. Qivis is a community-deployable research tool.**
+✅ A new researcher can go from zero to running Qivis with one page of instructions. **Phase 12 complete. Qivis is a community-deployable research tool.**
 
 ---
 
-## Dependency Graph (Summary)
+## Future Ideas
+
+Ideas noted for consideration beyond the current roadmap:
+
+- **Image generation**: Support for models with image output (DALL-E, future Claude image generation). Fundamentally different generation mode — nodes would store image outputs alongside or instead of text.
+- **Conversation templates marketplace**: Community-contributed shareable research protocols beyond local templates.
+- **Real-time collaboration**: Multiple researchers on the same tree simultaneously. Event sourcing makes this architecturally straightforward to add later.
+- **Postgres migration**: For multi-user deployments. SQLite is single-researcher; Postgres enables shared instances.
+
+---
+
+## Dependency Graph
 
 ```
-0.1 → 0.2 → 0.3 → 0.4 → 0.5 → 0.6    (Phase 0: strictly sequential)
-                                  ↓
-            1.4 ─────────────┐   1.1 → 1.2    (Phase 1: 1.4 parallel, 1.5 parallel)
-                             ↓    ↓      ↓
-                           1.3 ←──┘    1.5
+Phase 0 ✅ → Phase 1 ✅ → Phase 1b ✅
+                                ↓
+                          Phase 2 (Essentials)
+                             ↓        ↘
+                          Phase 3      2.3 (parallel)
+                        (Uncertainty)
                              ↓
-                     2.1 → 2.2         (Phase 2: 2.3 and 2.4 can parallel)
-                      ↓
-                     2.3   2.4
-                      ↓
-         3.1 → 3.2 → 3.4              (Phase 3: 3.4 needs 3.2+3.3)
-          ↓     ↓      ↑
-         3.6   3.5   3.3              3.7 parallel after 3.1
-          ↓
-         4.1 → 4.2 → 4.3 → 4.4      (Phase 4: mostly sequential)
-                              ↓
-                             4.5
-                              ↓
-         5.1 → 5.2 → 5.4             (Phase 5: 5.3 parallel)
-                ↓
-               5.3
-                ↓
-     6.1  6.2  6.3  6.4  6.5  6.6    (Phase 6: mostly parallel)
+                          Phase 4
+                        (Structure)
+                             ↓
+                          Phase 5
+                       (Transparency)
+                             ↓
+                          Phase 6
+                     (Instrumentation)
+                        ↓       ↘
+                     Phase 7    6.4 (parallel)
+                  (Corpus/Search)
+                        ↓
+                     Phase 8
+                   (Multimodal)
+                        ↓
+                     Phase 9
+                   (Multi-Agent)
+
+  Phase 10 (Local Models) ─── independent, do whenever hardware available
+  Phase 11 (Analysis) ─────── needs Phase 6 + 7
+  Phase 12 (Ecosystem) ────── needs everything stable
 ```
 
----
-
-## Deferred Items
-
-Items identified during implementation that aren't yet assigned to a specific subphase. These should be folded into future phases or become their own subphases as the plan evolves.
-
-### UI Enhancements (no backend changes needed)
-
-- **Message timestamps**: Display `created_at` on each message in the conversation view. Include a toggle (tree-level or global setting) for whether timestamps are included in the context sent to the model (i.e., prepended to message content or added as metadata). _Likely fits in a Phase 1 or Phase 2 UI polish pass._
-
-- **Light/dark mode toggle**: Manual toggle in the UI instead of relying solely on `prefers-color-scheme`. Useful when testing/researching across themes without changing system defaults. _Small standalone task, can be done anytime._
-
-### Tree Settings (backend + frontend)
-
-- **Tree settings panel / default provider editing**: Allow editing a tree's default provider, model, and system prompt after creation. Currently the only way to set a tree's default provider is at creation time (and even then there's no UI for it), so every tree starts defaulting to the backend fallback (anthropic). A tree settings panel (or inline editing in the sidebar/header) would let researchers configure the default provider/model per tree. _Backend: needs a `PATCH /api/trees/{tree_id}` endpoint (or TreeUpdated event). Frontend: settings UI, wired into the tree detail view._
-
-### Generation UX (frontend + minor backend)
-
-- **Model attribution on messages**: Show which provider/model generated each assistant message. The data already exists on every node (`model`, `provider` fields). Display as subtle metadata below or beside the message content. _Small frontend task, no backend changes needed._
-
-- **Branch-local model default**: Follow-up messages in a branch should default to the most recently used provider/model in that branch, not just the tree default. When a researcher switches to GPT-4o mid-conversation, subsequent messages should keep using it until they switch again. _Requires walking the active path to find the last assistant node's provider/model and passing those as defaults to sendMessage and ForkPanel._
-
-- **Generation error recovery**: When generation fails (API error, missing credits, network issue), the UI should preserve the failed attempt with: the error message, a retry button, and the ability to change parameters (provider, model, etc.) before retrying. Currently, errors clear the streaming state and show a toast, losing the generation context. _Moderate frontend work — needs a new "failed generation" UI state alongside streaming/complete._
-
-- **n > 1 generation**: Request multiple sibling completions in a single call (e.g., "generate 3 responses"). Each gets its own NodeCreated event and appears as siblings. The regenerate workflow already creates one new sibling at a time — this extends it to batch creation. _Backend: generation endpoint accepts an `n` parameter, loops or fans out, returns multiple nodes. Frontend: UI to request multiple completions and a way to browse/compare them (the sibling navigator already handles display). Originally scoped for Phase 1.3._
-
-### Context Transparency (needs some backend + frontend work)
-
-- **Context diff indicator**: A colored badge/indicator on assistant messages where the actual generation context differed from what a researcher would expect by reading the tree. Differences to flag:
-  - System prompt override (different from tree default)
-  - Different provider or model from tree default
-  - Excluded nodes / non-default context assembly
-  - Different sampling parameters
-
-  Clicking the indicator shows a diff view (nice UI, not raw JSON) between "what the tree path looks like" vs "what was actually sent to the model." _The per-node data already exists (`system_prompt`, `model`, `provider`, `sampling_params`, `context_usage` are all stored on every assistant node). This is primarily a frontend feature with tree-default comparison logic. Likely fits in Phase 2 or Phase 3 alongside the context exclusion work (3.3)._
+**Parallelism notes:**
+- Phase 10 (Local Models) is independent of Phases 2–9. Can be done whenever hardware is available.
+- Phase 4 subphases (graph view, comparison) are pure frontend and could theoretically be pulled forward.
+- Within phases, 🔀 subphases can be parallelized.
+- UX polish ("b" phases) can be interjected between any phases as needed.
 
 ---
 
@@ -657,8 +550,10 @@ Items identified during implementation that aren't yet assigned to a specific su
 
 When handing this plan to Claude Code:
 
-1. **One subphase at a time.** Say "Implement 0.1" not "Build Phase 0."
+1. **One subphase at a time.** Say "Implement 2.1" not "Build Phase 2."
 2. **Definition of done matters.** Each ✅ is the acceptance criteria. Don't move on until it passes.
 3. **The architecture doc is the source of truth** for data structures, event types, and API shapes. This plan is the *order* to build them in.
-4. **Tests as you go.** Each subphase should have tests before moving to the next, especially the event store (0.2) and context builder (0.5/3.3/3.4) — these are load-bearing.
+4. **Tests as you go.** Each subphase should have tests before moving to the next, especially event store, context builder, and new event types — these are load-bearing.
 5. **Frontend can lag.** It's OK if the frontend is a phase behind the backend. The API is the real interface; the UI catches up.
+6. **Frontend components are exempt from test-first.** Backend follows contract tests → integration tests → implement → cleanup → regression. Frontend React components are manually tested.
+7. **Subphase sizing matters.** Keep subphases large enough for real design decisions and discovery, not mechanical fill-in.
