@@ -99,6 +99,48 @@
   50% { opacity: 0.2; }
 }
 
+/* ---- Streaming multi-branch header ---- */
+.message-header-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-md);
+}
+
+.streaming-branch-nav {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.streaming-nav-arrow {
+  background: none;
+  border: none;
+  padding: 0 2px;
+  font-size: var(--text-sm);
+  line-height: 1;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.streaming-nav-arrow:hover:not(:disabled) {
+  color: var(--text-primary);
+}
+
+.streaming-nav-arrow:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.streaming-nav-label {
+  min-width: 3.5em;
+  text-align: center;
+}
+
 /* ---- Generation error panel ---- */
 .generation-error-panel {
   margin: var(--space-md) 0;

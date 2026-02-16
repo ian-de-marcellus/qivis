@@ -106,10 +106,10 @@ async def generate(
         raise HTTPException(status_code=400, detail=str(e))
 
     if request.stream and request.n > 1:
-        raise HTTPException(
-            status_code=400,
-            detail="Streaming not supported with n > 1."
-            " Simultaneous streaming is a planned enhancement.",
+        return StreamingResponse(
+            _stream_n_sse(gen_service, tree_id, node_id, provider, request),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
 
     if request.stream:
@@ -180,6 +180,78 @@ async def _stream_sse(
             elif chunk.text:
                 data = {"type": "text_delta", "text": chunk.text}
                 yield f"event: text_delta\ndata: {json_module.dumps(data)}\n\n"
+    except TreeNotFoundForGenerationError:
+        error = {"error": f"Tree not found: {tree_id}"}
+        yield f"event: error\ndata: {json_module.dumps(error)}\n\n"
+    except NodeNotFoundForGenerationError:
+        error = {"error": f"Node not found: {node_id}"}
+        yield f"event: error\ndata: {json_module.dumps(error)}\n\n"
+    except Exception as e:
+        error = {"error": str(e)}
+        yield f"event: error\ndata: {json_module.dumps(error)}\n\n"
+
+
+async def _stream_n_sse(
+    gen_service: GenerationService,
+    tree_id: str,
+    node_id: str,
+    provider: LLMProvider,
+    request: GenerateRequest,
+) -> AsyncIterator[str]:
+    """SSE generator for simultaneous n>1 streaming with completion_index."""
+    try:
+        async for chunk in gen_service.generate_n_stream(
+            tree_id,
+            node_id,
+            provider,
+            n=request.n,
+            model=request.model,
+            system_prompt=request.system_prompt,
+            sampling_params=request.sampling_params,
+        ):
+            if chunk.type == "generation_complete":
+                data = {"type": "generation_complete"}
+                yield (
+                    f"event: generation_complete\n"
+                    f"data: {json_module.dumps(data)}\n\n"
+                )
+            elif chunk.type == "error":
+                data = {
+                    "error": chunk.text,
+                    "completion_index": chunk.completion_index,
+                }
+                yield (
+                    f"event: error\n"
+                    f"data: {json_module.dumps(data)}\n\n"
+                )
+            elif chunk.is_final and chunk.result:
+                data = {
+                    "type": "message_stop",
+                    "completion_index": chunk.completion_index,
+                    "content": chunk.result.content,
+                    "finish_reason": chunk.result.finish_reason,
+                    "usage": chunk.result.usage,
+                    "latency_ms": chunk.result.latency_ms,
+                    "node_id": (
+                        chunk.result.raw_response.get("node_id")
+                        if chunk.result.raw_response
+                        else None
+                    ),
+                }
+                yield (
+                    f"event: message_stop\n"
+                    f"data: {json_module.dumps(data)}\n\n"
+                )
+            elif chunk.text:
+                data = {
+                    "type": "text_delta",
+                    "text": chunk.text,
+                    "completion_index": chunk.completion_index,
+                }
+                yield (
+                    f"event: text_delta\n"
+                    f"data: {json_module.dumps(data)}\n\n"
+                )
     except TreeNotFoundForGenerationError:
         error = {"error": f"Tree not found: {tree_id}"}
         yield f"event: error\ndata: {json_module.dumps(error)}\n\n"

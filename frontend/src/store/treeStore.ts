@@ -28,6 +28,10 @@ interface TreeStore {
   isLoading: boolean
   isGenerating: boolean
   streamingContent: string
+  streamingContents: Record<number, string>
+  streamingNodeIds: Record<number, string>
+  streamingTotal: number
+  activeStreamIndex: number
   regeneratingParentId: string | null
   systemPromptOverride: string | null
   error: string | null
@@ -48,6 +52,7 @@ interface TreeStore {
   setSystemPromptOverride: (prompt: string | null) => void
   clearError: () => void
   clearGenerationError: () => void
+  setActiveStreamIndex: (index: number) => void
   selectBranch: (parentId: string, childId: string) => void
   forkAndGenerate: (
     parentId: string,
@@ -110,6 +115,10 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
   isLoading: false,
   isGenerating: false,
   streamingContent: '',
+  streamingContents: {},
+  streamingNodeIds: {},
+  streamingTotal: 0,
+  activeStreamIndex: 0,
   regeneratingParentId: null,
   systemPromptOverride: null,
   error: null,
@@ -280,6 +289,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
 
   clearError: () => set({ error: null }),
   clearGenerationError: () => set({ generationError: null }),
+  setActiveStreamIndex: (index: number) => set({ activeStreamIndex: index }),
 
   selectBranch: (parentId: string, childId: string) => {
     set((state) => ({
@@ -313,17 +323,76 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
         },
       }))
 
-      set({ isGenerating: true, streamingContent: '' })
+      const n = overrides.n ?? 1
 
-      if (overrides.n && overrides.n > 1) {
-        // n>1: use non-streaming, then refresh tree to see all siblings
-        await api.generate(treeId, userNode.node_id, overrides)
-        set({ isGenerating: false })
-        const tree = await api.getTree(treeId)
-        set({ currentTree: tree })
-        const trees = await api.listTrees()
-        set({ trees })
+      if (n > 1) {
+        set({
+          isGenerating: true,
+          streamingContent: '',
+          streamingContents: {},
+          streamingNodeIds: {},
+          streamingTotal: n,
+          activeStreamIndex: 0,
+        })
+        await api.generateMultiStream(
+          treeId,
+          userNode.node_id,
+          overrides,
+          (text, idx) => {
+            set((state) => ({
+              streamingContents: {
+                ...state.streamingContents,
+                [idx]: (state.streamingContents[idx] ?? '') + text,
+              },
+            }))
+          },
+          (event) => {
+            if (event.node_id != null && event.completion_index != null) {
+              set((state) => ({
+                streamingNodeIds: {
+                  ...state.streamingNodeIds,
+                  [event.completion_index!]: event.node_id!,
+                },
+              }))
+            }
+          },
+          () => {
+            set({
+              isGenerating: false,
+              streamingContent: '',
+              streamingContents: {},
+              streamingNodeIds: {},
+              streamingTotal: 0,
+              activeStreamIndex: 0,
+            })
+            api.getTree(treeId).then((tree) => {
+              set({ currentTree: tree })
+            })
+            api.listTrees().then((trees) => {
+              set({ trees })
+            })
+          },
+          (error) => {
+            set({
+              isGenerating: false,
+              streamingContent: '',
+              streamingContents: {},
+              streamingNodeIds: {},
+              streamingTotal: 0,
+              activeStreamIndex: 0,
+              error: String(error),
+              generationError: {
+                parentNodeId: userNode.node_id,
+                provider: overrides.provider ?? 'anthropic',
+                model: overrides.model ?? null,
+                systemPrompt: overrides.system_prompt ?? null,
+                errorMessage: String(error),
+              },
+            })
+          },
+        )
       } else {
+        set({ isGenerating: true, streamingContent: '' })
         await api.generateStream(
           treeId,
           userNode.node_id,
@@ -371,27 +440,87 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
       isGenerating: true, streamingContent: '', regeneratingParentId: parentNodeId,
     })
 
+    const n = overrides.n ?? 1
+
     try {
-      if (overrides.n && overrides.n > 1) {
-        // n>1: use non-streaming, then refresh tree to see all siblings
-        await api.generate(treeId, parentNodeId, overrides)
-        set({ isGenerating: false, regeneratingParentId: null })
-        const tree = await api.getTree(treeId)
-        const newChildren = tree.nodes.filter((n) => n.parent_id === parentNodeId)
-        const newest = newChildren[newChildren.length - 1]
-        if (newest) {
-          set((state) => ({
-            currentTree: tree,
-            branchSelections: {
-              ...state.branchSelections,
-              [parentNodeId]: newest.node_id,
-            },
-          }))
-        } else {
-          set({ currentTree: tree })
-        }
-        const trees = await api.listTrees()
-        set({ trees })
+      if (n > 1) {
+        set({
+          streamingContents: {},
+          streamingNodeIds: {},
+          streamingTotal: n,
+          activeStreamIndex: 0,
+        })
+        await api.generateMultiStream(
+          treeId,
+          parentNodeId,
+          overrides,
+          (text, idx) => {
+            set((state) => ({
+              streamingContents: {
+                ...state.streamingContents,
+                [idx]: (state.streamingContents[idx] ?? '') + text,
+              },
+            }))
+          },
+          (event) => {
+            if (event.node_id != null && event.completion_index != null) {
+              set((state) => ({
+                streamingNodeIds: {
+                  ...state.streamingNodeIds,
+                  [event.completion_index!]: event.node_id!,
+                },
+              }))
+            }
+          },
+          () => {
+            set({
+              isGenerating: false,
+              streamingContent: '',
+              streamingContents: {},
+              streamingNodeIds: {},
+              streamingTotal: 0,
+              activeStreamIndex: 0,
+              regeneratingParentId: null,
+            })
+            api.getTree(treeId).then((tree) => {
+              const newChildren = tree.nodes.filter((nd) => nd.parent_id === parentNodeId)
+              const newest = newChildren[newChildren.length - 1]
+              if (newest) {
+                set((state) => ({
+                  currentTree: tree,
+                  branchSelections: {
+                    ...state.branchSelections,
+                    [parentNodeId]: newest.node_id,
+                  },
+                }))
+              } else {
+                set({ currentTree: tree })
+              }
+            })
+            api.listTrees().then((trees) => {
+              set({ trees })
+            })
+          },
+          (error) => {
+            set({
+              isGenerating: false,
+              streamingContent: '',
+              streamingContents: {},
+              streamingNodeIds: {},
+              streamingTotal: 0,
+              activeStreamIndex: 0,
+              regeneratingParentId: null,
+              error: String(error),
+              generationError: {
+                parentNodeId,
+                provider: overrides.provider ?? 'anthropic',
+                model: overrides.model ?? null,
+                systemPrompt: overrides.system_prompt ?? null,
+                errorMessage: String(error),
+              },
+            })
+          },
+        )
       } else {
         await api.generateStream(
           treeId,
@@ -403,8 +532,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
           () => {
             set({ isGenerating: false, streamingContent: '', regeneratingParentId: null })
             api.getTree(treeId).then((tree) => {
-              // Select the new assistant sibling (last child of the parent)
-              const newChildren = tree.nodes.filter((n) => n.parent_id === parentNodeId)
+              const newChildren = tree.nodes.filter((nd) => nd.parent_id === parentNodeId)
               const newest = newChildren[newChildren.length - 1]
               if (newest) {
                 set((state) => ({

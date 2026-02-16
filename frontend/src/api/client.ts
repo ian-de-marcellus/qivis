@@ -12,6 +12,8 @@ import type {
   TreeSummary,
 } from './types.ts'
 
+type SSEParsed = Record<string, unknown>
+
 const BASE = '/api'
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
@@ -156,5 +158,78 @@ export async function generateStream(
   // If stream ended without a complete or error event, something went wrong
   if (!receivedComplete && !receivedError) {
     onError?.(new Error('Stream ended unexpectedly without completing'))
+  }
+}
+
+// -- Generation (multi-stream n>1 via SSE) --
+
+export async function generateMultiStream(
+  treeId: string,
+  nodeId: string,
+  req: GenerateRequest,
+  onDelta: (text: string, completionIndex: number) => void,
+  onStreamComplete: (event: MessageStopEvent) => void,
+  onAllComplete: () => void,
+  onError?: (error: Error, completionIndex?: number) => void,
+): Promise<void> {
+  const res = await fetch(`${BASE}/trees/${treeId}/nodes/${nodeId}/generate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...req, stream: true }),
+  })
+
+  if (!res.ok) {
+    const text = await res.text()
+    const err = new Error(`API error ${res.status}: ${text}`)
+    onError?.(err)
+    return
+  }
+
+  const reader = res.body?.getReader()
+  if (!reader) {
+    onError?.(new Error('No response body'))
+    return
+  }
+
+  const decoder = new TextDecoder()
+  let buffer = ''
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() ?? ''
+
+      let currentEvent = ''
+      for (const line of lines) {
+        if (line.startsWith('event: ')) {
+          currentEvent = line.slice(7)
+        } else if (line.startsWith('data: ')) {
+          const data = line.slice(6)
+          try {
+            const parsed = JSON.parse(data) as SSEParsed
+            if (currentEvent === 'text_delta' && typeof parsed.text === 'string') {
+              onDelta(parsed.text, parsed.completion_index as number)
+            } else if (currentEvent === 'message_stop') {
+              onStreamComplete(parsed as unknown as MessageStopEvent)
+            } else if (currentEvent === 'generation_complete') {
+              onAllComplete()
+            } else if (currentEvent === 'error') {
+              const idx = typeof parsed.completion_index === 'number'
+                ? parsed.completion_index
+                : undefined
+              onError?.(new Error(String(parsed.error ?? 'Unknown SSE error')), idx)
+            }
+          } catch {
+            // Skip malformed JSON lines
+          }
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock()
   }
 }

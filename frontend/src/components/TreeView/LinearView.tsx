@@ -16,10 +16,15 @@ export function LinearView() {
     providers,
     isGenerating,
     streamingContent,
+    streamingContents,
+    streamingNodeIds,
+    streamingTotal,
+    activeStreamIndex,
     regeneratingParentId,
     generationError,
     branchSelections,
     selectBranch,
+    setActiveStreamIndex,
     forkAndGenerate,
     regenerate,
     clearGenerationError,
@@ -55,9 +60,10 @@ export function LinearView() {
   }
 
   // Auto-scroll on new content
+  const activeMultiContent = streamingContents[activeStreamIndex]
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [path.length, streamingContent])
+  }, [path.length, streamingContent, activeMultiContent])
 
   if (!currentTree) return null
 
@@ -130,7 +136,47 @@ export function LinearView() {
           )
         })}
 
-        {isGenerating && streamingContent && (
+        {isGenerating && streamingTotal > 1 && (
+          <div className="message-row assistant">
+            <div className="message-header-row">
+              <div className="message-role">assistant</div>
+              <div className="streaming-branch-nav">
+                <button
+                  className="streaming-nav-arrow"
+                  onClick={() => setActiveStreamIndex(activeStreamIndex - 1)}
+                  disabled={activeStreamIndex <= 0}
+                >
+                  &#8249;
+                </button>
+                <span className="streaming-nav-label">
+                  {activeStreamIndex + 1} of {streamingTotal}
+                </span>
+                <button
+                  className="streaming-nav-arrow"
+                  onClick={() => setActiveStreamIndex(activeStreamIndex + 1)}
+                  disabled={activeStreamIndex >= streamingTotal - 1}
+                >
+                  &#8250;
+                </button>
+              </div>
+            </div>
+            <div className="message-content">
+              {streamingContents[activeStreamIndex]
+                ? (
+                  <>
+                    {streamingContents[activeStreamIndex]}
+                    {!streamingNodeIds[activeStreamIndex] && (
+                      <span className="streaming-cursor" />
+                    )}
+                  </>
+                )
+                : <span className="thinking">Thinking...</span>
+              }
+            </div>
+          </div>
+        )}
+
+        {isGenerating && streamingTotal <= 1 && streamingContent && (
           <div className="message-row assistant">
             <div className="message-role">assistant</div>
             <div className="message-content">
@@ -140,7 +186,7 @@ export function LinearView() {
           </div>
         )}
 
-        {isGenerating && !streamingContent && (
+        {isGenerating && streamingTotal <= 1 && !streamingContent && (
           <div className="message-row assistant">
             <div className="message-role">assistant</div>
             <div className="message-content thinking">Thinking...</div>

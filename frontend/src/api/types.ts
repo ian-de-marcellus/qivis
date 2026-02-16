@@ -100,6 +100,7 @@ export interface GenerateRequest {
 export interface TextDeltaEvent {
   type: 'text_delta'
   text: string
+  completion_index?: number
 }
 
 export interface MessageStopEvent {
@@ -109,6 +110,11 @@ export interface MessageStopEvent {
   usage: Record<string, number> | null
   latency_ms: number | null
   node_id: string | null
+  completion_index?: number
 }
 
-export type SSEEvent = TextDeltaEvent | MessageStopEvent
+export interface GenerationCompleteEvent {
+  type: 'generation_complete'
+}
+
+export type SSEEvent = TextDeltaEvent | MessageStopEvent | GenerationCompleteEvent

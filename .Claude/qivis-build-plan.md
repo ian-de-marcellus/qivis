@@ -69,20 +69,15 @@ Error recovery, smarter defaults, batch generation.
 
 12 new tests. 196 tests at completion.
 
-### 2.2b — Simultaneous Streaming n>1 🔀
+### 2.2b — Simultaneous Streaming n>1 ✅
 
 Stream all N responses simultaneously with live branch navigation.
 
-**Tasks:**
-- Extend SSE protocol with `completion_index` on text_delta and message_stop events
-- Backend: N concurrent `provider.generate_stream()` calls merged into single tagged SSE stream
-- New `generation_complete` SSE event when all N streams finish
-- Frontend: per-completion streaming buffers (`streamingContents: Map<number, string>`), branch indicator visible during generation
-- Handle partial failures (some streams error while others succeed)
+- **Backend**: `generate_n_stream()` — `asyncio.Queue`-based merge of N concurrent `provider.generate_stream()` calls. Each stream task tags chunks with `completion_index`, emits `NodeCreated` independently on its final chunk. Sentinel `generation_complete` event when all N streams finish.
+- **SSE protocol**: `completion_index` on `text_delta` and `message_stop` events for n>1. n=1 streaming untouched (no `completion_index`, backward compatible). `_stream_n_sse()` router handler for n>1.
+- **Frontend**: `generateMultiStream()` client function routes events by `completion_index`. Store: `streamingContents` (per-index buffers), `streamingNodeIds`, `streamingTotal`, `activeStreamIndex`. LinearView: streaming branch nav (‹ 1 of 3 ›) with per-stream display and independent cursors. Single-stream path unchanged.
 
-**Blockers:** 2.2 (core n>1 event model must exist).
-
-✅ All N responses stream in simultaneously. Branch navigator active during generation.
+5 new backend tests (replace old 400-rejection tests). 201 tests at completion.
 
 ### 2.3 — Small Polish 🔀
 

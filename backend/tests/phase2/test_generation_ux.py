@@ -1,8 +1,10 @@
-"""Contract tests for generation UX improvements (Phase 2.2).
+"""Contract tests for generation UX improvements (Phase 2.2 + 2.2b).
 
 Tests n>1 generation: schema validation, sibling creation, metadata correctness.
+Tests simultaneous streaming n>1: tagged SSE events, generation_complete.
 """
 
+import json
 from collections.abc import AsyncIterator
 
 import pytest
@@ -259,18 +261,27 @@ class TestGenerateNCreation:
             assert node["sibling_count"] == 3
 
 
-class TestGenerateNStreamingRejected:
-    """Streaming + n>1 is rejected until Phase 2.2b."""
+def _parse_sse_events(body: str) -> list[tuple[str, dict]]:
+    """Parse SSE text into [(event_type, data_dict), ...]."""
+    events: list[tuple[str, dict]] = []
+    for block in body.split("\n\n"):
+        block = block.strip()
+        if not block:
+            continue
+        event_type = ""
+        data = None
+        for line in block.split("\n"):
+            if line.startswith("event: "):
+                event_type = line[7:]
+            elif line.startswith("data: "):
+                data = json.loads(line[6:])
+        if event_type and data is not None:
+            events.append((event_type, data))
+    return events
 
-    async def test_streaming_n2_returns_400(self, gen_client: AsyncClient):
-        """stream=true with n=2 returns 400."""
-        tree_id, node_id = await _setup_tree_with_user_node(gen_client)
 
-        resp = await gen_client.post(
-            f"/api/trees/{tree_id}/nodes/{node_id}/generate",
-            json={"provider": "counting", "n": 2, "stream": True},
-        )
-        assert resp.status_code == 400
+class TestStreamingN1Unchanged:
+    """n=1 streaming stays backward compatible (no completion_index)."""
 
     async def test_streaming_n1_still_works(self, gen_client: AsyncClient):
         """stream=true with n=1 (default) still works fine."""
@@ -282,3 +293,113 @@ class TestGenerateNStreamingRejected:
         )
         assert resp.status_code == 200
         assert "text/event-stream" in resp.headers["content-type"]
+
+    async def test_streaming_n1_no_completion_index(
+        self, gen_client: AsyncClient
+    ):
+        """n=1 streaming events do not include completion_index."""
+        tree_id, node_id = await _setup_tree_with_user_node(gen_client)
+
+        resp = await gen_client.post(
+            f"/api/trees/{tree_id}/nodes/{node_id}/generate",
+            json={"provider": "counting", "n": 1, "stream": True},
+        )
+        events = _parse_sse_events(resp.text)
+        for event_type, data in events:
+            assert "completion_index" not in data
+
+
+class TestStreamingNMultiple:
+    """Simultaneous streaming n>1 (Phase 2.2b)."""
+
+    async def test_streaming_n2_returns_200(self, gen_client: AsyncClient):
+        """stream=true with n=2 returns 200 (not rejected)."""
+        tree_id, node_id = await _setup_tree_with_user_node(gen_client)
+
+        resp = await gen_client.post(
+            f"/api/trees/{tree_id}/nodes/{node_id}/generate",
+            json={"provider": "counting", "n": 2, "stream": True},
+        )
+        assert resp.status_code == 200
+        assert "text/event-stream" in resp.headers["content-type"]
+
+    async def test_streaming_n3_has_completion_index(
+        self, gen_client: AsyncClient
+    ):
+        """All text_delta and message_stop events have completion_index."""
+        tree_id, node_id = await _setup_tree_with_user_node(gen_client)
+
+        resp = await gen_client.post(
+            f"/api/trees/{tree_id}/nodes/{node_id}/generate",
+            json={"provider": "counting", "n": 3, "stream": True},
+        )
+        events = _parse_sse_events(resp.text)
+
+        for event_type, data in events:
+            if event_type in ("text_delta", "message_stop"):
+                assert "completion_index" in data
+                assert data["completion_index"] in (0, 1, 2)
+
+    async def test_streaming_n3_all_message_stops(
+        self, gen_client: AsyncClient
+    ):
+        """Exactly 3 message_stop events with distinct indices and node_ids."""
+        tree_id, node_id = await _setup_tree_with_user_node(gen_client)
+
+        resp = await gen_client.post(
+            f"/api/trees/{tree_id}/nodes/{node_id}/generate",
+            json={"provider": "counting", "n": 3, "stream": True},
+        )
+        events = _parse_sse_events(resp.text)
+        stops = [
+            (d["completion_index"], d["node_id"])
+            for t, d in events
+            if t == "message_stop"
+        ]
+
+        assert len(stops) == 3
+        indices = {idx for idx, _ in stops}
+        node_ids = {nid for _, nid in stops}
+        assert indices == {0, 1, 2}
+        assert len(node_ids) == 3  # all distinct
+
+    async def test_streaming_n3_ends_with_generation_complete(
+        self, gen_client: AsyncClient
+    ):
+        """Last SSE event is generation_complete."""
+        tree_id, node_id = await _setup_tree_with_user_node(gen_client)
+
+        resp = await gen_client.post(
+            f"/api/trees/{tree_id}/nodes/{node_id}/generate",
+            json={"provider": "counting", "n": 3, "stream": True},
+        )
+        events = _parse_sse_events(resp.text)
+        assert len(events) > 0
+        last_type, last_data = events[-1]
+        assert last_type == "generation_complete"
+        assert last_data["type"] == "generation_complete"
+
+    async def test_streaming_n3_creates_3_nodes(
+        self, gen_client: AsyncClient
+    ):
+        """After streaming n=3, tree has 3 assistant nodes."""
+        tree_id, node_id = await _setup_tree_with_user_node(gen_client)
+
+        await gen_client.post(
+            f"/api/trees/{tree_id}/nodes/{node_id}/generate",
+            json={"provider": "counting", "n": 3, "stream": True},
+        )
+
+        tree = (await gen_client.get(f"/api/trees/{tree_id}")).json()
+        assistant_nodes = [
+            n for n in tree["nodes"] if n["role"] == "assistant"
+        ]
+        assert len(assistant_nodes) == 3
+
+        # All share the same parent
+        parent_ids = {n["parent_id"] for n in assistant_nodes}
+        assert parent_ids == {node_id}
+
+        # Correct sibling metadata
+        for node in assistant_nodes:
+            assert node["sibling_count"] == 3

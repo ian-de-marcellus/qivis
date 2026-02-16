@@ -124,6 +124,120 @@ class GenerationService:
             created.append(node)
         return created
 
+    async def generate_n_stream(
+        self,
+        tree_id: str,
+        node_id: str,
+        provider: LLMProvider,
+        *,
+        n: int,
+        model: str | None = None,
+        system_prompt: str | None = None,
+        sampling_params: SamplingParams | None = None,
+    ) -> AsyncIterator[StreamChunk]:
+        """Stream N responses simultaneously, yielding tagged chunks."""
+        tree, nodes, resolved_model, resolved_prompt, resolved_params = (
+            await self._resolve_context(
+                tree_id, node_id, model, system_prompt, sampling_params
+            )
+        )
+        context_limit = get_model_context_limit(resolved_model)
+        messages, context_usage, _eviction_report = (
+            self._context_builder.build(
+                nodes=nodes,
+                target_node_id=node_id,
+                system_prompt=resolved_prompt,
+                model_context_limit=context_limit,
+            )
+        )
+        generation_id = str(uuid4())
+
+        await self._emit_generation_started(
+            tree_id, generation_id, node_id,
+            resolved_model, provider.name,
+            resolved_prompt, resolved_params,
+            n=n,
+        )
+
+        request = GenerationRequest(
+            model=resolved_model,
+            messages=messages,
+            system_prompt=resolved_prompt,
+            sampling_params=resolved_params,
+        )
+
+        queue: asyncio.Queue[tuple[int, StreamChunk] | None] = (
+            asyncio.Queue()
+        )
+        remaining = n
+
+        async def _run_stream(index: int) -> None:
+            nonlocal remaining
+            try:
+                async for chunk in provider.generate_stream(request):
+                    if chunk.is_final and chunk.result is not None:
+                        node = await self._emit_node_created(
+                            tree_id, generation_id, node_id,
+                            chunk.result, provider.name,
+                            resolved_prompt, resolved_params,
+                            context_usage=context_usage,
+                        )
+                        tagged = StreamChunk(
+                            type=chunk.type,
+                            text=chunk.text,
+                            is_final=True,
+                            completion_index=index,
+                            result=GenerationResult(
+                                content=chunk.result.content,
+                                model=chunk.result.model,
+                                finish_reason=chunk.result.finish_reason,
+                                usage=chunk.result.usage,
+                                latency_ms=chunk.result.latency_ms,
+                                logprobs=chunk.result.logprobs,
+                                raw_response={
+                                    "node_id": node.node_id,
+                                },
+                            ),
+                        )
+                        await queue.put((index, tagged))
+                    else:
+                        tagged = StreamChunk(
+                            type=chunk.type,
+                            text=chunk.text,
+                            completion_index=index,
+                        )
+                        await queue.put((index, tagged))
+            except Exception as e:
+                error_chunk = StreamChunk(
+                    type="error",
+                    text=str(e),
+                    completion_index=index,
+                )
+                await queue.put((index, error_chunk))
+            finally:
+                remaining -= 1
+                if remaining == 0:
+                    await queue.put(None)
+
+        tasks = [
+            asyncio.create_task(_run_stream(i)) for i in range(n)
+        ]
+
+        try:
+            while True:
+                item = await queue.get()
+                if item is None:
+                    break
+                _index, chunk = item
+                yield chunk
+
+            yield StreamChunk(type="generation_complete")
+        finally:
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+
     async def generate_stream(
         self,
         tree_id: str,

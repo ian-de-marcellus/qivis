@@ -34,10 +34,11 @@ class GenerationResult(BaseModel):
 class StreamChunk(BaseModel):
     """A single delta in a streaming response."""
 
-    type: str  # "text_delta", "message_stop"
+    type: str  # "text_delta", "message_stop", "generation_complete"
     text: str = ""
     is_final: bool = False
     result: GenerationResult | None = None
+    completion_index: int | None = None
 
 
 class LLMProvider(ABC):
