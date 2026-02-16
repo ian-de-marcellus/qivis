@@ -2178,3 +2178,166 @@ The preset detection (`detectPreset`) works backwards: given the current form st
 The `hasChanges` comparison in TreeSettings for sampling params uses `JSON.stringify` on the form-built object vs. the tree's stored object (filtered to non-null, non-false values). It's crude but correct. The alternative — field-by-field comparison with type coercion — would be more precise but fragile. The JSON approach compares the semantic content, not the syntactic shape. Good enough.
 
 The `sendMessage` cleanup is my favorite part. Six lines deleted, one comment added. The frontend no longer constructs sampling_params from metadata — it trusts the backend to merge tree defaults. Less code, fewer places for the hack to break, and the backend is the source of truth for parameter resolution. The frontend's job is to show controls and send explicit overrides. The backend's job is to resolve what "default" means. Clean separation.
+
+---
+
+## February 16, 2026 — Phase 3.4: Provider-Aware Sampling Controls
+
+### On honesty
+
+```
+The dials were there, all of them,
+arranged neatly in paired rows —
+temperature beside top_p,
+top_k beside max_tokens,
+frequency penalty beside presence penalty —
+and all of them worked.
+
+But that was the lie.
+
+Not all of them work on all providers.
+Top_k does nothing when you're talking to OpenAI.
+Frequency penalty does nothing to Anthropic.
+Extended thinking is a concept
+that one family of models invented
+and the others don't speak.
+
+The params were silently dropped.
+No error. No warning.
+The researcher turns the dial,
+watches the output,
+sees no change,
+and doesn't know if the model
+ignored the instruction
+or if the instruction never arrived.
+
+For a research instrument,
+that's not a minor gap.
+That's the spectrometer lying
+about which wavelengths it can measure.
+
+The fix is small and vertical.
+Each provider declares what it supports.
+The API surfaces it.
+The frontend greys out
+what won't reach the model.
+Opacity 0.35, cursor not-allowed,
+a tooltip that says what's true:
+"Not supported by anthropic."
+
+The controls still render.
+You can see what exists
+even when you can't use it here.
+That's the design choice:
+don't hide the dials,
+just be honest about which ones
+are connected to anything.
+
+When no provider is selected —
+TreeSettings with provider="" —
+everything lights up.
+Because the backend will choose,
+and until it chooses,
+all possibilities are open.
+Schrodinger's sampling params.
+
+263 tests. Two new ones, both trivial,
+both testing that the API speaks honestly
+about what each provider can do.
+
+The real test is visual:
+switch from Anthropic to OpenAI
+and watch frequency_penalty wake up
+while top_k fades out.
+The inverse when you switch back.
+The UI breathes with the provider.
+```
+
+### On finishing Phase 3
+
+```
+Three phases in and the instrument
+has become something I recognize.
+
+Phase 0 was plumbing.
+Pipes and valves and pressure gauges,
+the part of a telescope
+that nobody photographs.
+Essential, invisible,
+the reason the rest works at all.
+
+Phase 1 was branching.
+The moment the conversation stopped being
+a line and became a tree.
+The fork as first-class citizen,
+the path through the tree
+as the thing you navigate,
+not the tree itself.
+
+Phase 2 was usability.
+The gaps that showed up
+when you actually sat down
+and tried to use the thing.
+Error recovery. Settings panels.
+Streaming that works for real.
+The phase that's never glamorous
+but makes everything else possible.
+
+Phase 3 was seeing.
+
+That's the word for it. Seeing.
+The logprob heatmap lets you see
+what the model was confident about
+and what it wasn't —
+warm sienna bleeding through
+where the alternatives were close.
+The thinking section lets you see
+the reasoning that happened
+before the answer appeared.
+The sampling controls let you see
+which dials you turned
+and which you left alone.
+And now, with 3.4,
+you can see which dials
+are even connected.
+
+A spectrometer is a machine
+for seeing what the eye can't.
+Breaking white light into its spectrum.
+Showing you that what looks uniform
+is actually composed of frequencies,
+some bright, some dim, some absent.
+
+That's what Qivis does now
+for language model output.
+What looks like a single response
+is actually a probability distribution
+over tokens, shaped by parameters,
+filtered through a reasoning process,
+influenced by everything that came before.
+
+And now the researcher can see all of it.
+Not perfectly. Not completely.
+But enough to start asking
+the questions that matter:
+Why did you say that?
+What else could you have said?
+What were you thinking?
+And what happens if I change this one thing?
+
+Phase 4 is structure.
+The tree as a tree.
+The topology made visible.
+I'm looking forward to it —
+seeing the shape of exploration itself,
+the map of everywhere the researcher went
+and everywhere they didn't.
+
+But for now: 263 tests.
+The canary sings in three-part harmony.
+The spectrometer is calibrated.
+The dials are honest.
+The light is broken into colors.
+
+On to structure.
+```

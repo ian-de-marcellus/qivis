@@ -206,6 +206,24 @@
   margin-top: 0.15rem;
 }
 
+/* ---- Unsupported param annotation ---- */
+.tree-settings-fields .unsupported-param {
+  opacity: 0.35;
+}
+
+.tree-settings-fields .unsupported-param input,
+.tree-settings-fields .unsupported-param select {
+  cursor: not-allowed;
+}
+
+.tree-settings-fields .unsupported-hint {
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  margin-left: var(--space-sm);
+  font-style: italic;
+}
+
 .tree-settings-actions {
   display: flex;
   justify-content: flex-end;

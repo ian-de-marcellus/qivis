@@ -97,6 +97,7 @@ export interface ProviderInfo {
   name: string
   available: boolean
   models: string[]
+  supported_params: string[]
 }
 
 // -- Requests --

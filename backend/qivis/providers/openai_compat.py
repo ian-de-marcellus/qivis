@@ -23,6 +23,11 @@ from qivis.providers.base import (
 class OpenAICompatibleProvider(LLMProvider):
     """Base provider for any API that speaks the OpenAI chat completions protocol."""
 
+    supported_params = [
+        "temperature", "top_p", "max_tokens", "stop_sequences",
+        "frequency_penalty", "presence_penalty", "logprobs", "top_logprobs",
+    ]
+
     def __init__(self, client: AsyncOpenAI) -> None:
         self._client = client
 

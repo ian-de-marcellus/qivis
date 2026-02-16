@@ -209,6 +209,24 @@
   padding: 0;
 }
 
+/* ---- Unsupported param annotation ---- */
+.unsupported-param {
+  opacity: 0.35;
+}
+
+.unsupported-param input,
+.unsupported-param select {
+  cursor: not-allowed;
+}
+
+.unsupported-hint {
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  margin-left: var(--space-sm);
+  font-style: italic;
+}
+
 .fork-submit-btn {
   padding: var(--space-sm) var(--space-md);
   font-family: var(--font-ui);

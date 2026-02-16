@@ -82,3 +82,17 @@ class TestProvidersEndpoint:
         resp = await client.get("/api/providers")
         data = resp.json()
         assert data[0]["models"] == []
+
+    async def test_returns_supported_params(self, client):
+        provider = FakeProvider("test")
+        provider.supported_params = ["temperature", "top_p", "max_tokens"]
+        register_provider(provider)
+        resp = await client.get("/api/providers")
+        data = resp.json()
+        assert data[0]["supported_params"] == ["temperature", "top_p", "max_tokens"]
+
+    async def test_supported_params_empty_by_default(self, client):
+        register_provider(FakeProvider("test"))
+        resp = await client.get("/api/providers")
+        data = resp.json()
+        assert data[0]["supported_params"] == []

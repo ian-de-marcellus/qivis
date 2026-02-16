@@ -47,6 +47,7 @@ class LLMProvider(ABC):
     """Abstract interface for LLM providers."""
 
     suggested_models: list[str] = []
+    supported_params: list[str] = []
 
     @property
     @abstractmethod

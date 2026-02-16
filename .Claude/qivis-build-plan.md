@@ -142,6 +142,19 @@ The dials on the spectrometer.
 
 15 new tests. 261 tests at completion. **Phase 3 complete.**
 
+### 3.4 — Provider-Aware Sampling Controls ✅
+
+Honest annotation of which dials actually work on which provider.
+
+**What was built:**
+- **Backend `supported_params`**: `LLMProvider.supported_params: list[str] = []` class attribute. Anthropic declares temperature, top_p, top_k, max_tokens, stop_sequences, extended_thinking, thinking_budget. OpenAI-compatible declares temperature, top_p, max_tokens, stop_sequences, frequency_penalty, presence_penalty, logprobs, top_logprobs.
+- **API surface**: `GET /api/providers` includes `supported_params` list per provider.
+- **Frontend `ProviderInfo`**: `supported_params: string[]` added to type.
+- **ForkPanel + TreeSettings**: Each sampling control checks `isSupported(param)` against the selected provider's `supported_params`. Unsupported controls get `disabled` attribute, `opacity: 0.35`, `cursor: not-allowed`, and tooltip explaining "Not supported by {provider}". Extended thinking also gets an "unsupported" text hint. When no provider is selected (TreeSettings with provider=""), all controls are enabled (backend resolves provider).
+- No behavioral change — unsupported params were already silently dropped. This is purely about researcher awareness.
+
+2 new tests. 263 tests at completion.
+
 ---
 
 ## Phase 4: Seeing Structure

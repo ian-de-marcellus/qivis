@@ -43,6 +43,8 @@ export function ForkPanel({
 
   const selectedProvider = providers.find((p) => p.name === provider)
   const suggestedModels = selectedProvider?.models ?? []
+  const supportedParams = selectedProvider?.supported_params ?? []
+  const isSupported = (param: string) => supportedParams.length === 0 || supportedParams.includes(param)
   const [systemPrompt, setSystemPrompt] = useState(defaults.systemPrompt ?? '')
 
   // Sampling state — initialize from tree defaults
@@ -228,7 +230,7 @@ export function ForkPanel({
             </div>
 
             <div className="fork-setting-row-pair">
-              <div className="fork-setting-row">
+              <div className={`fork-setting-row${isSupported('temperature') ? '' : ' unsupported-param'}`}>
                 <label>Temperature</label>
                 <input
                   type="number"
@@ -238,9 +240,11 @@ export function ForkPanel({
                   value={temperature}
                   onChange={(e) => setTemperature(e.target.value)}
                   placeholder="default"
+                  disabled={!isSupported('temperature')}
+                  title={isSupported('temperature') ? undefined : `Not supported by ${provider}`}
                 />
               </div>
-              <div className="fork-setting-row">
+              <div className={`fork-setting-row${isSupported('top_p') ? '' : ' unsupported-param'}`}>
                 <label>Top P</label>
                 <input
                   type="number"
@@ -250,12 +254,14 @@ export function ForkPanel({
                   value={topP}
                   onChange={(e) => setTopP(e.target.value)}
                   placeholder="default"
+                  disabled={!isSupported('top_p')}
+                  title={isSupported('top_p') ? undefined : `Not supported by ${provider}`}
                 />
               </div>
             </div>
 
             <div className="fork-setting-row-pair">
-              <div className="fork-setting-row">
+              <div className={`fork-setting-row${isSupported('top_k') ? '' : ' unsupported-param'}`}>
                 <label>Top K</label>
                 <input
                   type="number"
@@ -264,9 +270,11 @@ export function ForkPanel({
                   value={topK}
                   onChange={(e) => setTopK(e.target.value)}
                   placeholder="default"
+                  disabled={!isSupported('top_k')}
+                  title={isSupported('top_k') ? undefined : `Not supported by ${provider}`}
                 />
               </div>
-              <div className="fork-setting-row">
+              <div className={`fork-setting-row${isSupported('max_tokens') ? '' : ' unsupported-param'}`}>
                 <label>Max tokens</label>
                 <input
                   type="number"
@@ -275,12 +283,14 @@ export function ForkPanel({
                   value={maxTokens}
                   onChange={(e) => setMaxTokens(e.target.value)}
                   placeholder="2048"
+                  disabled={!isSupported('max_tokens')}
+                  title={isSupported('max_tokens') ? undefined : `Not supported by ${provider}`}
                 />
               </div>
             </div>
 
             <div className="fork-setting-row-pair">
-              <div className="fork-setting-row">
+              <div className={`fork-setting-row${isSupported('frequency_penalty') ? '' : ' unsupported-param'}`}>
                 <label>Freq penalty</label>
                 <input
                   type="number"
@@ -290,9 +300,11 @@ export function ForkPanel({
                   value={frequencyPenalty}
                   onChange={(e) => setFrequencyPenalty(e.target.value)}
                   placeholder="default"
+                  disabled={!isSupported('frequency_penalty')}
+                  title={isSupported('frequency_penalty') ? undefined : `Not supported by ${provider}`}
                 />
               </div>
-              <div className="fork-setting-row">
+              <div className={`fork-setting-row${isSupported('presence_penalty') ? '' : ' unsupported-param'}`}>
                 <label>Pres penalty</label>
                 <input
                   type="number"
@@ -302,6 +314,8 @@ export function ForkPanel({
                   value={presencePenalty}
                   onChange={(e) => setPresencePenalty(e.target.value)}
                   placeholder="default"
+                  disabled={!isSupported('presence_penalty')}
+                  title={isSupported('presence_penalty') ? undefined : `Not supported by ${provider}`}
                 />
               </div>
             </div>
@@ -329,17 +343,21 @@ export function ForkPanel({
                 Stream
               </label>
             </div>
-            <div className="fork-setting-row fork-setting-toggle">
+            <div className={`fork-setting-row fork-setting-toggle${isSupported('extended_thinking') ? '' : ' unsupported-param'}`}>
               <label>
                 <input
                   type="checkbox"
                   checked={extendedThinking}
                   onChange={(e) => setExtendedThinking(e.target.checked)}
+                  disabled={!isSupported('extended_thinking')}
                 />
                 Extended thinking
               </label>
+              {!isSupported('extended_thinking') && (
+                <span className="unsupported-hint" title={`Not supported by ${provider}`}>unsupported</span>
+              )}
             </div>
-            {extendedThinking && (
+            {extendedThinking && isSupported('extended_thinking') && (
               <div className="fork-setting-row">
                 <label>Thinking budget</label>
                 <input

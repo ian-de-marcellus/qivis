@@ -23,6 +23,10 @@ class AnthropicProvider(LLMProvider):
         "claude-sonnet-4-5",
         "claude-haiku-4-5",
     ]
+    supported_params = [
+        "temperature", "top_p", "top_k", "max_tokens",
+        "stop_sequences", "extended_thinking", "thinking_budget",
+    ]
 
     def __init__(self, client: AsyncAnthropic) -> None:
         self._client = client
