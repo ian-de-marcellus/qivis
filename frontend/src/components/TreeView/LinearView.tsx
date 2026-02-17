@@ -3,7 +3,10 @@ import type { GenerateRequest, NodeResponse } from '../../api/types.ts'
 import { getActivePath, useTreeStore } from '../../store/treeStore.ts'
 import { ComparisonView } from '../ComparisonView/ComparisonView.tsx'
 import { ContextModal } from './ContextModal.tsx'
+import { ContextSplitView } from './ContextSplitView.tsx'
 import { reconstructContext } from './contextReconstruction.ts'
+import { computeDiffSummary, buildDiffRows, getTreeDefaults } from './contextDiffs.ts'
+import type { DiffSummary } from './contextDiffs.ts'
 import { ForkPanel } from './ForkPanel.tsx'
 import { MessageRow } from './MessageRow.tsx'
 import { ThinkingSection } from './ThinkingSection.tsx'
@@ -41,6 +44,8 @@ export function LinearView() {
     editHistoryCache,
     inspectedNodeId,
     setInspectedNodeId,
+    splitViewNodeId,
+    setSplitViewNodeId,
   } = useTreeStore()
 
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -138,6 +143,19 @@ export function LinearView() {
     return map
   }, [selectedEditVersion, path, editHistoryCache])
 
+  // Compute diff summaries for assistant nodes (for diff badges)
+  const diffSummaries = useMemo(() => {
+    const map = new Map<string, DiffSummary>()
+    if (!currentTree) return map
+    const treeDefaults = getTreeDefaults(currentTree)
+    for (const node of path) {
+      if (node.role === 'assistant' && node.mode !== 'manual') {
+        map.set(node.node_id, computeDiffSummary(node, path, treeDefaults))
+      }
+    }
+    return map
+  }, [currentTree, path])
+
   const handleSelectSibling = (parentId: string, siblingId: string) => {
     selectBranch(parentId, siblingId)
   }
@@ -206,6 +224,12 @@ export function LinearView() {
                 onInspect={node.role === 'assistant' && node.mode !== 'manual'
                   ? () => setInspectedNodeId(
                       inspectedNodeId === node.node_id ? null : node.node_id
+                    )
+                  : undefined}
+                diffSummary={diffSummaries.get(node.node_id)}
+                onSplitView={diffSummaries.has(node.node_id)
+                  ? () => setSplitViewNodeId(
+                      splitViewNodeId === node.node_id ? null : node.node_id
                     )
                   : undefined}
                 onCompare={siblings.length > 1 ? () => setComparingAtParent(
@@ -369,6 +393,21 @@ export function LinearView() {
           <ContextModal
             context={reconstructContext(inspectedNode, nodes)}
             onDismiss={() => setInspectedNodeId(null)}
+          />
+        )
+      })()}
+
+      {splitViewNodeId && currentTree && (() => {
+        const splitNode = nodes.find((n) => n.node_id === splitViewNodeId)
+        if (!splitNode) return null
+        const treeDefaults = getTreeDefaults(currentTree)
+        return (
+          <ContextSplitView
+            rows={buildDiffRows(splitNode, nodes, treeDefaults)}
+            summary={computeDiffSummary(splitNode, path, treeDefaults)}
+            context={reconstructContext(splitNode, nodes)}
+            responseContent={splitNode.content}
+            onDismiss={() => setSplitViewNodeId(null)}
           />
         )
       })()}

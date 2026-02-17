@@ -3,6 +3,8 @@ import type { LogprobData, NodeResponse, SamplingParams } from '../../api/types.
 import { useTreeStore } from '../../store/treeStore.ts'
 import { BranchIndicator } from './BranchIndicator.tsx'
 import { ContextBar } from './ContextBar.tsx'
+import { ContextDiffBadge } from './ContextDiffBadge.tsx'
+import type { DiffSummary } from './contextDiffs.ts'
 import { EditHistory } from './EditHistory.tsx'
 import { LogprobOverlay, averageCertainty, uncertaintyColor } from './LogprobOverlay.tsx'
 import { ThinkingSection } from './ThinkingSection.tsx'
@@ -53,10 +55,12 @@ interface MessageRowProps {
   onCompare?: () => void
   onEdit?: (nodeId: string, editedContent: string | null) => void
   onInspect?: () => void
+  diffSummary?: DiffSummary
+  onSplitView?: () => void
   highlightClass?: 'highlight-used' | 'highlight-other'
 }
 
-export function MessageRow({ node, siblings, onSelectSibling, onFork, onPrefill, onGenerate, onCompare, onEdit, onInspect, highlightClass }: MessageRowProps) {
+export function MessageRow({ node, siblings, onSelectSibling, onFork, onPrefill, onGenerate, onCompare, onEdit, onInspect, diffSummary, onSplitView, highlightClass }: MessageRowProps) {
   const [showLogprobs, setShowLogprobs] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
   const [editValue, setEditValue] = useState('')
@@ -211,6 +215,12 @@ export function MessageRow({ node, siblings, onSelectSibling, onFork, onPrefill,
         {node.role === 'assistant' && formatSamplingMeta(node.sampling_params).map((label) => (
           <span key={label} className="sampling-meta">{` \u00b7 ${label}`}</span>
         ))}
+        {diffSummary && diffSummary.totalDivergences > 0 && onSplitView && (
+          <>
+            {' \u00b7 '}
+            <ContextDiffBadge summary={diffSummary} onClick={onSplitView} />
+          </>
+        )}
         {avgCertainty != null && (
           <>
             {' \u00b7 '}

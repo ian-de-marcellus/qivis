@@ -222,41 +222,64 @@ Retroactive edits as research interventions with palimpsest display and version 
 - Store: `selectedEditVersion`, `editHistoryCache`, `setSelectedEditVersion`, `cacheEditHistory` actions. Cache invalidated on edit.
 - 29 tests (5 contract, 6 context builder, 8 API integration, 3 EventStore, 7 edit history). 292 total passing.
 
-### 5.2 — "What the Model Saw" 🔒
+### 5.2 — "What the Model Saw" ✅
 
-The overlay that reveals the model's reality.
+Context modal + per-node generation flag tracking.
 
-**Tasks:**
-- Per-message or per-conversation toggle: "what did the model see?"
-- In this mode: original message dimmed, edited content shown prominently (different color/style)
-- Context diff badge on assistant messages: lights up when generation context differed from expectations (system prompt override, different model/provider, different params, edited upstream messages)
-- Click badge to see specifics: what was different, what the model actually received
-- Edited messages upstream shown with their edited content highlighted
-- Unedited messages shown normally
-- When context exclusion lands (Phase 6.3): excluded nodes ghosted in this view
+**What was built:**
+- `reconstructContext(targetNode, allNodes)` utility: walks parent chain, applies edits, computes eviction, builds ordered message list matching what ContextBuilder sent
+- `ReconstructedMessage` with part-split fields: `thinkingPrefix`, `timestampPrefix`, `baseContent` for distinct rendering of augmented content
+- `ContextModal` component: centered dialog showing system prompt, messages (with edited/manual/+timestamp/+thinking tags), sampling params, context usage, extended thinking section
+- "Context" button on assistant messages (hover-reveal, same pattern as Fork/Edit)
+- Per-node context flag tracking: `include_thinking_in_context` and `include_timestamps` snapshotted on `NodeCreatedPayload` at generation time, persisted through event sourcing pipeline, surfaced in `NodeResponse`
+- Backend: schema migration (2 new columns), projector INSERT, service _node_from_row, generation service threading through all 4 _emit_node_created call sites
+- Frontend context reconstruction: timestamps only prepended on user/tool messages (not assistant — prevents model mirroring), thinking prepended on assistant messages
+- Flag badges in modal metadata row
+- 6 new tests (contract, projection, API). 304 total passing.
 
-**Blockers:** 5.1 (editing must work for the view to have content to show).
+### 5.3 — Context Diff Badge + Asymmetric Split View 🔒
 
-✅ Can see exactly what any model saw during generation. Edits, overrides, and differences all visible.
-
-### 5.3 — Full Context Comparison 🔒
-
-Two responses, two realities — the full context that produced each, held up side by side.
-
-The researcher selects two sibling responses from the existing comparison view (Phase 4.2). Instead of just comparing the response text, "Full compare" opens a dedicated two-column view showing the complete root-to-leaf "what the model saw" context for each response, synchronized scroll, with differences highlighted.
+Per-assistant diff badge + asymmetric split view comparing researcher's truth vs. model's received context.
 
 **Tasks:**
-- Entry point: "Full compare" button in ComparisonView (Phase 4.2), selects current + one other sibling
-- Two-column layout: full root-to-leaf context for each response, rendered as "what the model saw" (5.2 infrastructure — edited content shown, system prompt visible, exclusions ghosted when 6.3 lands)
-- **Synced scrolling**: both columns scroll together, shared messages horizontally aligned
-- **Shared prefix**: show the full shared path by default (identical messages connected across columns); collapse button to hide/dim the shared prefix and focus on where paths diverge
-- **Divergence highlighting**: at the fork point, messages unique to each column highlighted with accent treatment. System prompt differences highlighted. Model/provider/param differences annotated.
-- **Elision marks for absences**: when one column has messages the other doesn't (post-fork, different branch depths, future context exclusions), the opposite column shows curved bracket/brace connecting the surrounding messages — visual indication that "content exists here in the other path." Visual only, no click behavior; the researcher reads the actual content in the adjacent column.
-- **Scaffold for generality**: core comparison logic takes two `NodeResponse[]` paths, not two sibling IDs. Sibling comparison is the entry point, but the same infrastructure could compare any two root-to-leaf paths in the future.
+- `computeDiffSummary(node, path, treeDefaults)` — lightweight divergence count for badge display
+- `buildDiffRows(node, allNodes, treeDefaults)` — full row-by-row alignment for split view, reuses `reconstructContext`
+- Context diff badge in meta line: colored dot + count, clickable to open split view
+- Asymmetric split view modal (1100px wide, 2fr/3fr grid): right column = model's received context (fully rendered), left column = pregnant space for matches, actual content at divergence points, voids where researcher's truth has content the model didn't see
+- Row types: match, edited, augmented, prefill, evicted, non-api-role, system-prompt, metadata
 
-**Blockers:** 5.2 ("what the model saw" infrastructure provides the context rendering). Benefits from 6.3 (context exclusion) but doesn't require it — exclusion rendering added retroactively when 6.3 lands.
+**Blockers:** 5.2 (context reconstruction infrastructure).
 
-✅ Can open full context comparison between two sibling responses. See exactly where their realities diverge — different messages, different edits, different system prompts. Elision marks show what exists in one context but not the other. **Phase 5 complete.**
+✅ Badge tells researcher at a glance whether context diverged. Split view shows exactly how — the asymmetric design draws the eye to differences without the noise of duplicated content.
+
+### 5.4 — 2D Canvas View 🔒
+
+A scrollable research artifact viewer for the full intervention history.
+
+**Concept:**
+- **Vertical axis**: Conversation flow (messages in chronological order)
+- **Horizontal axis**: Interventions (each edit, system prompt change, summarization, exclusion gets its own column)
+- Scrollable in both directions
+- Room for notes, tags, bookmarks, and summaries
+- Can serve as PDF export mode AND general interactive viewing mode
+
+**Design decisions made:**
+- Separate view mode, not an enhancement of the linear view
+- Each intervention (edit, prefill, system prompt change, parameter change) occupies a column
+- Messages grow vertically; looking across horizontally at any row shows all versions/interventions at that point
+- Should support researcher annotations (notes, tags, bookmarks)
+- Dual purpose: exportable research artifact + interactive exploration
+
+**Open questions:**
+- What exactly constitutes a "column"? Each individual edit? Each category of intervention? Each generation event?
+- How do summarization/exclusion events manifest horizontally?
+- Interaction model for notes/tags/bookmarks?
+- Read-only or editable?
+- PDF export: static snapshot or interactive HTML?
+
+**Blockers:** 5.3 (split view infrastructure provides comparison rendering patterns). Benefits from 6.1 (annotations) for notes/tags/bookmarks.
+
+✅ Full intervention history visible as a 2D surface. Every edit, every parameter change, every exclusion — all laid out so the researcher can see the complete experimental record at a glance. **Phase 5 complete.**
 
 ---
 

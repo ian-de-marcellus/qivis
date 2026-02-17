@@ -44,6 +44,7 @@ interface TreeStore {
   selectedEditVersion: { nodeId: string; entry: EditHistoryEntry | null } | null
   editHistoryCache: Record<string, EditHistoryEntry[]>
   inspectedNodeId: string | null
+  splitViewNodeId: string | null
 
   // Actions
   fetchTrees: () => Promise<void>
@@ -69,6 +70,7 @@ interface TreeStore {
   setSelectedEditVersion: (nodeId: string, entry: EditHistoryEntry | null) => void
   cacheEditHistory: (nodeId: string, entries: EditHistoryEntry[]) => void
   setInspectedNodeId: (nodeId: string | null) => void
+  setSplitViewNodeId: (nodeId: string | null) => void
   forkAndGenerate: (
     parentId: string,
     content: string,
@@ -146,6 +148,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
   selectedEditVersion: null,
   editHistoryCache: {},
   inspectedNodeId: null,
+  splitViewNodeId: null,
 
   fetchTrees: async () => {
     set({ isLoading: true, error: null })
@@ -176,6 +179,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
       systemPromptOverride: null,
       branchSelections: {},
       inspectedNodeId: null,
+      splitViewNodeId: null,
     })
     try {
       const tree = await api.getTree(treeId)
@@ -448,6 +452,10 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
 
   setInspectedNodeId: (nodeId: string | null) => {
     set({ inspectedNodeId: nodeId })
+  },
+
+  setSplitViewNodeId: (nodeId: string | null) => {
+    set({ splitViewNodeId: nodeId })
   },
 
   forkAndGenerate: async (parentId: string, content: string, overrides: GenerateRequest) => {

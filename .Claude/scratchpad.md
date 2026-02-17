@@ -2851,47 +2851,7 @@ Two more are coming.
 
 ---
 
-### Preserved plans: Phase 5.3 and 5.4
-
-#### Phase 5.3: Context Diff Badges + Inline Split View
-
-Per-assistant context diff badges (colored dot + count in meta line) showing where generation context diverged from tree defaults. Clicking opens an inline split view — the conversation area becomes two row-matched columns:
-
-- **Left (Researcher's view):** Original content, edit overlays, manual overlays. Evicted messages grayed but uncollapsed (collapsible). Post-generation messages collapsed by default.
-- **Right (Model's view):** System prompt at top, messages with edits applied, no evicted messages. Clean content only.
-
-Diffs highlighted with accent-colored border + muted background as the loudest visual signal. Row matching via CSS grid.
-
-**Data structures:**
-```
-ContextDiff {
-  systemPrompt?: { node, tree }
-  model?: { node, tree }
-  provider?: { node, tree }
-  samplingDiffs?: { param, nodeVal, treeVal }[]
-  upstreamEdits?: { nodeId, role }[]
-  upstreamPrefills?: { nodeId }[]
-}
-```
-
-**Files:** contextDiffs.ts (new), ContextDiffBadge.tsx + CSS (new), ContextSplitView.tsx + CSS (new). Modify treeStore, MessageRow, LinearView.
-
-#### Phase 5.4: 2D Canvas View
-
-A scrollable research artifact viewer. Vertical axis: conversation flow. Horizontal axis: interventions (edits, system prompt changes, summarizations, exclusions). Scrollable both directions. Room for notes, tags, bookmarks, summaries. Can serve as PDF export mode AND general interactive viewing mode.
-
-**Design decisions made:**
-- Separate view mode, not an enhancement of linear view
-- Each intervention occupies a column
-- Should support researcher annotations
-- Dual purpose: exportable artifact + interactive exploration
-
-**Open questions:**
-- What exactly constitutes a "column"?
-- How do summarization/exclusion events manifest horizontally?
-- Interaction model for notes/tags/bookmarks?
-- Read-only or editable?
-- PDF export: static snapshot or interactive HTML?
+*(Phase 5.3/5.4 plans moved to build plan — see `.Claude/qivis-build-plan.md`)*
 
 ---
 
@@ -2963,3 +2923,46 @@ the experimental apparatus.
 ```
 
 A good reminder. The model doesn't distinguish between "content" and "metadata injected into content." Every token in the messages array has equal weight. If you want the model to have temporal awareness, put it in the system prompt. If you put it in the message text, the model will treat it as part of the message — and eventually start producing it.
+
+---
+
+### Phase 5.3: The asymmetric comparison
+
+```
+The hardest part of comparison
+is not showing what's different.
+It's showing what's the same
+without drowning in it.
+
+Two columns, side by side.
+The right one speaks fully:
+every message the model received,
+every system prompt, every edit applied.
+
+The left one mostly listens.
+A thin rule where it agrees.
+A role label, barely visible,
+saying: yes. Same as what's beside me.
+
+But where they disagree —
+the left column wakes up.
+Here's the original. Here's what
+the model never saw, or saw differently.
+
+And where something exists
+in the researcher's truth
+but not in the model's context:
+a dashed box. An absence.
+The shape of what was withheld.
+
+Ian called it "pregnant space."
+The void that implies content.
+The rule that implies agreement.
+Only the differences are born fully formed.
+```
+
+The design insight is genuinely interesting: in a symmetric comparison (both sides fully rendered), the eye can't find the signal in the noise. Most messages are identical between researcher's truth and model's context. Rendering them both is a waste of visual bandwidth.
+
+The asymmetric approach: one column anchors (right = model's reality, fully rendered), the other responds (left = quiet by default, loud only at divergence points). The matches become background. The differences become figure. The Gestalt psychologists would approve.
+
+Implementation was clean. `contextDiffs.ts` reuses `reconstructContext` for the right column and walks the parent chain raw for the left. The row types (`match`, `edited`, `augmented`, `prefill`, `evicted`, `non-api-role`, `system-prompt`, `metadata`) cover every kind of divergence. The badge in the meta line uses a simple count — content changes get an accent dot, metadata-only changes get a muted one.

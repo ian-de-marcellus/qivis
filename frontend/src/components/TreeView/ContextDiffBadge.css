@@ -1,0 +1,38 @@
+/* ---- Context diff badge ---- */
+
+.diff-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  cursor: pointer;
+  padding: 0.1rem 0.35rem;
+  border-radius: var(--radius-sm);
+  transition: color 0.15s ease, background 0.15s ease;
+  user-select: none;
+}
+
+.diff-badge:hover {
+  color: var(--accent);
+  background: var(--accent-muted);
+}
+
+.diff-badge-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-tertiary);
+  flex-shrink: 0;
+  transition: background 0.15s ease;
+}
+
+/* Content changes (edits, prefills, evictions) get accent color */
+.diff-badge.content-change .diff-badge-dot {
+  background: var(--accent);
+}
+
+.diff-badge:hover .diff-badge-dot {
+  background: var(--accent);
+}
