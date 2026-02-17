@@ -193,6 +193,49 @@
   border-color: var(--text-accent);
 }
 
+/* ---- Annotate button ---- */
+.annotate-btn {
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  padding: 0.15rem 0.5rem;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-tertiary);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.2s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.message-row:hover .annotate-btn {
+  opacity: 1;
+}
+
+.annotate-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.annotate-btn.active {
+  opacity: 1;
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.annotation-badge {
+  display: inline-block;
+  background: var(--accent-muted);
+  color: var(--accent);
+  font-size: 0.55rem;
+  font-weight: 700;
+  padding: 0 0.3rem;
+  border-radius: 0.5rem;
+  margin-left: 0.25rem;
+  min-width: 0.7rem;
+  text-align: center;
+  line-height: 1.2;
+}
+
 /* ---- Inline editor ---- */
 .inline-editor {
   margin-top: var(--space-xs);

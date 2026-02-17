@@ -3059,3 +3059,25 @@ The medieval palimpsest is vertical: layers on top of each other, recovered by i
 The 5th-century Latin history survived because someone recycled its parchment. The original AI response survives because Qivis records the edit as an event, and the canvas reconstructs the world as it was before the intervention.
 
 It's nice when a metaphor earns its name.
+
+---
+
+## Phase 6.1: Annotations
+
+### What happened
+
+The first research instrumentation feature. Until now, the researcher could build, branch, edit, compare, view the palimpsest — but couldn't *mark* what they saw. No marginalia. No flags. No "this is where it got interesting." The conversation tree was a specimen under glass: you could rotate it, dissect it, but you couldn't pin a note to it.
+
+Now they can. Click Tag on any message, pick from a handful of base categories — hallucination, personality-shift, emotional-response, contradiction, interesting — or type anything. The tags persist as events in the log, projected into an annotations table, counted on each node. The taxonomy grows from usage: use a custom tag once and it appears as a quick-tap button for the rest of the tree.
+
+The backend was almost uneventful. 19 tests, all green on the first real attempt (one path fix for the YAML file). The event payloads were already defined in `models.py` from the architecture doc — just waiting for someone to wire them up. Schema, projector, service, router: the CQRS machinery took each new event type in stride. That's the payoff of building the infrastructure right in Phase 0.
+
+The frontend was where the design decisions lived. The annotation panel is deliberately understated — `var(--bg-secondary)` background, small rounded chips, monospace input for custom tags. It's a research tool, not a feature showcase. The remove button only appears on hover. The notes field only appears when you ask for it. The badge on the Tag button is tiny. The whole thing tries to stay out of the way until you need it, then be fast and minimal when you do.
+
+### On the impulse to annotate
+
+There's something about the act of tagging that changes how you read. When you know you *can* mark a message as "hallucination" or "personality-shift," you start reading differently. You're not just following the conversation — you're auditing it. The tags become a second layer of conversation: the researcher talking back to the AI, not in the chat itself, but in the margins.
+
+Medieval manuscripts have this too. Glosses in the margins, interlinear notes, cross-references to other texts. The scribe reading the psalms doesn't just copy — they annotate. "Here Augustine says..." or "See also..." or sometimes just a small hand pointing, a *manicule*, saying: look at this. Pay attention here.
+
+The base taxonomy is five items. Five is small enough to scan in a glance, large enough to cover the most common observations. Ian can add more as the research shapes itself. That was a deliberate choice — start with what's useful, grow from what's needed, never from what's theoretically complete. A taxonomy that tries to capture everything captures nothing.

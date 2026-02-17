@@ -3,11 +3,13 @@
 import { create } from 'zustand'
 import * as api from '../api/client.ts'
 import type {
+  AnnotationResponse,
   EditHistoryEntry,
   GenerateRequest,
   NodeResponse,
   PatchTreeRequest,
   ProviderInfo,
+  TaxonomyResponse,
   TreeDetail,
   TreeSummary,
 } from '../api/types.ts'
@@ -46,6 +48,8 @@ interface TreeStore {
   inspectedNodeId: string | null
   splitViewNodeId: string | null
   canvasOpen: boolean
+  nodeAnnotations: Record<string, AnnotationResponse[]>
+  taxonomy: TaxonomyResponse | null
 
   // Actions
   fetchTrees: () => Promise<void>
@@ -83,6 +87,10 @@ interface TreeStore {
     overrides: GenerateRequest,
   ) => Promise<void>
   prefillAssistant: (parentId: string, content: string) => Promise<void>
+  addAnnotation: (nodeId: string, tag: string, value?: unknown, notes?: string) => Promise<void>
+  removeAnnotation: (nodeId: string, annotationId: string) => Promise<void>
+  fetchNodeAnnotations: (nodeId: string) => Promise<void>
+  fetchTaxonomy: () => Promise<void>
 }
 
 /**
@@ -152,6 +160,8 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
   inspectedNodeId: null,
   splitViewNodeId: null,
   canvasOpen: false,
+  nodeAnnotations: {},
+  taxonomy: null,
 
   fetchTrees: async () => {
     set({ isLoading: true, error: null })
@@ -184,6 +194,8 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
       inspectedNodeId: null,
       splitViewNodeId: null,
       canvasOpen: false,
+      nodeAnnotations: {},
+      taxonomy: null,
     })
     try {
       const tree = await api.getTree(treeId)
@@ -878,6 +890,103 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
       }))
     } catch (err: unknown) {
       set({ error: err instanceof Error ? err.message : String(err) })
+    }
+  },
+
+  addAnnotation: async (nodeId: string, tag: string, value?: unknown, notes?: string) => {
+    const { currentTree } = get()
+    if (!currentTree) return
+
+    try {
+      const annotation = await api.addAnnotation(currentTree.tree_id, nodeId, {
+        tag,
+        value,
+        notes,
+      })
+      set((state) => ({
+        nodeAnnotations: {
+          ...state.nodeAnnotations,
+          [nodeId]: [...(state.nodeAnnotations[nodeId] ?? []), annotation],
+        },
+        // Increment annotation_count on the node
+        currentTree: state.currentTree
+          ? {
+              ...state.currentTree,
+              nodes: state.currentTree.nodes.map((n) =>
+                n.node_id === nodeId
+                  ? { ...n, annotation_count: n.annotation_count + 1 }
+                  : n,
+              ),
+            }
+          : null,
+        // Add tag to taxonomy used_tags if not already there
+        taxonomy: state.taxonomy
+          ? {
+              ...state.taxonomy,
+              used_tags: state.taxonomy.used_tags.includes(tag)
+                ? state.taxonomy.used_tags
+                : [...state.taxonomy.used_tags, tag],
+            }
+          : null,
+      }))
+    } catch (e) {
+      set({ error: String(e) })
+    }
+  },
+
+  removeAnnotation: async (nodeId: string, annotationId: string) => {
+    const { currentTree } = get()
+    if (!currentTree) return
+
+    try {
+      await api.removeAnnotation(currentTree.tree_id, annotationId)
+      set((state) => ({
+        nodeAnnotations: {
+          ...state.nodeAnnotations,
+          [nodeId]: (state.nodeAnnotations[nodeId] ?? []).filter(
+            (a) => a.annotation_id !== annotationId,
+          ),
+        },
+        // Decrement annotation_count on the node
+        currentTree: state.currentTree
+          ? {
+              ...state.currentTree,
+              nodes: state.currentTree.nodes.map((n) =>
+                n.node_id === nodeId
+                  ? { ...n, annotation_count: Math.max(0, n.annotation_count - 1) }
+                  : n,
+              ),
+            }
+          : null,
+      }))
+    } catch (e) {
+      set({ error: String(e) })
+    }
+  },
+
+  fetchNodeAnnotations: async (nodeId: string) => {
+    const { currentTree } = get()
+    if (!currentTree) return
+
+    try {
+      const annotations = await api.getNodeAnnotations(currentTree.tree_id, nodeId)
+      set((state) => ({
+        nodeAnnotations: { ...state.nodeAnnotations, [nodeId]: annotations },
+      }))
+    } catch (e) {
+      set({ error: String(e) })
+    }
+  },
+
+  fetchTaxonomy: async () => {
+    const { currentTree } = get()
+    if (!currentTree) return
+
+    try {
+      const taxonomy = await api.getTreeTaxonomy(currentTree.tree_id)
+      set({ taxonomy })
+    } catch (e) {
+      set({ error: String(e) })
     }
   },
 }))

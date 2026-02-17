@@ -59,6 +59,20 @@ CREATE TABLE IF NOT EXISTS nodes (
 
 CREATE INDEX IF NOT EXISTS idx_nodes_tree_id ON nodes(tree_id);
 CREATE INDEX IF NOT EXISTS idx_nodes_parent_id ON nodes(parent_id);
+
+CREATE TABLE IF NOT EXISTS annotations (
+    annotation_id TEXT PRIMARY KEY,
+    tree_id TEXT NOT NULL,
+    node_id TEXT NOT NULL,
+    tag TEXT NOT NULL,
+    value TEXT,
+    notes TEXT,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_annotations_node_id ON annotations(node_id);
+CREATE INDEX IF NOT EXISTS idx_annotations_tree_id ON annotations(tree_id);
+CREATE INDEX IF NOT EXISTS idx_annotations_tag ON annotations(tag);
 """
 
 # Migrations for existing databases that already have the nodes table.

@@ -14,6 +14,8 @@ from qivis.generation.service import (
 from qivis.providers.base import LLMProvider
 from qivis.providers.registry import ProviderNotFoundError, get_provider
 from qivis.trees.schemas import (
+    AddAnnotationRequest,
+    AnnotationResponse,
     CreateNodeRequest,
     CreateTreeRequest,
     EditHistoryResponse,
@@ -22,10 +24,12 @@ from qivis.trees.schemas import (
     NodeResponse,
     PatchNodeContentRequest,
     PatchTreeRequest,
+    TaxonomyResponse,
     TreeDetailResponse,
     TreeSummary,
 )
 from qivis.trees.service import (
+    AnnotationNotFoundError,
     InvalidParentError,
     NodeNotFoundError,
     TreeNotFoundError,
@@ -133,6 +137,61 @@ async def get_interventions(
 ) -> InterventionTimelineResponse:
     try:
         return await service.get_intervention_timeline(tree_id)
+    except TreeNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Tree not found: {tree_id}")
+
+
+@router.post(
+    "/{tree_id}/nodes/{node_id}/annotations",
+    status_code=status.HTTP_201_CREATED,
+)
+async def add_annotation(
+    tree_id: str,
+    node_id: str,
+    request: AddAnnotationRequest,
+    service: TreeService = Depends(get_tree_service),
+) -> AnnotationResponse:
+    try:
+        return await service.add_annotation(tree_id, node_id, request)
+    except TreeNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Tree not found: {tree_id}")
+    except NodeNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Node not found: {node_id}")
+
+
+@router.get("/{tree_id}/nodes/{node_id}/annotations")
+async def get_node_annotations(
+    tree_id: str,
+    node_id: str,
+    service: TreeService = Depends(get_tree_service),
+) -> list[AnnotationResponse]:
+    return await service.get_node_annotations(tree_id, node_id)
+
+
+@router.delete(
+    "/{tree_id}/annotations/{annotation_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def remove_annotation(
+    tree_id: str,
+    annotation_id: str,
+    service: TreeService = Depends(get_tree_service),
+) -> None:
+    try:
+        await service.remove_annotation(tree_id, annotation_id)
+    except AnnotationNotFoundError:
+        raise HTTPException(
+            status_code=404, detail=f"Annotation not found: {annotation_id}"
+        )
+
+
+@router.get("/{tree_id}/taxonomy")
+async def get_tree_taxonomy(
+    tree_id: str,
+    service: TreeService = Depends(get_tree_service),
+) -> TaxonomyResponse:
+    try:
+        return await service.get_tree_taxonomy(tree_id)
     except TreeNotFoundError:
         raise HTTPException(status_code=404, detail=f"Tree not found: {tree_id}")
 

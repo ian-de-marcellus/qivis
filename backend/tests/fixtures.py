@@ -7,6 +7,8 @@ from uuid import uuid4
 from httpx import AsyncClient
 
 from qivis.models import (
+    AnnotationAddedPayload,
+    AnnotationRemovedPayload,
     EventEnvelope,
     NodeContentEditedPayload,
     NodeCreatedPayload,
@@ -202,6 +204,53 @@ async def create_tree_with_messages(
 
 
 # -- Branching helpers (available from Phase 1.1 onward) --
+
+
+def make_annotation_added_envelope(
+    tree_id: str,
+    node_id: str,
+    tag: str,
+    annotation_id: str | None = None,
+    value: Any = None,
+    notes: str | None = None,
+) -> EventEnvelope:
+    """Create an AnnotationAdded EventEnvelope for testing."""
+    annotation_id = annotation_id or str(uuid4())
+    payload = AnnotationAddedPayload(
+        annotation_id=annotation_id,
+        node_id=node_id,
+        tag=tag,
+        value=value,
+        notes=notes,
+    )
+    return EventEnvelope(
+        event_id=str(uuid4()),
+        tree_id=tree_id,
+        timestamp=datetime.now(UTC),
+        device_id="test",
+        event_type="AnnotationAdded",
+        payload=payload.model_dump(),
+    )
+
+
+def make_annotation_removed_envelope(
+    tree_id: str,
+    annotation_id: str,
+    reason: str | None = None,
+) -> EventEnvelope:
+    """Create an AnnotationRemoved EventEnvelope for testing."""
+    payload = AnnotationRemovedPayload(
+        annotation_id=annotation_id,
+        reason=reason,
+    )
+    return EventEnvelope(
+        event_id=str(uuid4()),
+        tree_id=tree_id,
+        timestamp=datetime.now(UTC),
+        device_id="test",
+        event_type="AnnotationRemoved",
+        payload=payload.model_dump(),
+    )
 
 
 async def create_branching_tree(client: AsyncClient) -> dict:

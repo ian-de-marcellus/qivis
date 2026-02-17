@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { LogprobData, NodeResponse, SamplingParams } from '../../api/types.ts'
 import { useTreeStore } from '../../store/treeStore.ts'
+import { AnnotationPanel } from './AnnotationPanel.tsx'
 import { BranchIndicator } from './BranchIndicator.tsx'
 import { ContextBar } from './ContextBar.tsx'
 import { ContextDiffBadge } from './ContextDiffBadge.tsx'
@@ -64,6 +65,7 @@ export function MessageRow({ node, siblings, onSelectSibling, onFork, onPrefill,
   const [showLogprobs, setShowLogprobs] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
   const [editValue, setEditValue] = useState('')
+  const [showAnnotations, setShowAnnotations] = useState(false)
 
   const editHistoryCache = useTreeStore((s) => s.editHistoryCache)
 
@@ -124,6 +126,15 @@ export function MessageRow({ node, siblings, onSelectSibling, onFork, onPrefill,
             Context
           </button>
         )}
+        <button
+          className={`annotate-btn${showAnnotations ? ' active' : ''}`}
+          onClick={() => setShowAnnotations(!showAnnotations)}
+          aria-label="Toggle annotations"
+        >
+          Tag{node.annotation_count > 0 && (
+            <span className="annotation-badge">{node.annotation_count}</span>
+          )}
+        </button>
       </div>
       {node.thinking_content && (
         <ThinkingSection thinkingContent={node.thinking_content} />
@@ -201,6 +212,7 @@ export function MessageRow({ node, siblings, onSelectSibling, onFork, onPrefill,
       {node.role === 'assistant' && node.context_usage != null && (
         <ContextBar contextUsage={node.context_usage} />
       )}
+      {showAnnotations && <AnnotationPanel node={node} />}
       <div className="message-meta">
         {formatTimestamp(node.created_at)}
         {hasEditHistory && (

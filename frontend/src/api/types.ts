@@ -52,6 +52,7 @@ export interface NodeResponse {
   archived: number
   sibling_count: number
   sibling_index: number
+  annotation_count: number
 }
 
 export interface ContextUsage {
@@ -132,6 +133,27 @@ export interface InterventionEntry {
 export interface InterventionTimelineResponse {
   tree_id: string
   interventions: InterventionEntry[]
+}
+
+export interface AnnotationResponse {
+  annotation_id: string
+  tree_id: string
+  node_id: string
+  tag: string
+  value: unknown
+  notes: string | null
+  created_at: string
+}
+
+export interface TaxonomyResponse {
+  base_tags: string[]
+  used_tags: string[]
+}
+
+export interface AddAnnotationRequest {
+  tag: string
+  value?: unknown
+  notes?: string
 }
 
 // -- Requests --

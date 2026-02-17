@@ -1,0 +1,163 @@
+/* ---- Annotation Panel: understated research tool ---- */
+
+.annotation-panel {
+  margin-top: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border-subtle);
+  border-radius: 0 0 var(--radius-md) var(--radius-md);
+}
+
+/* ---- Quick-tag chips ---- */
+
+.annotation-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-bottom: var(--space-sm);
+}
+
+.annotation-chip {
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  padding: 0.15rem 0.5rem;
+  font-family: var(--font-ui);
+  font-size: 0.65rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.annotation-chip:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.annotation-chip.active {
+  background: var(--accent-muted);
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* ---- Custom tag input ---- */
+
+.annotation-custom {
+  margin-bottom: var(--space-sm);
+}
+
+.annotation-input {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 0.2rem 0.4rem;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-primary);
+  width: 10rem;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.annotation-input:focus {
+  border-color: var(--accent);
+}
+
+.annotation-input::placeholder {
+  color: var(--text-tertiary);
+}
+
+/* ---- Existing annotations list ---- */
+
+.annotation-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.annotation-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: 0.15rem 0;
+}
+
+.annotation-item-tag {
+  font-family: var(--font-ui);
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-muted);
+  padding: 0.1rem 0.35rem;
+  border-radius: var(--radius-sm);
+}
+
+.annotation-item-notes {
+  font-family: var(--font-body);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  flex: 1;
+  min-width: 0;
+}
+
+.annotation-add-notes {
+  background: none;
+  border: none;
+  font-family: var(--font-ui);
+  font-size: 0.6rem;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  padding: 0;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.annotation-item:hover .annotation-add-notes {
+  opacity: 1;
+}
+
+.annotation-add-notes:hover {
+  color: var(--accent);
+}
+
+.annotation-notes-form {
+  flex: 1;
+}
+
+.annotation-notes-input {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 0.15rem 0.3rem;
+  font-family: var(--font-body);
+  font-size: var(--text-xs);
+  color: var(--text-primary);
+  width: 100%;
+  outline: none;
+}
+
+.annotation-notes-input:focus {
+  border-color: var(--accent);
+}
+
+.annotation-remove {
+  background: none;
+  border: none;
+  font-size: 0.8rem;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  padding: 0 0.15rem;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity 0.15s ease, color 0.15s ease;
+}
+
+.annotation-item:hover .annotation-remove {
+  opacity: 1;
+}
+
+.annotation-remove:hover {
+  color: var(--error-text);
+}

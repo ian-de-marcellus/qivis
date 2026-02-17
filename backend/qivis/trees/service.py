@@ -3,12 +3,17 @@
 import json
 from collections import defaultdict
 from datetime import UTC, datetime
+from pathlib import Path
 from uuid import uuid4
+
+import yaml
 
 from qivis.db.connection import Database
 from qivis.events.projector import StateProjector
 from qivis.events.store import EventStore
 from qivis.models import (
+    AnnotationAddedPayload,
+    AnnotationRemovedPayload,
     EventEnvelope,
     NodeContentEditedPayload,
     NodeCreatedPayload,
@@ -16,6 +21,8 @@ from qivis.models import (
     TreeMetadataUpdatedPayload,
 )
 from qivis.trees.schemas import (
+    AddAnnotationRequest,
+    AnnotationResponse,
     CreateNodeRequest,
     CreateTreeRequest,
     EditHistoryEntry,
@@ -25,9 +32,12 @@ from qivis.trees.schemas import (
     NodeResponse,
     PatchNodeContentRequest,
     PatchTreeRequest,
+    TaxonomyResponse,
     TreeDetailResponse,
     TreeSummary,
 )
+
+_TAXONOMY_PATH = Path(__file__).parent.parent / "annotation_taxonomy.yml"
 
 
 class TreeService:
@@ -139,7 +149,15 @@ class TreeService:
         if tree is None:
             return None
         nodes = await self._projector.get_nodes(tree_id)
-        return self._tree_detail_from_row(tree, nodes)
+
+        # Annotation counts per node
+        ann_rows = await self._db.fetchall(
+            "SELECT node_id, COUNT(*) as cnt FROM annotations WHERE tree_id = ? GROUP BY node_id",
+            (tree_id,),
+        )
+        annotation_counts = {r["node_id"]: r["cnt"] for r in ann_rows}
+
+        return self._tree_detail_from_row(tree, nodes, annotation_counts=annotation_counts)
 
     async def list_trees(self) -> list[TreeSummary]:
         """List all non-archived trees."""
@@ -330,6 +348,125 @@ class TreeService:
 
         return InterventionTimelineResponse(tree_id=tree_id, interventions=entries)
 
+    # -- Annotation methods --
+
+    async def add_annotation(
+        self, tree_id: str, node_id: str, request: AddAnnotationRequest,
+    ) -> AnnotationResponse:
+        """Add an annotation to a node. Emits AnnotationAdded, projects, returns it."""
+        tree = await self._projector.get_tree(tree_id)
+        if tree is None:
+            raise TreeNotFoundError(tree_id)
+
+        nodes = await self._projector.get_nodes(tree_id)
+        if not any(n["node_id"] == node_id for n in nodes):
+            raise NodeNotFoundError(node_id)
+
+        annotation_id = str(uuid4())
+        now = datetime.now(UTC)
+
+        payload = AnnotationAddedPayload(
+            annotation_id=annotation_id,
+            node_id=node_id,
+            tag=request.tag,
+            value=request.value,
+            notes=request.notes,
+        )
+        event = EventEnvelope(
+            event_id=str(uuid4()),
+            tree_id=tree_id,
+            timestamp=now,
+            device_id="local",
+            event_type="AnnotationAdded",
+            payload=payload.model_dump(),
+        )
+
+        await self._store.append(event)
+        await self._projector.project([event])
+
+        row = await self._db.fetchone(
+            "SELECT * FROM annotations WHERE annotation_id = ?",
+            (annotation_id,),
+        )
+        assert row is not None
+        return self._annotation_from_row(row)
+
+    async def remove_annotation(
+        self, tree_id: str, annotation_id: str, reason: str | None = None,
+    ) -> None:
+        """Remove an annotation. Emits AnnotationRemoved, projects."""
+        row = await self._db.fetchone(
+            "SELECT * FROM annotations WHERE annotation_id = ? AND tree_id = ?",
+            (annotation_id, tree_id),
+        )
+        if row is None:
+            raise AnnotationNotFoundError(annotation_id)
+
+        now = datetime.now(UTC)
+        payload = AnnotationRemovedPayload(
+            annotation_id=annotation_id,
+            reason=reason,
+        )
+        event = EventEnvelope(
+            event_id=str(uuid4()),
+            tree_id=tree_id,
+            timestamp=now,
+            device_id="local",
+            event_type="AnnotationRemoved",
+            payload=payload.model_dump(),
+        )
+
+        await self._store.append(event)
+        await self._projector.project([event])
+
+    async def get_node_annotations(
+        self, tree_id: str, node_id: str,
+    ) -> list[AnnotationResponse]:
+        """Get all annotations for a node, sorted by created_at."""
+        rows = await self._db.fetchall(
+            "SELECT * FROM annotations WHERE node_id = ? AND tree_id = ? ORDER BY created_at",
+            (node_id, tree_id),
+        )
+        return [self._annotation_from_row(r) for r in rows]
+
+    async def get_tree_taxonomy(self, tree_id: str) -> TaxonomyResponse:
+        """Get base tags + used tags for a tree."""
+        tree = await self._projector.get_tree(tree_id)
+        if tree is None:
+            raise TreeNotFoundError(tree_id)
+
+        # Load base tags
+        base_tags: list[str] = []
+        if _TAXONOMY_PATH.exists():
+            with open(_TAXONOMY_PATH) as f:
+                data = yaml.safe_load(f)
+            base_tags = data.get("tags", [])
+
+        # Get used tags
+        rows = await self._db.fetchall(
+            "SELECT DISTINCT tag FROM annotations WHERE tree_id = ?",
+            (tree_id,),
+        )
+        used_tags = [r["tag"] for r in rows]
+
+        return TaxonomyResponse(base_tags=base_tags, used_tags=used_tags)
+
+    @staticmethod
+    def _annotation_from_row(row: dict) -> AnnotationResponse:
+        """Convert a projected annotation row to a response."""
+        value = row["value"]
+        if value is not None:
+            value = json.loads(value)
+        return AnnotationResponse(
+            annotation_id=row["annotation_id"],
+            tree_id=row["tree_id"],
+            node_id=row["node_id"],
+            tag=row["tag"],
+            value=value,
+            notes=row["notes"],
+            created_at=row["created_at"],
+        )
+
     @staticmethod
     def _compute_sibling_info(
         node_rows: list[dict],
@@ -351,7 +488,12 @@ class TreeService:
         return result
 
     @staticmethod
-    def _tree_detail_from_row(row: dict, node_rows: list[dict]) -> TreeDetailResponse:
+    def _tree_detail_from_row(
+        row: dict,
+        node_rows: list[dict],
+        *,
+        annotation_counts: dict[str, int] | None = None,
+    ) -> TreeDetailResponse:
         """Convert a projected tree row + node rows to a response."""
         sibling_info = TreeService._compute_sibling_info(node_rows)
         return TreeDetailResponse(
@@ -376,7 +518,11 @@ class TreeService:
             updated_at=row["updated_at"],
             archived=row["archived"],
             nodes=[
-                TreeService._node_from_row(n, sibling_info=sibling_info)
+                TreeService._node_from_row(
+                    n,
+                    sibling_info=sibling_info,
+                    annotation_counts=annotation_counts,
+                )
                 for n in node_rows
             ],
         )
@@ -386,6 +532,7 @@ class TreeService:
         row: dict,
         *,
         sibling_info: dict[str, tuple[int, int]] | None = None,
+        annotation_counts: dict[str, int] | None = None,
     ) -> NodeResponse:
         """Convert a projected node row to a response."""
 
@@ -399,6 +546,10 @@ class TreeService:
         si, sc = (0, 1)
         if sibling_info is not None and row["node_id"] in sibling_info:
             si, sc = sibling_info[row["node_id"]]
+
+        ac = 0
+        if annotation_counts is not None:
+            ac = annotation_counts.get(row["node_id"], 0)
 
         return NodeResponse(
             node_id=row["node_id"],
@@ -426,6 +577,7 @@ class TreeService:
             archived=row["archived"],
             sibling_index=si,
             sibling_count=sc,
+            annotation_count=ac,
         )
 
 
@@ -439,6 +591,12 @@ class NodeNotFoundError(Exception):
     def __init__(self, node_id: str) -> None:
         self.node_id = node_id
         super().__init__(f"Node not found: {node_id}")
+
+
+class AnnotationNotFoundError(Exception):
+    def __init__(self, annotation_id: str) -> None:
+        self.annotation_id = annotation_id
+        super().__init__(f"Annotation not found: {annotation_id}")
 
 
 class InvalidParentError(Exception):

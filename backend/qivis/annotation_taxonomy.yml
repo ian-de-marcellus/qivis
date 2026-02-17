@@ -1,0 +1,9 @@
+# Base annotation taxonomy for Qivis research
+# Researchers can use any tag — these are just quick-access defaults
+# Keep this list small; add more based on what feels helpful in practice
+tags:
+  - hallucination
+  - personality-shift
+  - emotional-response
+  - contradiction
+  - interesting

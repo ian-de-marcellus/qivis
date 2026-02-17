@@ -10,6 +10,8 @@ from collections.abc import Awaitable, Callable
 
 from qivis.db.connection import Database
 from qivis.models import (
+    AnnotationAddedPayload,
+    AnnotationRemovedPayload,
     EventEnvelope,
     NodeContentEditedPayload,
     NodeCreatedPayload,
@@ -31,6 +33,8 @@ class StateProjector:
             "NodeCreated": self._handle_node_created,
             "NodeContentEdited": self._handle_node_content_edited,
             "GenerationStarted": self._handle_generation_started,
+            "AnnotationAdded": self._handle_annotation_added,
+            "AnnotationRemoved": self._handle_annotation_removed,
         }
 
     async def project(self, events: list[EventEnvelope]) -> None:
@@ -133,6 +137,40 @@ class StateProjector:
     async def _handle_generation_started(self, event: EventEnvelope) -> None:
         """GenerationStarted is recorded in the event log but does not project
         to any materialized table. Registered for explicitness."""
+
+    async def _handle_annotation_added(self, event: EventEnvelope) -> None:
+        """Project an AnnotationAdded event into the annotations table."""
+        payload = AnnotationAddedPayload.model_validate(event.payload)
+        timestamp = (
+            event.timestamp.isoformat()
+            if hasattr(event.timestamp, "isoformat")
+            else str(event.timestamp)
+        )
+        value_json = json.dumps(payload.value) if payload.value is not None else None
+        await self._db.execute(
+            """
+            INSERT OR REPLACE INTO annotations
+                (annotation_id, tree_id, node_id, tag, value, notes, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                payload.annotation_id,
+                event.tree_id,
+                payload.node_id,
+                payload.tag,
+                value_json,
+                payload.notes,
+                timestamp,
+            ),
+        )
+
+    async def _handle_annotation_removed(self, event: EventEnvelope) -> None:
+        """Project an AnnotationRemoved event: delete from annotations table."""
+        payload = AnnotationRemovedPayload.model_validate(event.payload)
+        await self._db.execute(
+            "DELETE FROM annotations WHERE annotation_id = ?",
+            (payload.annotation_id,),
+        )
 
     async def _handle_node_created(self, event: EventEnvelope) -> None:
         """Project a NodeCreated event into the nodes table."""

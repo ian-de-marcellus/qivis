@@ -1,6 +1,8 @@
 /** Typed API client for Qivis backend. */
 
 import type {
+  AddAnnotationRequest,
+  AnnotationResponse,
   CreateNodeRequest,
   CreateTreeRequest,
   EditHistoryResponse,
@@ -10,6 +12,7 @@ import type {
   NodeResponse,
   PatchTreeRequest,
   ProviderInfo,
+  TaxonomyResponse,
   TreeDetail,
   TreeSummary,
 } from './types.ts'
@@ -26,6 +29,9 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   if (!res.ok) {
     const text = await res.text()
     throw new Error(`API error ${res.status}: ${text}`)
+  }
+  if (res.status === 204) {
+    return undefined as T
   }
   return res.json() as Promise<T>
 }
@@ -96,6 +102,39 @@ export function getEditHistory(
 
 export function getInterventions(treeId: string): Promise<InterventionTimelineResponse> {
   return request(`/trees/${treeId}/interventions`)
+}
+
+// -- Annotations --
+
+export function addAnnotation(
+  treeId: string,
+  nodeId: string,
+  req: AddAnnotationRequest,
+): Promise<AnnotationResponse> {
+  return request(`/trees/${treeId}/nodes/${nodeId}/annotations`, {
+    method: 'POST',
+    body: JSON.stringify(req),
+  })
+}
+
+export function getNodeAnnotations(
+  treeId: string,
+  nodeId: string,
+): Promise<AnnotationResponse[]> {
+  return request(`/trees/${treeId}/nodes/${nodeId}/annotations`)
+}
+
+export function removeAnnotation(
+  treeId: string,
+  annotationId: string,
+): Promise<void> {
+  return request(`/trees/${treeId}/annotations/${annotationId}`, {
+    method: 'DELETE',
+  })
+}
+
+export function getTreeTaxonomy(treeId: string): Promise<TaxonomyResponse> {
+  return request(`/trees/${treeId}/taxonomy`)
 }
 
 // -- Generation (non-streaming) --

@@ -1,6 +1,6 @@
 """Request and response schemas for tree and node endpoints."""
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -81,6 +81,7 @@ class NodeResponse(BaseModel):
     archived: int = 0
     sibling_count: int = 1
     sibling_index: int = 0
+    annotation_count: int = 0
 
 
 class EditHistoryEntry(BaseModel):
@@ -120,6 +121,27 @@ class TreeSummary(BaseModel):
     conversation_mode: str = "single"
     created_at: str
     updated_at: str
+
+
+class AddAnnotationRequest(BaseModel):
+    tag: str
+    value: Any = None
+    notes: str | None = None
+
+
+class AnnotationResponse(BaseModel):
+    annotation_id: str
+    tree_id: str
+    node_id: str
+    tag: str
+    value: Any = None
+    notes: str | None = None
+    created_at: str
+
+
+class TaxonomyResponse(BaseModel):
+    base_tags: list[str]
+    used_tags: list[str]
 
 
 class TreeDetailResponse(BaseModel):
