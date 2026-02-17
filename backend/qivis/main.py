@@ -31,8 +31,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     db = await Database.connect("qivis.db")
 
+    # Summary client (dedicated API key for cost tracking — no fallback)
+    summary_api_key = os.environ.get("SUMMARY_API_KEY")
+    summary_client = AsyncAnthropic(api_key=summary_api_key) if summary_api_key else None
+
     # Tree service
-    service = TreeService(db)
+    service = TreeService(db, summary_client=summary_client)
     app.dependency_overrides[get_tree_service] = lambda: service
 
     # Provider setup — auto-discover from env vars

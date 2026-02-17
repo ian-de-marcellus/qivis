@@ -14,6 +14,9 @@ from qivis.events.store import EventStore
 from qivis.models import (
     AnnotationAddedPayload,
     AnnotationRemovedPayload,
+    BookmarkCreatedPayload,
+    BookmarkRemovedPayload,
+    BookmarkSummaryGeneratedPayload,
     EventEnvelope,
     NodeContentEditedPayload,
     NodeCreatedPayload,
@@ -23,6 +26,8 @@ from qivis.models import (
 from qivis.trees.schemas import (
     AddAnnotationRequest,
     AnnotationResponse,
+    BookmarkResponse,
+    CreateBookmarkRequest,
     CreateNodeRequest,
     CreateTreeRequest,
     EditHistoryEntry,
@@ -43,10 +48,11 @@ _TAXONOMY_PATH = Path(__file__).parent.parent / "annotation_taxonomy.yml"
 class TreeService:
     """Coordinates event store and projector for tree/node CRUD."""
 
-    def __init__(self, db: Database) -> None:
+    def __init__(self, db: Database, summary_client: object | None = None) -> None:
         self._store = EventStore(db)
         self._projector = StateProjector(db)
         self._db = db
+        self._summary_client = summary_client
 
     async def create_tree(self, request: CreateTreeRequest) -> TreeDetailResponse:
         """Create a new tree. Emits TreeCreated, projects, returns the tree."""
@@ -157,7 +163,18 @@ class TreeService:
         )
         annotation_counts = {r["node_id"]: r["cnt"] for r in ann_rows}
 
-        return self._tree_detail_from_row(tree, nodes, annotation_counts=annotation_counts)
+        # Bookmarked node IDs
+        bm_rows = await self._db.fetchall(
+            "SELECT DISTINCT node_id FROM bookmarks WHERE tree_id = ?",
+            (tree_id,),
+        )
+        bookmark_node_ids = {r["node_id"] for r in bm_rows}
+
+        return self._tree_detail_from_row(
+            tree, nodes,
+            annotation_counts=annotation_counts,
+            bookmark_node_ids=bookmark_node_ids,
+        )
 
     async def list_trees(self) -> list[TreeSummary]:
         """List all non-archived trees."""
@@ -451,6 +468,205 @@ class TreeService:
 
         return TaxonomyResponse(base_tags=base_tags, used_tags=used_tags)
 
+    # -- Bookmark methods --
+
+    async def add_bookmark(
+        self, tree_id: str, node_id: str, request: CreateBookmarkRequest,
+    ) -> BookmarkResponse:
+        """Add a bookmark to a node. Emits BookmarkCreated, projects, returns it."""
+        tree = await self._projector.get_tree(tree_id)
+        if tree is None:
+            raise TreeNotFoundError(tree_id)
+
+        nodes = await self._projector.get_nodes(tree_id)
+        if not any(n["node_id"] == node_id for n in nodes):
+            raise NodeNotFoundError(node_id)
+
+        bookmark_id = str(uuid4())
+        now = datetime.now(UTC)
+
+        payload = BookmarkCreatedPayload(
+            bookmark_id=bookmark_id,
+            node_id=node_id,
+            label=request.label,
+            notes=request.notes,
+        )
+        event = EventEnvelope(
+            event_id=str(uuid4()),
+            tree_id=tree_id,
+            timestamp=now,
+            device_id="local",
+            event_type="BookmarkCreated",
+            payload=payload.model_dump(),
+        )
+
+        await self._store.append(event)
+        await self._projector.project([event])
+
+        row = await self._db.fetchone(
+            "SELECT * FROM bookmarks WHERE bookmark_id = ?",
+            (bookmark_id,),
+        )
+        assert row is not None
+        return self._bookmark_from_row(row)
+
+    async def remove_bookmark(
+        self, tree_id: str, bookmark_id: str,
+    ) -> None:
+        """Remove a bookmark. Emits BookmarkRemoved, projects."""
+        row = await self._db.fetchone(
+            "SELECT * FROM bookmarks WHERE bookmark_id = ? AND tree_id = ?",
+            (bookmark_id, tree_id),
+        )
+        if row is None:
+            raise BookmarkNotFoundError(bookmark_id)
+
+        now = datetime.now(UTC)
+        payload = BookmarkRemovedPayload(bookmark_id=bookmark_id)
+        event = EventEnvelope(
+            event_id=str(uuid4()),
+            tree_id=tree_id,
+            timestamp=now,
+            device_id="local",
+            event_type="BookmarkRemoved",
+            payload=payload.model_dump(),
+        )
+
+        await self._store.append(event)
+        await self._projector.project([event])
+
+    async def get_tree_bookmarks(
+        self, tree_id: str, query: str | None = None,
+    ) -> list[BookmarkResponse]:
+        """Get bookmarks for a tree, optionally filtered by search query."""
+        if query:
+            like = f"%{query}%"
+            rows = await self._db.fetchall(
+                """
+                SELECT * FROM bookmarks
+                WHERE tree_id = ? AND (label LIKE ? OR summary LIKE ? OR notes LIKE ?)
+                ORDER BY created_at
+                """,
+                (tree_id, like, like, like),
+            )
+        else:
+            rows = await self._db.fetchall(
+                "SELECT * FROM bookmarks WHERE tree_id = ? ORDER BY created_at",
+                (tree_id,),
+            )
+        return [self._bookmark_from_row(r) for r in rows]
+
+    async def generate_bookmark_summary(
+        self, tree_id: str, bookmark_id: str,
+    ) -> BookmarkResponse:
+        """Generate a Haiku summary for a bookmark's branch (root -> bookmarked node)."""
+        if self._summary_client is None:
+            raise SummaryClientNotConfiguredError()
+
+        tree = await self._projector.get_tree(tree_id)
+        if tree is None:
+            raise TreeNotFoundError(tree_id)
+
+        bm_row = await self._db.fetchone(
+            "SELECT * FROM bookmarks WHERE bookmark_id = ? AND tree_id = ?",
+            (bookmark_id, tree_id),
+        )
+        if bm_row is None:
+            raise BookmarkNotFoundError(bookmark_id)
+
+        # Get all nodes and walk parent chain from bookmarked node to root
+        nodes = await self._projector.get_nodes(tree_id)
+        node_map = {n["node_id"]: n for n in nodes}
+
+        path: list[dict] = []
+        current = node_map.get(bm_row["node_id"])
+        while current:
+            path.append(current)
+            current = node_map.get(current["parent_id"]) if current["parent_id"] else None
+        path.reverse()  # root -> bookmarked node
+
+        # Build conversation transcript for the prompt
+        transcript_lines = []
+        for n in path:
+            content = n.get("edited_content") or n["content"]
+            role = n["role"].capitalize()
+            transcript_lines.append(f"{role}: {content}")
+        transcript = "\n".join(transcript_lines)
+
+        summarized_node_ids = [n["node_id"] for n in path]
+
+        # Call the dedicated summary client
+        response = await self._summary_client.messages.create(
+            model="claude-haiku-4-5",
+            max_tokens=100,
+            system=(
+                "You write terse research bookmark notes — like a post-it flag "
+                "in a margin. One to two plain sentences, no markdown, no bullets, "
+                "no headers. Third person. Emphasize the end of the branch — "
+                "that's where it diverges. Finish your thought — never stop mid-sentence."
+            ),
+            messages=[
+                {
+                    "role": "user",
+                    "content": f"Summarize this conversation branch:\n\n{transcript}",
+                },
+                {
+                    "role": "assistant",
+                    "content": "Branch note:",
+                },
+            ],
+        )
+        summary_text = response.content[0].text
+
+        summary_text = response.content[0].text
+        model_used = response.model
+
+        # Emit BookmarkSummaryGenerated event
+        now = datetime.now(UTC)
+        payload = BookmarkSummaryGeneratedPayload(
+            bookmark_id=bookmark_id,
+            summary=summary_text,
+            model=model_used,
+            summarized_node_ids=summarized_node_ids,
+        )
+        event = EventEnvelope(
+            event_id=str(uuid4()),
+            tree_id=tree_id,
+            timestamp=now,
+            device_id="local",
+            event_type="BookmarkSummaryGenerated",
+            payload=payload.model_dump(),
+        )
+
+        await self._store.append(event)
+        await self._projector.project([event])
+
+        # Read back updated bookmark
+        updated_row = await self._db.fetchone(
+            "SELECT * FROM bookmarks WHERE bookmark_id = ?",
+            (bookmark_id,),
+        )
+        assert updated_row is not None
+        return self._bookmark_from_row(updated_row)
+
+    @staticmethod
+    def _bookmark_from_row(row: dict) -> BookmarkResponse:
+        """Convert a projected bookmark row to a response."""
+        summarized = row["summarized_node_ids"]
+        if summarized and isinstance(summarized, str):
+            summarized = json.loads(summarized)
+        return BookmarkResponse(
+            bookmark_id=row["bookmark_id"],
+            tree_id=row["tree_id"],
+            node_id=row["node_id"],
+            label=row["label"],
+            notes=row["notes"],
+            summary=row["summary"],
+            summary_model=row["summary_model"],
+            summarized_node_ids=summarized,
+            created_at=row["created_at"],
+        )
+
     @staticmethod
     def _annotation_from_row(row: dict) -> AnnotationResponse:
         """Convert a projected annotation row to a response."""
@@ -493,6 +709,7 @@ class TreeService:
         node_rows: list[dict],
         *,
         annotation_counts: dict[str, int] | None = None,
+        bookmark_node_ids: set[str] | None = None,
     ) -> TreeDetailResponse:
         """Convert a projected tree row + node rows to a response."""
         sibling_info = TreeService._compute_sibling_info(node_rows)
@@ -522,6 +739,7 @@ class TreeService:
                     n,
                     sibling_info=sibling_info,
                     annotation_counts=annotation_counts,
+                    bookmark_node_ids=bookmark_node_ids,
                 )
                 for n in node_rows
             ],
@@ -533,6 +751,7 @@ class TreeService:
         *,
         sibling_info: dict[str, tuple[int, int]] | None = None,
         annotation_counts: dict[str, int] | None = None,
+        bookmark_node_ids: set[str] | None = None,
     ) -> NodeResponse:
         """Convert a projected node row to a response."""
 
@@ -550,6 +769,10 @@ class TreeService:
         ac = 0
         if annotation_counts is not None:
             ac = annotation_counts.get(row["node_id"], 0)
+
+        ib = False
+        if bookmark_node_ids is not None:
+            ib = row["node_id"] in bookmark_node_ids
 
         return NodeResponse(
             node_id=row["node_id"],
@@ -578,6 +801,7 @@ class TreeService:
             sibling_index=si,
             sibling_count=sc,
             annotation_count=ac,
+            is_bookmarked=ib,
         )
 
 
@@ -597,6 +821,17 @@ class AnnotationNotFoundError(Exception):
     def __init__(self, annotation_id: str) -> None:
         self.annotation_id = annotation_id
         super().__init__(f"Annotation not found: {annotation_id}")
+
+
+class BookmarkNotFoundError(Exception):
+    def __init__(self, bookmark_id: str) -> None:
+        self.bookmark_id = bookmark_id
+        super().__init__(f"Bookmark not found: {bookmark_id}")
+
+
+class SummaryClientNotConfiguredError(Exception):
+    def __init__(self) -> None:
+        super().__init__("Summary API key not configured")
 
 
 class InvalidParentError(Exception):

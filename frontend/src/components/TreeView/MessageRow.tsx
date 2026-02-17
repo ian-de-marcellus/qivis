@@ -56,12 +56,13 @@ interface MessageRowProps {
   onCompare?: () => void
   onEdit?: (nodeId: string, editedContent: string | null) => void
   onInspect?: () => void
+  onBookmarkToggle?: () => void
   diffSummary?: DiffSummary
   onSplitView?: () => void
   highlightClass?: 'highlight-used' | 'highlight-other'
 }
 
-export function MessageRow({ node, siblings, onSelectSibling, onFork, onPrefill, onGenerate, onCompare, onEdit, onInspect, diffSummary, onSplitView, highlightClass }: MessageRowProps) {
+export function MessageRow({ node, siblings, onSelectSibling, onFork, onPrefill, onGenerate, onCompare, onEdit, onInspect, onBookmarkToggle, diffSummary, onSplitView, highlightClass }: MessageRowProps) {
   const [showLogprobs, setShowLogprobs] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
   const [editValue, setEditValue] = useState('')
@@ -135,6 +136,15 @@ export function MessageRow({ node, siblings, onSelectSibling, onFork, onPrefill,
             <span className="annotation-badge">{node.annotation_count}</span>
           )}
         </button>
+        {onBookmarkToggle && (
+          <button
+            className={`bookmark-btn${node.is_bookmarked ? ' active' : ''}`}
+            onClick={onBookmarkToggle}
+            aria-label={node.is_bookmarked ? 'Remove bookmark' : 'Bookmark'}
+          >
+            {node.is_bookmarked ? 'Marked' : 'Mark'}
+          </button>
+        )}
       </div>
       {node.thinking_content && (
         <ThinkingSection thinkingContent={node.thinking_content} />

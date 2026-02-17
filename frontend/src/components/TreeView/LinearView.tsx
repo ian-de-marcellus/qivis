@@ -46,6 +46,9 @@ export function LinearView() {
     setInspectedNodeId,
     splitViewNodeId,
     setSplitViewNodeId,
+    bookmarks,
+    addBookmark,
+    removeBookmark,
   } = useTreeStore()
 
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -232,6 +235,14 @@ export function LinearView() {
                       splitViewNodeId === node.node_id ? null : node.node_id
                     )
                   : undefined}
+                onBookmarkToggle={() => {
+                  if (node.is_bookmarked) {
+                    const bm = bookmarks.find((b) => b.node_id === node.node_id)
+                    if (bm) removeBookmark(bm.bookmark_id)
+                  } else {
+                    addBookmark(node.node_id, node.content.slice(0, 60))
+                  }
+                }}
                 onCompare={siblings.length > 1 ? () => setComparingAtParent(
                   comparingAtParent === nodeParentKey ? null : nodeParentKey,
                 ) : undefined}

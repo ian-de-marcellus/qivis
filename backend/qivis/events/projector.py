@@ -12,6 +12,9 @@ from qivis.db.connection import Database
 from qivis.models import (
     AnnotationAddedPayload,
     AnnotationRemovedPayload,
+    BookmarkCreatedPayload,
+    BookmarkRemovedPayload,
+    BookmarkSummaryGeneratedPayload,
     EventEnvelope,
     NodeContentEditedPayload,
     NodeCreatedPayload,
@@ -35,6 +38,9 @@ class StateProjector:
             "GenerationStarted": self._handle_generation_started,
             "AnnotationAdded": self._handle_annotation_added,
             "AnnotationRemoved": self._handle_annotation_removed,
+            "BookmarkCreated": self._handle_bookmark_created,
+            "BookmarkRemoved": self._handle_bookmark_removed,
+            "BookmarkSummaryGenerated": self._handle_bookmark_summary_generated,
         }
 
     async def project(self, events: list[EventEnvelope]) -> None:
@@ -170,6 +176,55 @@ class StateProjector:
         await self._db.execute(
             "DELETE FROM annotations WHERE annotation_id = ?",
             (payload.annotation_id,),
+        )
+
+    async def _handle_bookmark_created(self, event: EventEnvelope) -> None:
+        """Project a BookmarkCreated event into the bookmarks table."""
+        payload = BookmarkCreatedPayload.model_validate(event.payload)
+        timestamp = (
+            event.timestamp.isoformat()
+            if hasattr(event.timestamp, "isoformat")
+            else str(event.timestamp)
+        )
+        await self._db.execute(
+            """
+            INSERT OR REPLACE INTO bookmarks
+                (bookmark_id, tree_id, node_id, label, notes, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                payload.bookmark_id,
+                event.tree_id,
+                payload.node_id,
+                payload.label,
+                payload.notes,
+                timestamp,
+            ),
+        )
+
+    async def _handle_bookmark_removed(self, event: EventEnvelope) -> None:
+        """Project a BookmarkRemoved event: delete from bookmarks table."""
+        payload = BookmarkRemovedPayload.model_validate(event.payload)
+        await self._db.execute(
+            "DELETE FROM bookmarks WHERE bookmark_id = ?",
+            (payload.bookmark_id,),
+        )
+
+    async def _handle_bookmark_summary_generated(self, event: EventEnvelope) -> None:
+        """Project a BookmarkSummaryGenerated event: update summary fields."""
+        payload = BookmarkSummaryGeneratedPayload.model_validate(event.payload)
+        await self._db.execute(
+            """
+            UPDATE bookmarks
+            SET summary = ?, summary_model = ?, summarized_node_ids = ?
+            WHERE bookmark_id = ?
+            """,
+            (
+                payload.summary,
+                payload.model,
+                json.dumps(payload.summarized_node_ids),
+                payload.bookmark_id,
+            ),
         )
 
     async def _handle_node_created(self, event: EventEnvelope) -> None:

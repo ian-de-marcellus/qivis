@@ -3,6 +3,8 @@
 import type {
   AddAnnotationRequest,
   AnnotationResponse,
+  BookmarkResponse,
+  CreateBookmarkRequest,
   CreateNodeRequest,
   CreateTreeRequest,
   EditHistoryResponse,
@@ -135,6 +137,45 @@ export function removeAnnotation(
 
 export function getTreeTaxonomy(treeId: string): Promise<TaxonomyResponse> {
   return request(`/trees/${treeId}/taxonomy`)
+}
+
+// -- Bookmarks --
+
+export function addBookmark(
+  treeId: string,
+  nodeId: string,
+  req: CreateBookmarkRequest,
+): Promise<BookmarkResponse> {
+  return request(`/trees/${treeId}/nodes/${nodeId}/bookmarks`, {
+    method: 'POST',
+    body: JSON.stringify(req),
+  })
+}
+
+export function getTreeBookmarks(
+  treeId: string,
+  query?: string,
+): Promise<BookmarkResponse[]> {
+  const params = query ? `?q=${encodeURIComponent(query)}` : ''
+  return request(`/trees/${treeId}/bookmarks${params}`)
+}
+
+export function removeBookmark(
+  treeId: string,
+  bookmarkId: string,
+): Promise<void> {
+  return request(`/trees/${treeId}/bookmarks/${bookmarkId}`, {
+    method: 'DELETE',
+  })
+}
+
+export function summarizeBookmark(
+  treeId: string,
+  bookmarkId: string,
+): Promise<BookmarkResponse> {
+  return request(`/trees/${treeId}/bookmarks/${bookmarkId}/summarize`, {
+    method: 'POST',
+  })
 }
 
 // -- Generation (non-streaming) --

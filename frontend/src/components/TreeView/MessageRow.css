@@ -236,6 +236,35 @@
   line-height: 1.2;
 }
 
+/* ---- Bookmark button ---- */
+.bookmark-btn {
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  padding: 0.15rem 0.5rem;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-tertiary);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.2s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.message-row:hover .bookmark-btn {
+  opacity: 1;
+}
+
+.bookmark-btn:hover {
+  color: var(--text-accent);
+  border-color: var(--text-accent);
+}
+
+.bookmark-btn.active {
+  opacity: 1;
+  color: var(--text-accent);
+  border-color: var(--text-accent);
+}
+
 /* ---- Inline editor ---- */
 .inline-editor {
   margin-top: var(--space-xs);

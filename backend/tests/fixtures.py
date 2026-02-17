@@ -9,6 +9,9 @@ from httpx import AsyncClient
 from qivis.models import (
     AnnotationAddedPayload,
     AnnotationRemovedPayload,
+    BookmarkCreatedPayload,
+    BookmarkRemovedPayload,
+    BookmarkSummaryGeneratedPayload,
     EventEnvelope,
     NodeContentEditedPayload,
     NodeCreatedPayload,
@@ -249,6 +252,73 @@ def make_annotation_removed_envelope(
         timestamp=datetime.now(UTC),
         device_id="test",
         event_type="AnnotationRemoved",
+        payload=payload.model_dump(),
+    )
+
+
+def make_bookmark_created_envelope(
+    tree_id: str,
+    node_id: str,
+    label: str = "Bookmark",
+    bookmark_id: str | None = None,
+    notes: str | None = None,
+) -> EventEnvelope:
+    """Create a BookmarkCreated EventEnvelope for testing."""
+    bookmark_id = bookmark_id or str(uuid4())
+    payload = BookmarkCreatedPayload(
+        bookmark_id=bookmark_id,
+        node_id=node_id,
+        label=label,
+        notes=notes,
+    )
+    return EventEnvelope(
+        event_id=str(uuid4()),
+        tree_id=tree_id,
+        timestamp=datetime.now(UTC),
+        device_id="test",
+        event_type="BookmarkCreated",
+        payload=payload.model_dump(),
+    )
+
+
+def make_bookmark_removed_envelope(
+    tree_id: str,
+    bookmark_id: str,
+) -> EventEnvelope:
+    """Create a BookmarkRemoved EventEnvelope for testing."""
+    payload = BookmarkRemovedPayload(
+        bookmark_id=bookmark_id,
+    )
+    return EventEnvelope(
+        event_id=str(uuid4()),
+        tree_id=tree_id,
+        timestamp=datetime.now(UTC),
+        device_id="test",
+        event_type="BookmarkRemoved",
+        payload=payload.model_dump(),
+    )
+
+
+def make_bookmark_summary_generated_envelope(
+    tree_id: str,
+    bookmark_id: str,
+    summary: str = "A concise summary of the branch.",
+    model: str = "claude-haiku-4-5",
+    summarized_node_ids: list[str] | None = None,
+) -> EventEnvelope:
+    """Create a BookmarkSummaryGenerated EventEnvelope for testing."""
+    payload = BookmarkSummaryGeneratedPayload(
+        bookmark_id=bookmark_id,
+        summary=summary,
+        model=model,
+        summarized_node_ids=summarized_node_ids or [],
+    )
+    return EventEnvelope(
+        event_id=str(uuid4()),
+        tree_id=tree_id,
+        timestamp=datetime.now(UTC),
+        device_id="test",
+        event_type="BookmarkSummaryGenerated",
         payload=payload.model_dump(),
     )
 

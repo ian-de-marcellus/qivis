@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { CanvasView } from './components/CanvasView/CanvasView.tsx'
 import { GraphView } from './components/GraphView/GraphView.tsx'
+import { BookmarkList } from './components/Library/BookmarkList.tsx'
 import { TreeList } from './components/Library/TreeList.tsx'
 import { getTreeDefaults } from './components/TreeView/contextDiffs.ts'
 import { LinearView } from './components/TreeView/LinearView.tsx'
@@ -90,6 +91,7 @@ function App() {
     <div className="app">
       <aside className={`sidebar ${sidebarCollapsed ? 'collapsed' : ''}`}>
         {!sidebarCollapsed && <TreeList />}
+        {!sidebarCollapsed && currentTree && <BookmarkList />}
         <div className="sidebar-toggle-bar">
           <button
             className="theme-toggle"

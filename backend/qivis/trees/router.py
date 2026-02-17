@@ -16,6 +16,8 @@ from qivis.providers.registry import ProviderNotFoundError, get_provider
 from qivis.trees.schemas import (
     AddAnnotationRequest,
     AnnotationResponse,
+    BookmarkResponse,
+    CreateBookmarkRequest,
     CreateNodeRequest,
     CreateTreeRequest,
     EditHistoryResponse,
@@ -30,8 +32,10 @@ from qivis.trees.schemas import (
 )
 from qivis.trees.service import (
     AnnotationNotFoundError,
+    BookmarkNotFoundError,
     InvalidParentError,
     NodeNotFoundError,
+    SummaryClientNotConfiguredError,
     TreeNotFoundError,
     TreeService,
 )
@@ -194,6 +198,70 @@ async def get_tree_taxonomy(
         return await service.get_tree_taxonomy(tree_id)
     except TreeNotFoundError:
         raise HTTPException(status_code=404, detail=f"Tree not found: {tree_id}")
+
+
+@router.post(
+    "/{tree_id}/nodes/{node_id}/bookmarks",
+    status_code=status.HTTP_201_CREATED,
+)
+async def add_bookmark(
+    tree_id: str,
+    node_id: str,
+    request: CreateBookmarkRequest,
+    service: TreeService = Depends(get_tree_service),
+) -> BookmarkResponse:
+    try:
+        return await service.add_bookmark(tree_id, node_id, request)
+    except TreeNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Tree not found: {tree_id}")
+    except NodeNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Node not found: {node_id}")
+
+
+@router.get("/{tree_id}/bookmarks")
+async def get_tree_bookmarks(
+    tree_id: str,
+    q: str | None = None,
+    service: TreeService = Depends(get_tree_service),
+) -> list[BookmarkResponse]:
+    return await service.get_tree_bookmarks(tree_id, query=q)
+
+
+@router.delete(
+    "/{tree_id}/bookmarks/{bookmark_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def remove_bookmark(
+    tree_id: str,
+    bookmark_id: str,
+    service: TreeService = Depends(get_tree_service),
+) -> None:
+    try:
+        await service.remove_bookmark(tree_id, bookmark_id)
+    except BookmarkNotFoundError:
+        raise HTTPException(
+            status_code=404, detail=f"Bookmark not found: {bookmark_id}"
+        )
+
+
+@router.post("/{tree_id}/bookmarks/{bookmark_id}/summarize")
+async def summarize_bookmark(
+    tree_id: str,
+    bookmark_id: str,
+    service: TreeService = Depends(get_tree_service),
+) -> BookmarkResponse:
+    try:
+        return await service.generate_bookmark_summary(tree_id, bookmark_id)
+    except TreeNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Tree not found: {tree_id}")
+    except BookmarkNotFoundError:
+        raise HTTPException(
+            status_code=404, detail=f"Bookmark not found: {bookmark_id}"
+        )
+    except SummaryClientNotConfiguredError:
+        raise HTTPException(
+            status_code=503, detail="Summary API key not configured"
+        )
 
 
 @router.post(

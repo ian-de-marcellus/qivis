@@ -53,6 +53,7 @@ export interface NodeResponse {
   sibling_count: number
   sibling_index: number
   annotation_count: number
+  is_bookmarked: boolean
 }
 
 export interface ContextUsage {
@@ -148,6 +149,23 @@ export interface AnnotationResponse {
 export interface TaxonomyResponse {
   base_tags: string[]
   used_tags: string[]
+}
+
+export interface BookmarkResponse {
+  bookmark_id: string
+  tree_id: string
+  node_id: string
+  label: string
+  notes: string | null
+  summary: string | null
+  summary_model: string | null
+  summarized_node_ids: string[] | null
+  created_at: string
+}
+
+export interface CreateBookmarkRequest {
+  label: string
+  notes?: string
 }
 
 export interface AddAnnotationRequest {

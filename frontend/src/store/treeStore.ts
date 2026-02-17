@@ -4,6 +4,7 @@ import { create } from 'zustand'
 import * as api from '../api/client.ts'
 import type {
   AnnotationResponse,
+  BookmarkResponse,
   EditHistoryEntry,
   GenerateRequest,
   NodeResponse,
@@ -50,6 +51,8 @@ interface TreeStore {
   canvasOpen: boolean
   nodeAnnotations: Record<string, AnnotationResponse[]>
   taxonomy: TaxonomyResponse | null
+  bookmarks: BookmarkResponse[]
+  bookmarksLoading: boolean
 
   // Actions
   fetchTrees: () => Promise<void>
@@ -91,6 +94,11 @@ interface TreeStore {
   removeAnnotation: (nodeId: string, annotationId: string) => Promise<void>
   fetchNodeAnnotations: (nodeId: string) => Promise<void>
   fetchTaxonomy: () => Promise<void>
+  fetchBookmarks: () => Promise<void>
+  addBookmark: (nodeId: string, label: string, notes?: string) => Promise<void>
+  removeBookmark: (bookmarkId: string) => Promise<void>
+  summarizeBookmark: (bookmarkId: string) => Promise<void>
+  navigateToBookmark: (bookmark: BookmarkResponse) => void
 }
 
 /**
@@ -162,6 +170,8 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
   canvasOpen: false,
   nodeAnnotations: {},
   taxonomy: null,
+  bookmarks: [],
+  bookmarksLoading: false,
 
   fetchTrees: async () => {
     set({ isLoading: true, error: null })
@@ -196,10 +206,16 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
       canvasOpen: false,
       nodeAnnotations: {},
       taxonomy: null,
+      bookmarks: [],
+      bookmarksLoading: false,
     })
     try {
       const tree = await api.getTree(treeId)
       set({ currentTree: tree, isLoading: false })
+      // Fetch bookmarks for the new tree in the background
+      api.getTreeBookmarks(treeId).then((bookmarks) => {
+        set({ bookmarks })
+      }).catch(() => {/* ignore bookmark fetch errors */})
     } catch (e) {
       set({ error: String(e), isLoading: false })
     }
@@ -988,5 +1004,90 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
     } catch (e) {
       set({ error: String(e) })
     }
+  },
+
+  fetchBookmarks: async () => {
+    const { currentTree } = get()
+    if (!currentTree) return
+
+    set({ bookmarksLoading: true })
+    try {
+      const bookmarks = await api.getTreeBookmarks(currentTree.tree_id)
+      set({ bookmarks, bookmarksLoading: false })
+    } catch (e) {
+      set({ error: String(e), bookmarksLoading: false })
+    }
+  },
+
+  addBookmark: async (nodeId: string, label: string, notes?: string) => {
+    const { currentTree } = get()
+    if (!currentTree) return
+
+    try {
+      const bookmark = await api.addBookmark(currentTree.tree_id, nodeId, { label, notes })
+      set((state) => ({
+        bookmarks: [...state.bookmarks, bookmark],
+        currentTree: state.currentTree
+          ? {
+              ...state.currentTree,
+              nodes: state.currentTree.nodes.map((n) =>
+                n.node_id === nodeId ? { ...n, is_bookmarked: true } : n,
+              ),
+            }
+          : null,
+      }))
+    } catch (e) {
+      set({ error: String(e) })
+    }
+  },
+
+  removeBookmark: async (bookmarkId: string) => {
+    const { currentTree, bookmarks } = get()
+    if (!currentTree) return
+
+    const bookmark = bookmarks.find((b) => b.bookmark_id === bookmarkId)
+    if (!bookmark) return
+
+    try {
+      await api.removeBookmark(currentTree.tree_id, bookmarkId)
+      const remaining = bookmarks.filter((b) => b.bookmark_id !== bookmarkId)
+      // Only set is_bookmarked=false if no other bookmarks reference the same node
+      const nodeStillBookmarked = remaining.some((b) => b.node_id === bookmark.node_id)
+      set((state) => ({
+        bookmarks: remaining,
+        currentTree: state.currentTree
+          ? {
+              ...state.currentTree,
+              nodes: state.currentTree.nodes.map((n) =>
+                n.node_id === bookmark.node_id && !nodeStillBookmarked
+                  ? { ...n, is_bookmarked: false }
+                  : n,
+              ),
+            }
+          : null,
+      }))
+    } catch (e) {
+      set({ error: String(e) })
+    }
+  },
+
+  summarizeBookmark: async (bookmarkId: string) => {
+    const { currentTree } = get()
+    if (!currentTree) return
+
+    try {
+      const updated = await api.summarizeBookmark(currentTree.tree_id, bookmarkId)
+      set((state) => ({
+        bookmarks: state.bookmarks.map((b) =>
+          b.bookmark_id === bookmarkId ? updated : b,
+        ),
+      }))
+    } catch (e) {
+      set({ error: String(e) })
+    }
+  },
+
+  navigateToBookmark: (bookmark: BookmarkResponse) => {
+    get().navigateToNode(bookmark.node_id)
   },
 }))

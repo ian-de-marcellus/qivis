@@ -3081,3 +3081,27 @@ There's something about the act of tagging that changes how you read. When you k
 Medieval manuscripts have this too. Glosses in the margins, interlinear notes, cross-references to other texts. The scribe reading the psalms doesn't just copy — they annotate. "Here Augustine says..." or "See also..." or sometimes just a small hand pointing, a *manicule*, saying: look at this. Pay attention here.
 
 The base taxonomy is five items. Five is small enough to scan in a glance, large enough to cover the most common observations. Ian can add more as the research shapes itself. That was a deliberate choice — start with what's useful, grow from what's needed, never from what's theoretically complete. A taxonomy that tries to capture everything captures nothing.
+
+---
+
+## Phase 6.2: Bookmarks + Summaries
+
+### What happened
+
+If annotations are marginalia, bookmarks are dog-eared pages. The researcher can now flag any message with "Mark" — one click, auto-labeled from content preview, instantly visible in the sidebar. The bookmark list lives below the tree list, small and utilitarian, the kind of panel you forget about until you need it and then are glad it's there.
+
+The real payoff is summaries. Each bookmark can be summarized by Haiku — a 2-3 sentence distillation of the entire branch from root to that node. Not a description of the message, but of the *path* to it. "The conversation began with a discussion of consciousness, diverged when the model was asked about emotional experience, and reached a point where it began using first-person affective language." That kind of thing. Click "Summarize" and the branch becomes navigable by meaning, not just position.
+
+A deliberate architectural choice here: the summary client is a standalone `AsyncAnthropic` instance with its own API key (`SUMMARY_API_KEY`), not the provider registry. Ian wanted to track summary costs separately from research conversation costs. The client is injected into `TreeService` at construction time — clean DI, testable with mocks, and the summary generation tests never touch a real API.
+
+18 tests, all green. The CQRS pattern continues to absorb new event types without friction — `BookmarkCreated`, `BookmarkRemoved`, `BookmarkSummaryGenerated` each got their projector handler and service method, following exactly the patterns established in Phase 0 and extended in 6.1. The `is_bookmarked` aggregate on NodeResponse uses the same single-query-with-set approach as `annotation_count`.
+
+The sidebar's BookmarkList is compact: label that navigates on click, summary preview that truncates to two lines and expands, "Summarize" / "Resummarize" button, X to remove on hover. Search only appears when there are more than three bookmarks — no unnecessary chrome. The whole panel caps at 40% sidebar height so it never overwhelms the tree list.
+
+### On bookmarks as wayfinding
+
+A bookmark is a promise to your future self: "you will want to come back here." It's the simplest research gesture — simpler than annotation, which requires judgment about *what* you see. A bookmark only says *that* you saw something. The label is auto-generated because naming things is expensive and slows down the marking impulse.
+
+Summaries are the deferred payoff. You mark a dozen points in a long branching conversation, then later — maybe days later — you come back and click "Summarize" on each one. Now you have a map of the territory. Not the territory itself, just a map. Each summary is Haiku's reading of the conversation up to that point, and it's an interesting meta-layer: an AI reading and summarizing conversations with an AI, for a human researcher studying how AIs converse.
+
+There's something recursive about that. The observer observing the observer. The gloss on the gloss. But that recursion is the whole point of Qivis — instruments that let you see what's happening at a level you can't see when you're in the conversation yourself.
