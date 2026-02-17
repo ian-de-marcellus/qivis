@@ -55,6 +55,8 @@ class ContextUsage(BaseModel):
     breakdown: dict[str, int]  # by role: system, user, assistant, tool
     excluded_tokens: int
     excluded_count: int
+    excluded_node_ids: list[str] = Field(default_factory=list)
+    evicted_node_ids: list[str] = Field(default_factory=list)
 
 
 class EvictionStrategy(BaseModel):

@@ -494,6 +494,43 @@ class TestContextBuilderExclusion:
         assert "Hi there" not in contents  # individually excluded
         assert "Tell me about X" in contents  # group is included, not individually excluded
 
+    def test_excluded_node_ids_populated(self, builder):
+        """build() populates excluded_node_ids with the actual excluded node IDs."""
+        nodes = self._make_chain()
+        messages, usage, report = builder.build(
+            nodes=nodes,
+            target_node_id="u3",
+            system_prompt=None,
+            model_context_limit=200_000,
+            excluded_ids={"a1", "u2"},
+        )
+        assert set(usage.excluded_node_ids) == {"a1", "u2"}
+        assert usage.excluded_count == 2
+
+    def test_excluded_node_ids_empty_when_no_exclusions(self, builder):
+        """build() returns empty excluded_node_ids when nothing is excluded."""
+        nodes = self._make_chain()
+        messages, usage, report = builder.build(
+            nodes=nodes,
+            target_node_id="u3",
+            system_prompt=None,
+            model_context_limit=200_000,
+        )
+        assert usage.excluded_node_ids == []
+        assert usage.excluded_count == 0
+
+    def test_evicted_node_ids_on_context_usage(self, builder):
+        """When truncation occurs, evicted_node_ids appear on ContextUsage."""
+        nodes = self._make_chain()
+        messages, usage, report = builder.build(
+            nodes=nodes,
+            target_node_id="u3",
+            system_prompt=None,
+            model_context_limit=10,  # force truncation
+        )
+        assert len(usage.evicted_node_ids) > 0
+        assert report.evicted_node_ids == list(usage.evicted_node_ids)
+
 
 # ---------------------------------------------------------------------------
 # is_excluded on NodeResponse

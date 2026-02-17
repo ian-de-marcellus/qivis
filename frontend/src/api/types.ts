@@ -64,6 +64,8 @@ export interface ContextUsage {
   breakdown: Record<string, number>
   excluded_tokens: number
   excluded_count: number
+  excluded_node_ids?: string[]
+  evicted_node_ids?: string[]
 }
 
 export interface AlternativeToken {
@@ -125,7 +127,7 @@ export interface InterventionEntry {
   event_id: string
   sequence_num: number
   timestamp: string
-  intervention_type: 'node_edited' | 'system_prompt_changed'
+  intervention_type: 'node_edited' | 'system_prompt_changed' | 'exclusion_changed'
   node_id: string | null
   original_content: string | null
   new_content: string | null

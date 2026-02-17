@@ -14,6 +14,7 @@ export interface DiffSummary {
   editedUpstream: number
   manualUpstream: number
   evictedCount: number
+  excludedCount: number
   systemPromptChanged: boolean
   modelChanged: boolean
   providerChanged: boolean
@@ -62,7 +63,8 @@ export function computeDiffSummary(
     if (n.mode === 'manual') manualUpstream++
   }
 
-  const evictedCount = node.context_usage?.excluded_count ?? 0
+  const evictedCount = node.context_usage?.evicted_node_ids?.length ?? 0
+  const excludedCount = node.context_usage?.excluded_count ?? 0
 
   const systemPromptChanged = (node.system_prompt ?? null) !== (treeDefaults.default_system_prompt ?? null)
   const modelChanged = (node.model ?? null) !== (treeDefaults.default_model ?? null)
@@ -75,6 +77,7 @@ export function computeDiffSummary(
     editedUpstream +
     manualUpstream +
     evictedCount +
+    excludedCount +
     (systemPromptChanged ? 1 : 0) +
     (modelChanged ? 1 : 0) +
     (providerChanged ? 1 : 0) +
@@ -86,6 +89,7 @@ export function computeDiffSummary(
     editedUpstream,
     manualUpstream,
     evictedCount,
+    excludedCount,
     systemPromptChanged,
     modelChanged,
     providerChanged,
@@ -104,6 +108,7 @@ export type DiffRowType =
   | 'augmented'
   | 'prefill'
   | 'evicted'
+  | 'excluded'
   | 'non-api-role'
   | 'system-prompt'
   | 'metadata'
@@ -166,11 +171,11 @@ export function buildDiffRows(
     })
   }
 
-  // Track API-sendable messages for eviction
+  // Build sets for evicted and excluded node IDs
   const apiRoles = new Set(['user', 'assistant', 'tool'])
-  const evictedCount = targetNode.context_usage?.excluded_count ?? 0
+  const evictedNodeIds = new Set(targetNode.context_usage?.evicted_node_ids ?? [])
+  const excludedNodeIds = new Set(targetNode.context_usage?.excluded_node_ids ?? [])
 
-  let apiIndex = 0
   for (const node of pathNodes) {
     if (!apiRoles.has(node.role)) {
       // Non-API role (system, researcher_note) — exists in researcher's truth, void on right
@@ -188,9 +193,8 @@ export function buildDiffRows(
       continue
     }
 
-    // API-sendable message
-    if (apiIndex < evictedCount) {
-      // Evicted — exists in researcher's truth, void on right
+    // Evicted — truncated from context due to window limits
+    if (evictedNodeIds.has(node.node_id)) {
       rows.push({
         type: 'evicted',
         nodeId: node.node_id,
@@ -202,13 +206,27 @@ export function buildDiffRows(
         thinkingPrefix: null,
         timestampPrefix: null,
       })
-      apiIndex++
+      continue
+    }
+
+    // Excluded — user/group exclusion from context
+    if (excludedNodeIds.has(node.node_id)) {
+      rows.push({
+        type: 'excluded',
+        nodeId: node.node_id,
+        role: node.role,
+        leftContent: node.content,
+        rightContent: null,
+        wasEdited: node.edited_content != null,
+        wasManual: node.mode === 'manual',
+        thinkingPrefix: null,
+        timestampPrefix: null,
+      })
       continue
     }
 
     // In-context message — pair with reconstructed message
     const reconstructed = reconstructedByNodeId.get(node.node_id)
-    apiIndex++
 
     if (!reconstructed) {
       // Shouldn't happen, but handle gracefully

@@ -17,6 +17,7 @@ export interface EraCell {
   role: string | null
   content: string                 // The content as it existed in this era
   isChanged: boolean              // Different from the last era that had content here?
+  isExcluded: boolean             // Was this node excluded from context in this era?
 }
 
 export interface Era {
@@ -90,6 +91,8 @@ export function computeCanvasGrid(
   const editMap = new Map<string, string>()
   // Track system prompt separately
   let currentSystemPrompt = treeDefaults.default_system_prompt ?? ''
+  // Track excluded node IDs
+  let currentExcludedIds = new Set<string>()
 
   // Era 0's lastActiveRow: messages that existed before the first intervention
   // (or all messages if no interventions)
@@ -106,6 +109,7 @@ export function computeCanvasGrid(
     role: 'system',
     content: treeDefaults.default_system_prompt ?? '',
     isChanged: true, // First appearance — always show content
+    isExcluded: false,
   })
 
   // Path node cells
@@ -121,6 +125,7 @@ export function computeCanvasGrid(
         role: node.role,
         content: '',
         isChanged: false,
+        isExcluded: false,
       })
     } else {
       era0Cells.push({
@@ -129,6 +134,7 @@ export function computeCanvasGrid(
         role: node.role,
         content: node.content,
         isChanged: true, // First appearance — always show content
+        isExcluded: currentExcludedIds.has(node.node_id),
       })
     }
   }
@@ -146,9 +152,12 @@ export function computeCanvasGrid(
   // null = row has never appeared (first appearance will be isChanged: true).
   // Only updated for non-absent cells, so absent gaps don't poison later comparisons.
   const lastKnownContent: (string | null)[] = new Array(totalRows).fill(null)
+  // Track exclusion state per row for change detection
+  const lastExcludedState: boolean[] = new Array(totalRows).fill(false)
   for (let i = 0; i < era0Cells.length; i++) {
     if (era0Cells[i].type !== 'absent') {
       lastKnownContent[i] = era0Cells[i].content
+      lastExcludedState[i] = era0Cells[i].isExcluded
     }
   }
 
@@ -166,6 +175,13 @@ export function computeCanvasGrid(
       }
     } else if (intervention.intervention_type === 'system_prompt_changed') {
       currentSystemPrompt = (intervention.new_value as string) ?? ''
+    } else if (intervention.intervention_type === 'exclusion_changed') {
+      try {
+        const ids: string[] = JSON.parse(intervention.new_value ?? '[]')
+        currentExcludedIds = new Set(ids)
+      } catch {
+        // Malformed — keep previous state
+      }
     }
 
     // Compute lastActiveRow: nodes created before the NEXT intervention (or all if last)
@@ -191,6 +207,7 @@ export function computeCanvasGrid(
       role: 'system',
       content: sysContent,
       isChanged: sysChanged,
+      isExcluded: false,
     })
     lastKnownContent[0] = sysContent
 
@@ -206,6 +223,7 @@ export function computeCanvasGrid(
           role: node.role,
           content: '',
           isChanged: false,
+          isExcluded: false,
         })
         // Do NOT update lastKnownContent — absent doesn't count
         continue
@@ -215,9 +233,12 @@ export function computeCanvasGrid(
       const editedContent = editMap.get(node.node_id)
       const content = editedContent ?? node.content
       const wasEdited = editedContent != null
+      const excluded = currentExcludedIds.has(node.node_id)
 
-      // Compare against last known content (skipping absent eras)
-      const isChanged = lastKnownContent[rowIdx] === null || content !== lastKnownContent[rowIdx]
+      // Content changed, or exclusion status flipped
+      const isChanged = lastKnownContent[rowIdx] === null
+        || content !== lastKnownContent[rowIdx]
+        || excluded !== lastExcludedState[rowIdx]
 
       cells.push({
         type: wasEdited ? 'edited' : 'normal',
@@ -225,13 +246,19 @@ export function computeCanvasGrid(
         role: node.role,
         content,
         isChanged,
+        isExcluded: excluded,
       })
       lastKnownContent[rowIdx] = content
+      lastExcludedState[rowIdx] = excluded
     }
+
+    const eraLabel = intervention.intervention_type === 'exclusion_changed'
+      ? `Exclusion ${iIdx + 1}`
+      : `Edit ${iIdx + 1}`
 
     eras.push({
       index: iIdx + 1,
-      label: `Edit ${iIdx + 1}`,
+      label: eraLabel,
       timestamp: intervention.timestamp,
       intervention,
       cells,

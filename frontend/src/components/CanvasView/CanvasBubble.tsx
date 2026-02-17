@@ -34,10 +34,12 @@ export function CanvasBubble({ cell, isFirstEra }: CanvasBubbleProps) {
         ` role-${roleClass}` +
         (isEdited ? ' edited' : '') +
         (isSystem ? ' system' : '') +
+        (cell.isExcluded ? ' excluded' : '') +
         (!isFirstEra ? ' changed' : '')
       }
     >
       {isEdited && <span className="canvas-tag edited">edited</span>}
+      {cell.isExcluded && <span className="canvas-tag excluded-tag">excluded</span>}
       {isSystem && !isFirstEra && <span className="canvas-tag system-tag">system prompt</span>}
       <div className="canvas-text">{cell.content}</div>
     </div>

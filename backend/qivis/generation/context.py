@@ -94,6 +94,7 @@ class ContextBuilder:
         messages = []
         excluded_token_total = 0
         excluded_node_count = 0
+        excluded_node_id_list: list[str] = []
         for n in path:
             if n["role"] not in ("user", "assistant", "tool"):
                 continue
@@ -102,6 +103,7 @@ class ContextBuilder:
                     self._maybe_prepend_timestamp(n, include_timestamps)
                 )
                 excluded_node_count += 1
+                excluded_node_id_list.append(n["node_id"])
                 continue
             content = self._maybe_prepend_timestamp(n, include_timestamps)
             if include_thinking and n["role"] == "assistant":
@@ -145,6 +147,8 @@ class ContextBuilder:
             breakdown=breakdown,
             excluded_tokens=excluded_token_total,
             excluded_count=excluded_node_count,
+            excluded_node_ids=excluded_node_id_list,
+            evicted_node_ids=report.evicted_node_ids,
         )
 
         return messages, usage, report

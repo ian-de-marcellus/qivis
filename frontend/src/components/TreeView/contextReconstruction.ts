@@ -15,13 +15,20 @@ export interface ReconstructedMessage {
   timestampPrefix: string | null
   /** The base content without any prefixes. */
   baseContent: string
+  /** True if this message was excluded from context (user/group exclusion). */
+  isExcluded: boolean
+  /** True if this message was evicted due to context window truncation. */
+  isEvicted: boolean
 }
 
 export interface ReconstructedContext {
   systemPrompt: string | null
+  /** All messages on the path (including excluded and evicted, with flags). */
   messages: ReconstructedMessage[]
   evictedCount: number
   evictedTokens: number
+  excludedCount: number
+  excludedTokens: number
   model: string | null
   provider: string | null
   samplingParams: SamplingParams | null
@@ -39,7 +46,7 @@ export interface ReconstructedContext {
  * Reconstruct the API request context for a given assistant node.
  * Walks the parent chain to build the ordered message list,
  * applies edits (uses edited_content where present), and marks
- * evicted messages based on context_usage.excluded_count.
+ * excluded and evicted messages using stored node ID lists.
  */
 export function reconstructContext(
   targetNode: NodeResponse,
@@ -59,6 +66,10 @@ export function reconstructContext(
   // Reverse to get root-first order
   pathNodes.reverse()
 
+  // Determine excluded and evicted node IDs from stored context_usage
+  const excludedNodeIds = new Set(targetNode.context_usage?.excluded_node_ids ?? [])
+  const evictedNodeIds = new Set(targetNode.context_usage?.evicted_node_ids ?? [])
+
   // Build messages matching what the backend ContextBuilder actually sent.
   // Only API-sendable roles (user, assistant, tool) — same filter as backend.
   // When include_timestamps was on: prepends [YYYY-MM-DD HH:MM] to content.
@@ -68,7 +79,7 @@ export function reconstructContext(
   const apiNodes = pathNodes.filter((n) =>
     n.role === 'user' || n.role === 'assistant' || n.role === 'tool',
   )
-  const allMessages: ReconstructedMessage[] = apiNodes.map((node) => {
+  const messages: ReconstructedMessage[] = apiNodes.map((node) => {
     const baseContent = node.edited_content ?? node.content
     let content = baseContent
     let hadTimestamp = false
@@ -111,23 +122,24 @@ export function reconstructContext(
       hadTimestampPrepended: hadTimestamp,
       thinkingPrefix,
       timestampPrefix,
+      isExcluded: excludedNodeIds.has(node.node_id),
+      isEvicted: evictedNodeIds.has(node.node_id),
     }
   })
 
-  // Determine eviction: first N messages were evicted from context
-  const evictedCount = targetNode.context_usage?.excluded_count ?? 0
-  const evictedTokens = targetNode.context_usage?.excluded_tokens ?? 0
-
-  // Split into evicted and in-context messages
-  const messages = evictedCount > 0
-    ? allMessages.slice(evictedCount)
-    : allMessages
+  // Counts for summary banners
+  const excludedCount = targetNode.context_usage?.excluded_count ?? 0
+  const excludedTokens = targetNode.context_usage?.excluded_tokens ?? 0
+  const evictedCount = evictedNodeIds.size
+  const evictedTokens = 0  // Not tracked separately yet
 
   return {
     systemPrompt: targetNode.system_prompt,
     messages,
     evictedCount,
     evictedTokens,
+    excludedCount,
+    excludedTokens,
     model: targetNode.model,
     provider: targetNode.provider,
     samplingParams: targetNode.sampling_params,

@@ -55,6 +55,7 @@ export function ContextSplitView({ rows, summary, context, responseContent, onDi
   if (summary.editedUpstream > 0) chips.push(`${summary.editedUpstream} edited`)
   if (summary.manualUpstream > 0) chips.push(`${summary.manualUpstream} prefilled`)
   if (summary.evictedCount > 0) chips.push(`${summary.evictedCount} evicted`)
+  if (summary.excludedCount > 0) chips.push(`${summary.excludedCount} excluded`)
   if (summary.systemPromptChanged) chips.push('system prompt')
   if (summary.modelChanged) chips.push('model')
   if (summary.providerChanged) chips.push('provider')
@@ -253,6 +254,19 @@ function SplitRow({ row }: { row: DiffRow }) {
           </div>
           <div className="split-row-cell split-row-right void">
             <span className="split-row-void-label">not in context</span>
+          </div>
+        </div>
+      )
+
+    case 'excluded':
+      return (
+        <div className="split-view-grid split-row excluded">
+          <div className="split-row-cell split-row-left">
+            <div className="split-row-role">{roleLabel(row.role)}</div>
+            <div className="split-row-content">{row.leftContent}</div>
+          </div>
+          <div className="split-row-cell split-row-right void">
+            <span className="split-row-void-label">excluded</span>
           </div>
         </div>
       )

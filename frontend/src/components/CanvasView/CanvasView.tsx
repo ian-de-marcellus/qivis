@@ -57,11 +57,53 @@ export function CanvasView({ treeId, pathNodes, treeDefaults, onDismiss }: Canva
     }
   }, [])
 
+  // Detect exclusion state changes between consecutive generated nodes.
+  // Only creates synthetic interventions when the exclusion set actually differs
+  // between two assistant nodes (i.e. a generation saw different context).
+  const combinedInterventions = useMemo(() => {
+    if (interventions == null) return null
+
+    const synthetic: InterventionEntry[] = []
+    const assistantNodes = pathNodes.filter((n) => n.role === 'assistant')
+
+    let prevExcludedIds: string[] = []
+    for (const node of assistantNodes) {
+      const excludedIds = node.context_usage?.excluded_node_ids ?? []
+      const prevSet = new Set(prevExcludedIds)
+      const currSet = new Set(excludedIds)
+
+      const changed =
+        prevSet.size !== currSet.size ||
+        excludedIds.some((id) => !prevSet.has(id)) ||
+        prevExcludedIds.some((id) => !currSet.has(id))
+
+      if (changed && (prevExcludedIds.length > 0 || excludedIds.length > 0)) {
+        synthetic.push({
+          event_id: `synthetic-excl-${node.node_id}`,
+          sequence_num: -1,
+          timestamp: node.created_at,
+          intervention_type: 'exclusion_changed',
+          node_id: null,
+          original_content: null,
+          new_content: null,
+          old_value: JSON.stringify(prevExcludedIds),
+          new_value: JSON.stringify(excludedIds),
+        })
+      }
+      prevExcludedIds = excludedIds
+    }
+
+    // Merge synthetic into real interventions, sort by timestamp
+    const combined = [...interventions, ...synthetic]
+    combined.sort((a, b) => a.timestamp.localeCompare(b.timestamp))
+    return combined
+  }, [interventions, pathNodes])
+
   // Compute grid
   const grid = useMemo(() => {
-    if (interventions == null) return null
-    return computeCanvasGrid(pathNodes, interventions, treeDefaults)
-  }, [pathNodes, interventions, treeDefaults])
+    if (combinedInterventions == null) return null
+    return computeCanvasGrid(pathNodes, combinedInterventions, treeDefaults)
+  }, [pathNodes, combinedInterventions, treeDefaults])
 
   // Format era header timestamp
   const formatEraTimestamp = (iso: string): string => {
@@ -85,6 +127,14 @@ export function CanvasView({ treeId, pathNodes, treeDefaults, onDismiss }: Canva
       if (node) {
         const idx = pathNodes.indexOf(node)
         return `${node.role} #${idx + 1}`
+      }
+    }
+    if (intervention.intervention_type === 'exclusion_changed') {
+      try {
+        const ids: string[] = JSON.parse(intervention.new_value ?? '[]')
+        return ids.length > 0 ? `${ids.length} excluded` : 'exclusions cleared'
+      } catch {
+        return 'exclusions'
       }
     }
     return ''

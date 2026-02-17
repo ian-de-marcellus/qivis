@@ -104,3 +104,20 @@
   color: var(--text-tertiary);
   border: 1px solid var(--border-subtle);
 }
+
+/* ---- Excluded cells ---- */
+
+.canvas-content.excluded {
+  opacity: 0.4;
+  border-left: 2px solid var(--error, #c44);
+  transition: opacity 0.15s;
+}
+
+.canvas-content.excluded:hover {
+  opacity: 0.6;
+}
+
+.canvas-tag.excluded-tag {
+  background: color-mix(in srgb, var(--error, #c44) 12%, transparent);
+  color: var(--error, #c44);
+}

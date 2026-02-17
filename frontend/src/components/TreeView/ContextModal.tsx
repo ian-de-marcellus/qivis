@@ -1,5 +1,5 @@
-import { Fragment, useEffect, useRef } from 'react'
-import type { ReconstructedContext } from './contextReconstruction.ts'
+import { Fragment, useEffect, useRef, useState } from 'react'
+import type { ReconstructedContext, ReconstructedMessage } from './contextReconstruction.ts'
 import { formatSamplingParams } from './contextReconstruction.ts'
 import './ContextModal.css'
 
@@ -19,6 +19,35 @@ function formatTimestamp(isoString: string): string {
     minute: '2-digit',
     second: '2-digit',
   })
+}
+
+function ExcludedMessageRow({ msg }: { msg: ReconstructedMessage }) {
+  const [expanded, setExpanded] = useState(false)
+  return (
+    <div className="context-modal-message excluded-message">
+      <div className="context-modal-message-header">
+        <span className="context-modal-message-role">{msg.role}</span>
+        <span className="context-modal-tag context-modal-tag-excluded">excluded</span>
+        <button
+          className="context-modal-expand-toggle"
+          onClick={() => setExpanded(!expanded)}
+        >
+          {expanded ? 'collapse' : 'expand'}
+        </button>
+      </div>
+      {expanded ? (
+        <div className="context-modal-message-content excluded-content">
+          {msg.baseContent}
+        </div>
+      ) : (
+        <div className="context-modal-message-content excluded-preview">
+          {msg.baseContent.length > 80
+            ? msg.baseContent.slice(0, 80) + '...'
+            : msg.baseContent}
+        </div>
+      )}
+    </div>
+  )
 }
 
 export function ContextModal({ context, onDismiss }: ContextModalProps) {
@@ -44,6 +73,7 @@ export function ContextModal({ context, onDismiss }: ContextModalProps) {
   }
 
   const samplingItems = formatSamplingParams(context.samplingParams)
+  const inContextCount = context.messages.filter((m) => !m.isExcluded && !m.isEvicted).length
 
   return (
     <div className="context-modal-backdrop" onClick={handleBackdropClick}>
@@ -103,7 +133,7 @@ export function ContextModal({ context, onDismiss }: ContextModalProps) {
         {/* Messages */}
         <div className="context-modal-section">
           <div className="context-modal-section-label">
-            Messages ({context.messages.length})
+            Messages ({inContextCount})
           </div>
 
           {context.evictedCount > 0 && (
@@ -113,44 +143,66 @@ export function ContextModal({ context, onDismiss }: ContextModalProps) {
             </div>
           )}
 
-          {context.contextUsage && context.contextUsage.excluded_count > 0 && (
+          {context.excludedCount > 0 && (
             <div className="context-modal-excluded-info">
-              {context.contextUsage.excluded_count} message{context.contextUsage.excluded_count !== 1 ? 's' : ''} excluded from context
-              {context.contextUsage.excluded_tokens > 0 && ` (${context.contextUsage.excluded_tokens.toLocaleString()} tokens)`}
+              {context.excludedCount} message{context.excludedCount !== 1 ? 's' : ''} excluded from context
+              {context.excludedTokens > 0 && ` (${context.excludedTokens.toLocaleString()} tokens)`}
             </div>
           )}
 
-          {context.messages.map((msg) => (
-            <div key={msg.nodeId} className="context-modal-message">
-              <div className="context-modal-message-header">
-                <span className="context-modal-message-role">{msg.role}</span>
-                {msg.wasEdited && (
-                  <span className="context-modal-tag context-modal-tag-edited">edited</span>
-                )}
-                {msg.wasManual && (
-                  <span className="context-modal-tag context-modal-tag-manual">manual</span>
-                )}
-                {msg.hadTimestampPrepended && (
-                  <span className="context-modal-tag context-modal-tag-augmented">+timestamp</span>
-                )}
-                {msg.hadThinkingPrepended && (
-                  <span className="context-modal-tag context-modal-tag-augmented">+thinking</span>
-                )}
+          {context.messages.map((msg) => {
+            if (msg.isEvicted) {
+              return (
+                <div key={msg.nodeId} className="context-modal-message evicted-message">
+                  <div className="context-modal-message-header">
+                    <span className="context-modal-message-role">{msg.role}</span>
+                    <span className="context-modal-tag context-modal-tag-evicted">evicted</span>
+                  </div>
+                  <div className="context-modal-message-content evicted-content">
+                    {msg.baseContent.length > 80
+                      ? msg.baseContent.slice(0, 80) + '...'
+                      : msg.baseContent}
+                  </div>
+                </div>
+              )
+            }
+
+            if (msg.isExcluded) {
+              return <ExcludedMessageRow key={msg.nodeId} msg={msg} />
+            }
+
+            return (
+              <div key={msg.nodeId} className="context-modal-message">
+                <div className="context-modal-message-header">
+                  <span className="context-modal-message-role">{msg.role}</span>
+                  {msg.wasEdited && (
+                    <span className="context-modal-tag context-modal-tag-edited">edited</span>
+                  )}
+                  {msg.wasManual && (
+                    <span className="context-modal-tag context-modal-tag-manual">manual</span>
+                  )}
+                  {msg.hadTimestampPrepended && (
+                    <span className="context-modal-tag context-modal-tag-augmented">+timestamp</span>
+                  )}
+                  {msg.hadThinkingPrepended && (
+                    <span className="context-modal-tag context-modal-tag-augmented">+thinking</span>
+                  )}
+                </div>
+                <div className="context-modal-message-content">
+                  {msg.thinkingPrefix && (
+                    <span className="context-augmented-thinking">{msg.thinkingPrefix}</span>
+                  )}
+                  {msg.timestampPrefix && (
+                    <span className="context-augmented-timestamp">{msg.timestampPrefix}</span>
+                  )}
+                  {msg.thinkingPrefix || msg.timestampPrefix
+                    ? msg.baseContent
+                    : msg.content
+                  }
+                </div>
               </div>
-              <div className="context-modal-message-content">
-                {msg.thinkingPrefix && (
-                  <span className="context-augmented-thinking">{msg.thinkingPrefix}</span>
-                )}
-                {msg.timestampPrefix && (
-                  <span className="context-augmented-timestamp">{msg.timestampPrefix}</span>
-                )}
-                {msg.thinkingPrefix || msg.timestampPrefix
-                  ? msg.baseContent
-                  : msg.content
-                }
-              </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
 
         {/* Response thinking */}

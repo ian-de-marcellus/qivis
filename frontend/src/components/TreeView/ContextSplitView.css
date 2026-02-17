@@ -393,3 +393,14 @@
 .split-view-body {
   /* Scrollable body content */
 }
+
+/* ---- Excluded row ---- */
+
+.split-row.excluded {
+  opacity: 0.5;
+  border-left: 2px solid var(--error, #c44);
+}
+
+.split-row.excluded .split-row-void-label {
+  color: var(--error, #c44);
+}

@@ -240,6 +240,71 @@
   word-break: break-word;
 }
 
+/* ---- Excluded messages ---- */
+
+.excluded-message {
+  opacity: 0.5;
+  border-left: 2px solid var(--error, #c44);
+  padding-left: var(--space-sm);
+  transition: opacity 0.15s;
+}
+
+.excluded-message:hover {
+  opacity: 0.7;
+}
+
+.context-modal-tag-excluded {
+  background: color-mix(in srgb, var(--error, #c44) 12%, transparent);
+  color: var(--error, #c44);
+}
+
+.excluded-preview {
+  font-size: var(--text-sm);
+  color: var(--text-tertiary);
+  font-style: italic;
+}
+
+.excluded-content {
+  opacity: 0.8;
+}
+
+.context-modal-expand-toggle {
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.context-modal-expand-toggle:hover {
+  color: var(--text-secondary);
+}
+
+/* ---- Evicted messages ---- */
+
+.evicted-message {
+  opacity: 0.35;
+  border-left: 2px dashed var(--border);
+  padding-left: var(--space-sm);
+}
+
+.context-modal-tag-evicted {
+  background: transparent;
+  color: var(--text-tertiary);
+  border: 1px solid var(--border);
+}
+
+.evicted-content {
+  font-size: var(--text-sm);
+  color: var(--text-tertiary);
+  font-style: italic;
+}
+
 /* ---- Augmented content (thinking/timestamps prepended to messages) ---- */
 
 .context-augmented-thinking {

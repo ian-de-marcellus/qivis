@@ -3161,3 +3161,35 @@ Two loose ends from the initial implementation. Both small but telling.
 **The edit history ghost**: When a message was edited and then restored to its original content, the edit history section vanished — because `edited_content` became null and the cache was empty, so `hasEditHistory` computed false. The previous session fixed the cache clearing (re-fetch instead of clear), but that only works within a session. After a page reload, the cache is cold and `edited_content` is null, so the history section would still be hidden. Added `edit_count` to `NodeResponse` — a server-side count of `NodeContentEdited` events for each node, queried via `json_extract` on the event store. Now `hasEditHistory` checks three signals: `edited_content != null`, `edit_count > 0`, or cache populated. The edit history survives page reloads, session boundaries, and restore-to-original.
 
 This is the kind of fix that reveals something about the architecture. The event store is the ground truth, but projected state is lossy — `edited_content` captures the *current* edit, not the *history*. The `edit_count` bridges that gap by surfacing just enough event-log information into the projection layer to make the UI correct. Not the full history — just the count, just enough to know "there's something to show."
+
+---
+
+### Exclusion integration: Context Modal + Palimpsest
+
+The two views that show "what the model saw" didn't know about exclusions yet. But the fix was more interesting than just threading new data through — there was a latent bug waiting.
+
+**The bug**: `contextReconstruction.ts` used `excluded_count` (an aggregate integer) as an eviction count, slicing N messages off the front of the path. Before Phase 6.3, `excluded_count` was always 0, so this was dead code. Now that real exclusions exist — scattered throughout the path, not sequential from the start — the slicing logic was wrong. Same bug in `contextDiffs.ts`.
+
+**The fix**: Added `excluded_node_ids` and `evicted_node_ids` (lists of specific node IDs) to `ContextUsage` in the backend. The `ContextBuilder` already computed an `EvictionReport` with evicted IDs and knew which nodes were excluded — it just discarded the specifics and only stored counts. Now it stores the receipts. The frontend reconstruction uses set membership instead of sequential slicing.
+
+**Context Modal**: Excluded messages render inline, collapsed by default, with a red left border and an expand/collapse toggle. Evicted messages are dimmer, dashed border. Both show truncated previews. The summary banner still shows aggregate counts but the inline rendering gives you the specific messages. This matters for the researcher — you want to see *which* messages were excluded, not just how many.
+
+**Palimpsest**: This was the more interesting design problem. Ian's requirement: new era columns only when the exclusion state change actually produced a generation with different context. Flipping the toggle three times before sending a message shouldn't create three columns. The solution is client-side synthetic interventions — walk consecutive assistant nodes on the path, compare their `context_usage.excluded_node_ids`, and only inject an `exclusion_changed` intervention when the sets differ. The era computation tracks `currentExcludedIds` alongside `editMap` and `currentSystemPrompt`, and cells carry `isExcluded` for visual treatment. Excluded cells in the palimpsest are dimmed with a red border, mirroring the context modal's visual language.
+
+The interesting symmetry: the context modal shows you what one generation saw (vertical: the message stack). The palimpsest shows you how that stack changed across time (horizontal: the eras). Exclusions are now visible in both dimensions.
+
+**The backfill**: Old generations stored `excluded_count: 28` but not which 28. The event store had all the receipts — `NodeContextExcluded`, `NodeContextIncluded`, `DigressionGroupCreated`, `DigressionGroupToggled` events in sequence order. A one-shot migration script replays them up to each generation's creation timestamp, reconstructs the effective exclusion set (individual + group, scope-filtered to the active path), and patches the `context_usage` JSON in the nodes table. All 7 nodes came back with exactly 28 IDs each, matching the stored count. Event sourcing paying dividends: the projection is lossy, but the log is total. You can always go back.
+
+---
+
+### On palimpsests, real and digital
+
+Went reading about actual palimpsest studies. The HMML Palimpsest Project at Collegeville, Minnesota has a 10th-century Georgian liturgical manuscript written over two Syriac texts from the late 6th century. They use multispectral imaging and X-ray fluorescence at Stanford's SLAC to separate the layers — the XRF isolates iron-gall ink compounds from calcium deposits in the parchment itself. The Georgian leaves were cut from a larger Syriac manuscript nearly double the size. Literal repurposing through erasure and rewriting.
+
+The analogy to what Qivis does is inexact but resonant. A parchment palimpsest has physical layers — scriptio inferior (undertext) and scriptio superior (overtext) — that occupy the same surface. Our palimpsest has temporal layers: the same message existing in different states across eras, each era a new "writing" over the conversation. The medieval scribe erased to reuse scarce parchment. The researcher edits to explore — what happens if I said this differently? What if the model hadn't seen those messages?
+
+The key difference: in manuscript palimpsests, the undertext is damaged. Recovery is partial, forensic. In Qivis, the event store preserves every layer perfectly. Nothing is lost. The palimpsest view is a choice of attention, not a recovery of damage. You *could* look at every version — the question is which juxtaposition reveals something.
+
+Ian's next idea pushes this further: comparing any node's context to any other node's, including across branches. The current split view compares to "original" (the tree defaults, no edits). But the interesting comparison might be between two siblings — what did the model see differently when it gave *this* answer vs. *that* answer? The diff becomes cross-branch, not just temporal. That's closer to a collation table in textual criticism — aligning witnesses of the same text to find variants.
+
+Also noticed CTK (Conversation Toolkit) — a plugin-based system for managing AI conversations across providers, using SQLite with tree-structured message storage. Similar architectural instincts (SQLite, trees as first-class), but it's a *management* tool (import, search, export) rather than a *research* tool (annotate, intervene, compare). The export strategies are telling: "longest path," "first path," "most recent path" — they flatten the tree to a line for export. Qivis never flattens. The tree is the point.
