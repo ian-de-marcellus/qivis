@@ -53,7 +53,9 @@ export interface NodeResponse {
   sibling_count: number
   sibling_index: number
   annotation_count: number
+  edit_count: number
   is_bookmarked: boolean
+  is_excluded: boolean
 }
 
 export interface ContextUsage {
@@ -166,6 +168,29 @@ export interface BookmarkResponse {
 export interface CreateBookmarkRequest {
   label: string
   notes?: string
+}
+
+export interface NodeExclusionResponse {
+  tree_id: string
+  node_id: string
+  scope_node_id: string
+  reason: string | null
+  created_at: string
+}
+
+export interface DigressionGroupResponse {
+  group_id: string
+  tree_id: string
+  label: string
+  node_ids: string[]
+  included: boolean
+  created_at: string
+}
+
+export interface CreateDigressionGroupRequest {
+  node_ids: string[]
+  label: string
+  excluded_by_default?: boolean
 }
 
 export interface AddAnnotationRequest {

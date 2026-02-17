@@ -5,8 +5,11 @@ import * as api from '../api/client.ts'
 import type {
   AnnotationResponse,
   BookmarkResponse,
+  CreateDigressionGroupRequest,
+  DigressionGroupResponse,
   EditHistoryEntry,
   GenerateRequest,
+  NodeExclusionResponse,
   NodeResponse,
   PatchTreeRequest,
   ProviderInfo,
@@ -53,6 +56,11 @@ interface TreeStore {
   taxonomy: TaxonomyResponse | null
   bookmarks: BookmarkResponse[]
   bookmarksLoading: boolean
+  exclusions: NodeExclusionResponse[]
+  digressionGroups: DigressionGroupResponse[]
+  digressionPanelOpen: boolean
+  groupSelectionMode: boolean
+  selectedGroupNodeIds: string[]
 
   // Actions
   fetchTrees: () => Promise<void>
@@ -99,6 +107,16 @@ interface TreeStore {
   removeBookmark: (bookmarkId: string) => Promise<void>
   summarizeBookmark: (bookmarkId: string) => Promise<void>
   navigateToBookmark: (bookmark: BookmarkResponse) => void
+  fetchExclusions: () => Promise<void>
+  excludeNode: (nodeId: string, scopeNodeId: string, reason?: string) => Promise<void>
+  includeNode: (nodeId: string, scopeNodeId: string) => Promise<void>
+  fetchDigressionGroups: () => Promise<void>
+  createDigressionGroup: (req: CreateDigressionGroupRequest) => Promise<boolean>
+  toggleDigressionGroup: (groupId: string, included: boolean) => Promise<void>
+  deleteDigressionGroup: (groupId: string) => Promise<void>
+  setDigressionPanelOpen: (open: boolean) => void
+  setGroupSelectionMode: (active: boolean) => void
+  toggleGroupNodeSelection: (nodeId: string) => void
 }
 
 /**
@@ -172,6 +190,11 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
   taxonomy: null,
   bookmarks: [],
   bookmarksLoading: false,
+  exclusions: [],
+  digressionGroups: [],
+  digressionPanelOpen: false,
+  groupSelectionMode: false,
+  selectedGroupNodeIds: [],
 
   fetchTrees: async () => {
     set({ isLoading: true, error: null })
@@ -208,14 +231,25 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
       taxonomy: null,
       bookmarks: [],
       bookmarksLoading: false,
+      exclusions: [],
+      digressionGroups: [],
+      digressionPanelOpen: false,
+      groupSelectionMode: false,
+      selectedGroupNodeIds: [],
     })
     try {
       const tree = await api.getTree(treeId)
       set({ currentTree: tree, isLoading: false })
-      // Fetch bookmarks for the new tree in the background
+      // Fetch bookmarks and exclusions for the new tree in the background
       api.getTreeBookmarks(treeId).then((bookmarks) => {
         set({ bookmarks })
       }).catch(() => {/* ignore bookmark fetch errors */})
+      api.getExclusions(treeId).then((exclusions) => {
+        set({ exclusions })
+      }).catch(() => {/* ignore exclusion fetch errors */})
+      api.getDigressionGroups(treeId).then((digressionGroups) => {
+        set({ digressionGroups })
+      }).catch(() => {/* ignore group fetch errors */})
     } catch (e) {
       set({ error: String(e), isLoading: false })
     }
@@ -446,21 +480,24 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
 
     try {
       const updated = await api.editNodeContent(currentTree.tree_id, nodeId, editedContent)
-      // Update node in tree and invalidate edit history cache for this node
-      set((state) => {
-        const { [nodeId]: _, ...remainingCache } = state.editHistoryCache
-        return {
-          currentTree: state.currentTree
-            ? {
-                ...state.currentTree,
-                nodes: state.currentTree.nodes.map((n) =>
-                  n.node_id === nodeId ? { ...n, edited_content: updated.edited_content } : n,
-                ),
-              }
-            : null,
-          editHistoryCache: remainingCache,
-        }
-      })
+      // Update node in tree, then re-fetch edit history so the section stays visible
+      // even after restoring to original (edited_content=null but history exists)
+      set((state) => ({
+        currentTree: state.currentTree
+          ? {
+              ...state.currentTree,
+              nodes: state.currentTree.nodes.map((n) =>
+                n.node_id === nodeId ? { ...n, edited_content: updated.edited_content } : n,
+              ),
+            }
+          : null,
+      }))
+      // Re-fetch edit history in background to keep cache populated
+      api.getEditHistory(currentTree.tree_id, nodeId).then((history) => {
+        set((state) => ({
+          editHistoryCache: { ...state.editHistoryCache, [nodeId]: history.entries },
+        }))
+      }).catch(() => {/* ignore */})
     } catch (e) {
       set({ error: String(e) })
     }
@@ -1090,4 +1127,145 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
   navigateToBookmark: (bookmark: BookmarkResponse) => {
     get().navigateToNode(bookmark.node_id)
   },
+
+  fetchExclusions: async () => {
+    const { currentTree } = get()
+    if (!currentTree) return
+
+    try {
+      const exclusions = await api.getExclusions(currentTree.tree_id)
+      set({ exclusions })
+    } catch (e) {
+      set({ error: String(e) })
+    }
+  },
+
+  excludeNode: async (nodeId: string, scopeNodeId: string, reason?: string) => {
+    const { currentTree } = get()
+    if (!currentTree) return
+
+    try {
+      const exclusion = await api.excludeNode(currentTree.tree_id, nodeId, scopeNodeId, reason)
+      set((state) => ({
+        exclusions: [...state.exclusions, exclusion],
+        currentTree: state.currentTree
+          ? {
+              ...state.currentTree,
+              nodes: state.currentTree.nodes.map((n) =>
+                n.node_id === nodeId ? { ...n, is_excluded: true } : n,
+              ),
+            }
+          : null,
+      }))
+    } catch (e) {
+      set({ error: String(e) })
+    }
+  },
+
+  includeNode: async (nodeId: string, scopeNodeId: string) => {
+    const { currentTree } = get()
+    if (!currentTree) return
+
+    try {
+      await api.includeNode(currentTree.tree_id, nodeId, scopeNodeId)
+      set((state) => {
+        const remaining = state.exclusions.filter(
+          (ex) => !(ex.node_id === nodeId && ex.scope_node_id === scopeNodeId),
+        )
+        // Node is only fully un-excluded if no exclusion records remain for it
+        const stillExcluded = remaining.some((ex) => ex.node_id === nodeId)
+        return {
+          exclusions: remaining,
+          currentTree: state.currentTree
+            ? {
+                ...state.currentTree,
+                nodes: state.currentTree.nodes.map((n) =>
+                  n.node_id === nodeId ? { ...n, is_excluded: stillExcluded } : n,
+                ),
+              }
+            : null,
+        }
+      })
+    } catch (e) {
+      set({ error: String(e) })
+    }
+  },
+
+  fetchDigressionGroups: async () => {
+    const { currentTree } = get()
+    if (!currentTree) return
+
+    try {
+      const digressionGroups = await api.getDigressionGroups(currentTree.tree_id)
+      set({ digressionGroups })
+    } catch (e) {
+      set({ error: String(e) })
+    }
+  },
+
+  createDigressionGroup: async (req: CreateDigressionGroupRequest) => {
+    const { currentTree } = get()
+    if (!currentTree) return false
+
+    try {
+      const group = await api.createDigressionGroup(currentTree.tree_id, req)
+      set((state) => ({
+        digressionGroups: [...state.digressionGroups, group],
+      }))
+      return true
+    } catch (e) {
+      const msg = String(e)
+      // Extract user-friendly message from API errors
+      if (msg.includes('not contiguous')) {
+        set({ error: 'Selected messages must be contiguous (no gaps between them).' })
+      } else {
+        const detailMatch = msg.match(/"detail"\s*:\s*"([^"]+)"/)
+        set({ error: detailMatch ? detailMatch[1] : msg })
+      }
+      return false
+    }
+  },
+
+  toggleDigressionGroup: async (groupId: string, included: boolean) => {
+    const { currentTree } = get()
+    if (!currentTree) return
+
+    try {
+      const updated = await api.toggleDigressionGroup(currentTree.tree_id, groupId, included)
+      set((state) => ({
+        digressionGroups: state.digressionGroups.map((g) =>
+          g.group_id === groupId ? updated : g,
+        ),
+      }))
+    } catch (e) {
+      set({ error: String(e) })
+    }
+  },
+
+  deleteDigressionGroup: async (groupId: string) => {
+    const { currentTree } = get()
+    if (!currentTree) return
+
+    try {
+      await api.deleteDigressionGroup(currentTree.tree_id, groupId)
+      set((state) => ({
+        digressionGroups: state.digressionGroups.filter((g) => g.group_id !== groupId),
+      }))
+    } catch (e) {
+      set({ error: String(e) })
+    }
+  },
+
+  setDigressionPanelOpen: (open: boolean) => set({ digressionPanelOpen: open }),
+
+  setGroupSelectionMode: (active: boolean) => set({
+    groupSelectionMode: active,
+    selectedGroupNodeIds: active ? [] : [],
+  }),
+
+  toggleGroupNodeSelection: (nodeId: string) => set((state) => ({
+    selectedGroupNodeIds: state.selectedGroupNodeIds.includes(nodeId)
+      ? state.selectedGroupNodeIds.filter((id) => id !== nodeId)
+      : [...state.selectedGroupNodeIds, nodeId],
+  })),
 }))

@@ -10,7 +10,8 @@ interface TreeSettingsProps {
 }
 
 export function TreeSettings({ graphOpen, onToggleGraph }: TreeSettingsProps) {
-  const { currentTree, updateTree, providers, fetchProviders, canvasOpen, setCanvasOpen } = useTreeStore()
+  // Close graph when opening groups panel (mutual exclusion for right pane)
+  const { currentTree, updateTree, providers, fetchProviders, canvasOpen, setCanvasOpen, digressionPanelOpen, setDigressionPanelOpen } = useTreeStore()
   const [isOpen, setIsOpen] = useState(false)
   const [isEditingTitle, setIsEditingTitle] = useState(false)
 
@@ -205,6 +206,24 @@ export function TreeSettings({ graphOpen, onToggleGraph }: TreeSettingsProps) {
             <rect x="2" y="3" width="5" height="14" rx="1" />
             <rect x="8" y="3" width="5" height="10" rx="1" />
             <rect x="14" y="3" width="4" height="6" rx="1" />
+          </svg>
+        </button>
+        <button
+          className={`graph-toggle ${digressionPanelOpen ? 'active' : ''}`}
+          onClick={() => {
+            if (!digressionPanelOpen && graphOpen && onToggleGraph) {
+              onToggleGraph() // close graph first
+            }
+            setDigressionPanelOpen(!digressionPanelOpen)
+          }}
+          aria-label={digressionPanelOpen ? 'Hide digression groups' : 'Show digression groups'}
+          title={digressionPanelOpen ? 'Hide groups' : 'Digression groups'}
+        >
+          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+            <rect x="3" y="3" width="14" height="4" rx="1" />
+            <rect x="3" y="9" width="14" height="4" rx="1" />
+            <line x1="6" y1="5" x2="6" y2="9" />
+            <line x1="14" y1="5" x2="14" y2="9" />
           </svg>
         </button>
         <button

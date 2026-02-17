@@ -113,6 +113,13 @@ export function ContextModal({ context, onDismiss }: ContextModalProps) {
             </div>
           )}
 
+          {context.contextUsage && context.contextUsage.excluded_count > 0 && (
+            <div className="context-modal-excluded-info">
+              {context.contextUsage.excluded_count} message{context.contextUsage.excluded_count !== 1 ? 's' : ''} excluded from context
+              {context.contextUsage.excluded_tokens > 0 && ` (${context.contextUsage.excluded_tokens.toLocaleString()} tokens)`}
+            </div>
+          )}
+
           {context.messages.map((msg) => (
             <div key={msg.nodeId} className="context-modal-message">
               <div className="context-modal-message-header">

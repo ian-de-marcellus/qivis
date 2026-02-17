@@ -88,6 +88,32 @@ CREATE TABLE IF NOT EXISTS bookmarks (
 
 CREATE INDEX IF NOT EXISTS idx_bookmarks_tree_id ON bookmarks(tree_id);
 CREATE INDEX IF NOT EXISTS idx_bookmarks_node_id ON bookmarks(node_id);
+
+CREATE TABLE IF NOT EXISTS node_exclusions (
+    tree_id TEXT NOT NULL,
+    node_id TEXT NOT NULL,
+    scope_node_id TEXT NOT NULL,
+    reason TEXT,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (tree_id, node_id, scope_node_id)
+);
+
+CREATE TABLE IF NOT EXISTS digression_groups (
+    group_id TEXT PRIMARY KEY,
+    tree_id TEXT NOT NULL,
+    label TEXT NOT NULL,
+    included INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_digression_groups_tree_id ON digression_groups(tree_id);
+
+CREATE TABLE IF NOT EXISTS digression_group_nodes (
+    group_id TEXT NOT NULL,
+    node_id TEXT NOT NULL,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (group_id, node_id)
+);
 """
 
 # Migrations for existing databases that already have the nodes table.

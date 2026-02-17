@@ -12,8 +12,12 @@ from qivis.models import (
     BookmarkCreatedPayload,
     BookmarkRemovedPayload,
     BookmarkSummaryGeneratedPayload,
+    DigressionGroupCreatedPayload,
+    DigressionGroupToggledPayload,
     EventEnvelope,
     NodeContentEditedPayload,
+    NodeContextExcludedPayload,
+    NodeContextIncludedPayload,
     NodeCreatedPayload,
     SamplingParams,
     TreeCreatedPayload,
@@ -319,6 +323,93 @@ def make_bookmark_summary_generated_envelope(
         timestamp=datetime.now(UTC),
         device_id="test",
         event_type="BookmarkSummaryGenerated",
+        payload=payload.model_dump(),
+    )
+
+
+def make_node_context_excluded_envelope(
+    tree_id: str,
+    node_id: str,
+    scope_node_id: str,
+    reason: str | None = None,
+) -> EventEnvelope:
+    """Create a NodeContextExcluded EventEnvelope for testing."""
+    payload = NodeContextExcludedPayload(
+        node_id=node_id,
+        scope_node_id=scope_node_id,
+        reason=reason,
+    )
+    return EventEnvelope(
+        event_id=str(uuid4()),
+        tree_id=tree_id,
+        timestamp=datetime.now(UTC),
+        device_id="test",
+        event_type="NodeContextExcluded",
+        payload=payload.model_dump(),
+    )
+
+
+def make_node_context_included_envelope(
+    tree_id: str,
+    node_id: str,
+    scope_node_id: str,
+) -> EventEnvelope:
+    """Create a NodeContextIncluded EventEnvelope for testing."""
+    payload = NodeContextIncludedPayload(
+        node_id=node_id,
+        scope_node_id=scope_node_id,
+    )
+    return EventEnvelope(
+        event_id=str(uuid4()),
+        tree_id=tree_id,
+        timestamp=datetime.now(UTC),
+        device_id="test",
+        event_type="NodeContextIncluded",
+        payload=payload.model_dump(),
+    )
+
+
+def make_digression_group_created_envelope(
+    tree_id: str,
+    group_id: str | None = None,
+    node_ids: list[str] | None = None,
+    label: str = "Digression",
+    excluded_by_default: bool = False,
+) -> EventEnvelope:
+    """Create a DigressionGroupCreated EventEnvelope for testing."""
+    group_id = group_id or str(uuid4())
+    payload = DigressionGroupCreatedPayload(
+        group_id=group_id,
+        node_ids=node_ids or [],
+        label=label,
+        excluded_by_default=excluded_by_default,
+    )
+    return EventEnvelope(
+        event_id=str(uuid4()),
+        tree_id=tree_id,
+        timestamp=datetime.now(UTC),
+        device_id="test",
+        event_type="DigressionGroupCreated",
+        payload=payload.model_dump(),
+    )
+
+
+def make_digression_group_toggled_envelope(
+    tree_id: str,
+    group_id: str,
+    included: bool,
+) -> EventEnvelope:
+    """Create a DigressionGroupToggled EventEnvelope for testing."""
+    payload = DigressionGroupToggledPayload(
+        group_id=group_id,
+        included=included,
+    )
+    return EventEnvelope(
+        event_id=str(uuid4()),
+        tree_id=tree_id,
+        timestamp=datetime.now(UTC),
+        device_id="test",
+        event_type="DigressionGroupToggled",
         payload=payload.model_dump(),
     )
 

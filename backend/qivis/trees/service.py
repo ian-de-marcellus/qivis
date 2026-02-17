@@ -17,8 +17,12 @@ from qivis.models import (
     BookmarkCreatedPayload,
     BookmarkRemovedPayload,
     BookmarkSummaryGeneratedPayload,
+    DigressionGroupCreatedPayload,
+    DigressionGroupToggledPayload,
     EventEnvelope,
     NodeContentEditedPayload,
+    NodeContextExcludedPayload,
+    NodeContextIncludedPayload,
     NodeCreatedPayload,
     TreeCreatedPayload,
     TreeMetadataUpdatedPayload,
@@ -28,12 +32,16 @@ from qivis.trees.schemas import (
     AnnotationResponse,
     BookmarkResponse,
     CreateBookmarkRequest,
+    CreateDigressionGroupRequest,
     CreateNodeRequest,
     CreateTreeRequest,
+    DigressionGroupResponse,
     EditHistoryEntry,
     EditHistoryResponse,
+    ExcludeNodeRequest,
     InterventionEntry,
     InterventionTimelineResponse,
+    NodeExclusionResponse,
     NodeResponse,
     PatchNodeContentRequest,
     PatchTreeRequest,
@@ -170,10 +178,28 @@ class TreeService:
         )
         bookmark_node_ids = {r["node_id"] for r in bm_rows}
 
+        # Excluded node IDs (any node with at least one exclusion record)
+        excl_rows = await self._db.fetchall(
+            "SELECT DISTINCT node_id FROM node_exclusions WHERE tree_id = ?",
+            (tree_id,),
+        )
+        excluded_node_ids = {r["node_id"] for r in excl_rows}
+
+        # Edit counts per node (from event log)
+        edit_rows = await self._db.fetchall(
+            "SELECT json_extract(payload, '$.node_id') as node_id, COUNT(*) as cnt "
+            "FROM events WHERE tree_id = ? AND event_type = 'NodeContentEdited' "
+            "GROUP BY json_extract(payload, '$.node_id')",
+            (tree_id,),
+        )
+        edit_counts = {r["node_id"]: r["cnt"] for r in edit_rows}
+
         return self._tree_detail_from_row(
             tree, nodes,
             annotation_counts=annotation_counts,
             bookmark_node_ids=bookmark_node_ids,
+            excluded_node_ids=excluded_node_ids,
+            edit_counts=edit_counts,
         )
 
     async def list_trees(self) -> list[TreeSummary]:
@@ -649,6 +675,223 @@ class TreeService:
         assert updated_row is not None
         return self._bookmark_from_row(updated_row)
 
+    # -- Context exclusion methods --
+
+    async def exclude_node(
+        self, tree_id: str, node_id: str, request: ExcludeNodeRequest,
+    ) -> NodeExclusionResponse:
+        """Exclude a node from context on a specific branch path."""
+        tree = await self._projector.get_tree(tree_id)
+        if tree is None:
+            raise TreeNotFoundError(tree_id)
+
+        nodes = await self._projector.get_nodes(tree_id)
+        node_ids = {n["node_id"] for n in nodes}
+        if node_id not in node_ids:
+            raise NodeNotFoundError(node_id)
+        if request.scope_node_id not in node_ids:
+            raise NodeNotFoundError(request.scope_node_id)
+
+        now = datetime.now(UTC)
+        payload = NodeContextExcludedPayload(
+            node_id=node_id,
+            scope_node_id=request.scope_node_id,
+            reason=request.reason,
+        )
+        event = EventEnvelope(
+            event_id=str(uuid4()),
+            tree_id=tree_id,
+            timestamp=now,
+            device_id="local",
+            event_type="NodeContextExcluded",
+            payload=payload.model_dump(),
+        )
+
+        await self._store.append(event)
+        await self._projector.project([event])
+
+        return NodeExclusionResponse(
+            tree_id=tree_id,
+            node_id=node_id,
+            scope_node_id=request.scope_node_id,
+            reason=request.reason,
+            created_at=now.isoformat(),
+        )
+
+    async def include_node(
+        self, tree_id: str, node_id: str, scope_node_id: str,
+    ) -> None:
+        """Re-include a previously excluded node (idempotent)."""
+        now = datetime.now(UTC)
+        payload = NodeContextIncludedPayload(
+            node_id=node_id,
+            scope_node_id=scope_node_id,
+        )
+        event = EventEnvelope(
+            event_id=str(uuid4()),
+            tree_id=tree_id,
+            timestamp=now,
+            device_id="local",
+            event_type="NodeContextIncluded",
+            payload=payload.model_dump(),
+        )
+
+        await self._store.append(event)
+        await self._projector.project([event])
+
+    async def get_tree_exclusions(
+        self, tree_id: str,
+    ) -> list[NodeExclusionResponse]:
+        """Get all exclusions for a tree."""
+        rows = await self._db.fetchall(
+            "SELECT * FROM node_exclusions WHERE tree_id = ?",
+            (tree_id,),
+        )
+        return [
+            NodeExclusionResponse(
+                tree_id=r["tree_id"],
+                node_id=r["node_id"],
+                scope_node_id=r["scope_node_id"],
+                reason=r["reason"],
+                created_at=r["created_at"],
+            )
+            for r in rows
+        ]
+
+    # -- Digression group methods --
+
+    async def create_digression_group(
+        self, tree_id: str, request: CreateDigressionGroupRequest,
+    ) -> DigressionGroupResponse:
+        """Create a digression group. Validates nodes exist and are contiguous."""
+        tree = await self._projector.get_tree(tree_id)
+        if tree is None:
+            raise TreeNotFoundError(tree_id)
+
+        nodes = await self._projector.get_nodes(tree_id)
+        node_map = {n["node_id"]: n for n in nodes}
+
+        # Validate all nodes exist in this tree
+        for nid in request.node_ids:
+            if nid not in node_map:
+                raise NodeNotFoundError(nid)
+
+        # Validate contiguity: nodes must form a contiguous segment of a parent chain
+        if len(request.node_ids) > 1:
+            # Build a quick child-of lookup
+            ordered = request.node_ids
+            for i in range(1, len(ordered)):
+                child = node_map[ordered[i]]
+                if child["parent_id"] != ordered[i - 1]:
+                    raise NonContiguousGroupError(request.node_ids)
+
+        group_id = str(uuid4())
+        now = datetime.now(UTC)
+
+        payload = DigressionGroupCreatedPayload(
+            group_id=group_id,
+            node_ids=request.node_ids,
+            label=request.label,
+            excluded_by_default=request.excluded_by_default,
+        )
+        event = EventEnvelope(
+            event_id=str(uuid4()),
+            tree_id=tree_id,
+            timestamp=now,
+            device_id="local",
+            event_type="DigressionGroupCreated",
+            payload=payload.model_dump(),
+        )
+
+        await self._store.append(event)
+        await self._projector.project([event])
+
+        return DigressionGroupResponse(
+            group_id=group_id,
+            tree_id=tree_id,
+            label=request.label,
+            node_ids=request.node_ids,
+            included=not request.excluded_by_default,
+            created_at=now.isoformat(),
+        )
+
+    async def get_digression_groups(
+        self, tree_id: str,
+    ) -> list[DigressionGroupResponse]:
+        """Get all digression groups for a tree."""
+        groups = await self._projector.get_digression_groups(tree_id)
+        return [
+            DigressionGroupResponse(
+                group_id=g["group_id"],
+                tree_id=g["tree_id"],
+                label=g["label"],
+                node_ids=g["node_ids"],
+                included=bool(g["included"]),
+                created_at=g["created_at"],
+            )
+            for g in groups
+        ]
+
+    async def toggle_digression_group(
+        self, tree_id: str, group_id: str, included: bool,
+    ) -> DigressionGroupResponse:
+        """Toggle a digression group's included state."""
+        row = await self._db.fetchone(
+            "SELECT * FROM digression_groups WHERE group_id = ? AND tree_id = ?",
+            (group_id, tree_id),
+        )
+        if row is None:
+            raise DigressionGroupNotFoundError(group_id)
+
+        now = datetime.now(UTC)
+        payload = DigressionGroupToggledPayload(
+            group_id=group_id,
+            included=included,
+        )
+        event = EventEnvelope(
+            event_id=str(uuid4()),
+            tree_id=tree_id,
+            timestamp=now,
+            device_id="local",
+            event_type="DigressionGroupToggled",
+            payload=payload.model_dump(),
+        )
+
+        await self._store.append(event)
+        await self._projector.project([event])
+
+        # Read back with member nodes
+        groups = await self._projector.get_digression_groups(tree_id)
+        group = next(g for g in groups if g["group_id"] == group_id)
+        return DigressionGroupResponse(
+            group_id=group["group_id"],
+            tree_id=group["tree_id"],
+            label=group["label"],
+            node_ids=group["node_ids"],
+            included=bool(group["included"]),
+            created_at=group["created_at"],
+        )
+
+    async def delete_digression_group(
+        self, tree_id: str, group_id: str,
+    ) -> None:
+        """Delete a digression group. Direct projection deletion (no event)."""
+        row = await self._db.fetchone(
+            "SELECT * FROM digression_groups WHERE group_id = ? AND tree_id = ?",
+            (group_id, tree_id),
+        )
+        if row is None:
+            raise DigressionGroupNotFoundError(group_id)
+
+        await self._db.execute(
+            "DELETE FROM digression_group_nodes WHERE group_id = ?",
+            (group_id,),
+        )
+        await self._db.execute(
+            "DELETE FROM digression_groups WHERE group_id = ?",
+            (group_id,),
+        )
+
     @staticmethod
     def _bookmark_from_row(row: dict) -> BookmarkResponse:
         """Convert a projected bookmark row to a response."""
@@ -710,6 +953,8 @@ class TreeService:
         *,
         annotation_counts: dict[str, int] | None = None,
         bookmark_node_ids: set[str] | None = None,
+        excluded_node_ids: set[str] | None = None,
+        edit_counts: dict[str, int] | None = None,
     ) -> TreeDetailResponse:
         """Convert a projected tree row + node rows to a response."""
         sibling_info = TreeService._compute_sibling_info(node_rows)
@@ -740,6 +985,8 @@ class TreeService:
                     sibling_info=sibling_info,
                     annotation_counts=annotation_counts,
                     bookmark_node_ids=bookmark_node_ids,
+                    excluded_node_ids=excluded_node_ids,
+                    edit_counts=edit_counts,
                 )
                 for n in node_rows
             ],
@@ -752,6 +999,8 @@ class TreeService:
         sibling_info: dict[str, tuple[int, int]] | None = None,
         annotation_counts: dict[str, int] | None = None,
         bookmark_node_ids: set[str] | None = None,
+        excluded_node_ids: set[str] | None = None,
+        edit_counts: dict[str, int] | None = None,
     ) -> NodeResponse:
         """Convert a projected node row to a response."""
 
@@ -773,6 +1022,14 @@ class TreeService:
         ib = False
         if bookmark_node_ids is not None:
             ib = row["node_id"] in bookmark_node_ids
+
+        ie = False
+        if excluded_node_ids is not None:
+            ie = row["node_id"] in excluded_node_ids
+
+        ec = 0
+        if edit_counts is not None:
+            ec = edit_counts.get(row["node_id"], 0)
 
         return NodeResponse(
             node_id=row["node_id"],
@@ -801,7 +1058,9 @@ class TreeService:
             sibling_index=si,
             sibling_count=sc,
             annotation_count=ac,
+            edit_count=ec,
             is_bookmarked=ib,
+            is_excluded=ie,
         )
 
 
@@ -838,3 +1097,15 @@ class InvalidParentError(Exception):
     def __init__(self, parent_id: str) -> None:
         self.parent_id = parent_id
         super().__init__(f"Invalid parent node: {parent_id}")
+
+
+class DigressionGroupNotFoundError(Exception):
+    def __init__(self, group_id: str) -> None:
+        self.group_id = group_id
+        super().__init__(f"Digression group not found: {group_id}")
+
+
+class NonContiguousGroupError(Exception):
+    def __init__(self, node_ids: list[str]) -> None:
+        self.node_ids = node_ids
+        super().__init__(f"Nodes are not contiguous: {node_ids}")

@@ -208,12 +208,13 @@ class BookmarkSummaryGeneratedPayload(BaseModel):
 
 class NodeContextExcludedPayload(BaseModel):
     node_id: str
-    scope: Literal["this_branch", "all_branches"]
+    scope_node_id: str  # leaf of active path at exclusion time
     reason: str | None = None
 
 
 class NodeContextIncludedPayload(BaseModel):
     node_id: str
+    scope_node_id: str
 
 
 class DigressionGroupCreatedPayload(BaseModel):

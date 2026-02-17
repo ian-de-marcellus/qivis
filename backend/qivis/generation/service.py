@@ -106,7 +106,8 @@ class GenerationService:
         sampling_params: SamplingParams | None = None,
     ) -> NodeResponse:
         """Generate a non-streaming response and store as a new node."""
-        tree, nodes, resolved_model, resolved_prompt, resolved_params, include_ts, include_think = (
+        (tree, nodes, resolved_model, resolved_prompt, resolved_params,
+         include_ts, include_think, excl_ids, dg_map, excl_gids) = (
             await self._resolve_context(tree_id, node_id, model, system_prompt, sampling_params)
         )
         context_limit = get_model_context_limit(resolved_model)
@@ -117,6 +118,9 @@ class GenerationService:
             model_context_limit=context_limit,
             include_timestamps=include_ts,
             include_thinking=include_think,
+            excluded_ids=excl_ids,
+            digression_groups=dg_map,
+            excluded_group_ids=excl_gids,
         )
         generation_id = str(uuid4())
 
@@ -153,7 +157,8 @@ class GenerationService:
         sampling_params: SamplingParams | None = None,
     ) -> list[NodeResponse]:
         """Generate N responses in parallel and store as sibling nodes."""
-        tree, nodes, resolved_model, resolved_prompt, resolved_params, include_ts, include_think = (
+        (tree, nodes, resolved_model, resolved_prompt, resolved_params,
+         include_ts, include_think, excl_ids, dg_map, excl_gids) = (
             await self._resolve_context(tree_id, node_id, model, system_prompt, sampling_params)
         )
         context_limit = get_model_context_limit(resolved_model)
@@ -164,6 +169,9 @@ class GenerationService:
             model_context_limit=context_limit,
             include_timestamps=include_ts,
             include_thinking=include_think,
+            excluded_ids=excl_ids,
+            digression_groups=dg_map,
+            excluded_group_ids=excl_gids,
         )
         generation_id = str(uuid4())
 
@@ -205,7 +213,8 @@ class GenerationService:
         sampling_params: SamplingParams | None = None,
     ) -> AsyncIterator[StreamChunk]:
         """Stream N responses simultaneously, yielding tagged chunks."""
-        tree, nodes, resolved_model, resolved_prompt, resolved_params, include_ts, include_think = (
+        (tree, nodes, resolved_model, resolved_prompt, resolved_params,
+         include_ts, include_think, excl_ids, dg_map, excl_gids) = (
             await self._resolve_context(
                 tree_id, node_id, model, system_prompt, sampling_params
             )
@@ -219,6 +228,9 @@ class GenerationService:
                 model_context_limit=context_limit,
                 include_timestamps=include_ts,
                 include_thinking=include_think,
+                excluded_ids=excl_ids,
+                digression_groups=dg_map,
+                excluded_group_ids=excl_gids,
             )
         )
         generation_id = str(uuid4())
@@ -322,7 +334,8 @@ class GenerationService:
         sampling_params: SamplingParams | None = None,
     ) -> AsyncIterator[StreamChunk]:
         """Generate a streaming response, yielding chunks."""
-        tree, nodes, resolved_model, resolved_prompt, resolved_params, include_ts, include_think = (
+        (tree, nodes, resolved_model, resolved_prompt, resolved_params,
+         include_ts, include_think, excl_ids, dg_map, excl_gids) = (
             await self._resolve_context(tree_id, node_id, model, system_prompt, sampling_params)
         )
         context_limit = get_model_context_limit(resolved_model)
@@ -333,6 +346,9 @@ class GenerationService:
             model_context_limit=context_limit,
             include_timestamps=include_ts,
             include_thinking=include_think,
+            excluded_ids=excl_ids,
+            digression_groups=dg_map,
+            excluded_group_ids=excl_gids,
         )
         generation_id = str(uuid4())
 
@@ -381,8 +397,13 @@ class GenerationService:
         model: str | None,
         system_prompt: str | None,
         sampling_params: SamplingParams | None,
-    ) -> tuple[dict, list[dict], str, str | None, SamplingParams, bool, bool]:
-        """Validate tree/node and resolve parameters from request or tree defaults."""
+    ) -> tuple[dict, list[dict], str, str | None, SamplingParams, bool, bool, set[str], dict, set[str]]:
+        """Validate tree/node and resolve parameters from request or tree defaults.
+
+        Returns: (tree, nodes, resolved_model, resolved_prompt, resolved_params,
+                  include_timestamps, include_thinking,
+                  excluded_ids, digression_groups_map, excluded_group_ids)
+        """
         tree = await self._projector.get_tree(tree_id)
         if tree is None:
             raise TreeNotFoundForGenerationError(tree_id)
@@ -411,7 +432,32 @@ class GenerationService:
         include_timestamps = bool(metadata.get("include_timestamps", False))
         include_thinking = bool(metadata.get("include_thinking_in_context", False))
 
-        return tree, nodes, resolved_model, resolved_prompt, resolved_params, include_timestamps, include_thinking
+        # Context exclusion data
+        exclusion_rows = await self._projector.get_node_exclusions(tree_id)
+        path_ids = self._get_path_node_ids(nodes, node_id)
+        excluded_ids = {r["node_id"] for r in exclusion_rows if r["scope_node_id"] in path_ids}
+
+        groups = await self._projector.get_digression_groups(tree_id)
+        excluded_group_ids = {g["group_id"] for g in groups if not g["included"]}
+        digression_groups_map = {g["group_id"]: g["node_ids"] for g in groups}
+
+        return (tree, nodes, resolved_model, resolved_prompt, resolved_params,
+                include_timestamps, include_thinking,
+                excluded_ids, digression_groups_map, excluded_group_ids)
+
+    @staticmethod
+    def _get_path_node_ids(nodes: list[dict], target_node_id: str) -> set[str]:
+        """Walk parent chain from target to root, return set of node IDs on path."""
+        by_id = {n["node_id"]: n for n in nodes}
+        path_ids: set[str] = set()
+        current_id: str | None = target_node_id
+        while current_id is not None:
+            path_ids.add(current_id)
+            node = by_id.get(current_id)
+            if node is None:
+                break
+            current_id = node.get("parent_id")
+        return path_ids
 
     async def _emit_generation_started(
         self,

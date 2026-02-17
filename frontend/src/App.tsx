@@ -4,6 +4,7 @@ import { GraphView } from './components/GraphView/GraphView.tsx'
 import { BookmarkList } from './components/Library/BookmarkList.tsx'
 import { TreeList } from './components/Library/TreeList.tsx'
 import { getTreeDefaults } from './components/TreeView/contextDiffs.ts'
+import { DigressionSidePanel } from './components/TreeView/DigressionPanel.tsx'
 import { LinearView } from './components/TreeView/LinearView.tsx'
 import { MessageInput } from './components/TreeView/MessageInput.tsx'
 import { SystemPromptInput } from './components/TreeView/SystemPromptInput.tsx'
@@ -36,7 +37,7 @@ function applyTheme(mode: ThemeMode) {
 }
 
 function App() {
-  const { fetchTrees, currentTree, error, clearError, canvasOpen, setCanvasOpen, branchSelections } = useTreeStore()
+  const { fetchTrees, currentTree, error, clearError, canvasOpen, setCanvasOpen, branchSelections, digressionPanelOpen, setDigressionPanelOpen } = useTreeStore()
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [theme, setTheme] = useState<ThemeMode>(getInitialTheme)
   const [graphOpen, setGraphOpen] = useState(false)
@@ -120,12 +121,19 @@ function App() {
         )}
 
         {currentTree ? (
-          graphOpen ? (
+          (graphOpen || digressionPanelOpen) ? (
             <div className="split-layout">
               <div className="linear-pane">
                 <TreeSettings
                   graphOpen={graphOpen}
-                  onToggleGraph={() => setGraphOpen(false)}
+                  onToggleGraph={() => {
+                    if (graphOpen) {
+                      setGraphOpen(false)
+                    } else {
+                      setDigressionPanelOpen(false)
+                      setGraphOpen(true)
+                    }
+                  }}
                 />
                 <SystemPromptInput />
                 <LinearView />
@@ -139,7 +147,8 @@ function App() {
                 className="graph-pane"
                 style={graphPaneWidth > 0 ? { width: graphPaneWidth } : undefined}
               >
-                <GraphView />
+                {graphOpen && <GraphView />}
+                {digressionPanelOpen && !graphOpen && <DigressionSidePanel />}
               </div>
             </div>
           ) : (

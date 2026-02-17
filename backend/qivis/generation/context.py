@@ -80,11 +80,28 @@ class ContextBuilder:
         """
         # 1. Walk the parent chain to get messages in chronological order
         path = self._walk_path(nodes, target_node_id)
+        path_node_ids = {n["node_id"] for n in path}
 
-        # 2. Filter to API-sendable roles (exclude system, researcher_note)
+        # 1b. Build effective excluded set from node-level + group-level exclusions
+        effective_excluded = set(excluded_ids) if excluded_ids else set()
+        if digression_groups and excluded_group_ids:
+            for gid in excluded_group_ids:
+                group_nodes = digression_groups.get(gid)
+                if group_nodes and all(nid in path_node_ids for nid in group_nodes):
+                    effective_excluded.update(group_nodes)
+
+        # 2. Filter to API-sendable roles (exclude system, researcher_note, excluded nodes)
         messages = []
+        excluded_token_total = 0
+        excluded_node_count = 0
         for n in path:
             if n["role"] not in ("user", "assistant", "tool"):
+                continue
+            if n["node_id"] in effective_excluded:
+                excluded_token_total += self._count_tokens(
+                    self._maybe_prepend_timestamp(n, include_timestamps)
+                )
+                excluded_node_count += 1
                 continue
             content = self._maybe_prepend_timestamp(n, include_timestamps)
             if include_thinking and n["role"] == "assistant":
@@ -97,6 +114,7 @@ class ContextBuilder:
             n["node_id"]
             for n in path
             if n["role"] in ("user", "assistant", "tool")
+            and n["node_id"] not in effective_excluded
         ]
 
         # 3. Count tokens
@@ -125,8 +143,8 @@ class ContextBuilder:
             total_tokens=total,
             max_tokens=model_context_limit,
             breakdown=breakdown,
-            excluded_tokens=0,  # Phase 0.5: no exclusions yet
-            excluded_count=0,
+            excluded_tokens=excluded_token_total,
+            excluded_count=excluded_node_count,
         )
 
         return messages, usage, report

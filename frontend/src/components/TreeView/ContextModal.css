@@ -166,6 +166,19 @@
   font-style: italic;
 }
 
+/* ---- Excluded notice ---- */
+
+.context-modal-excluded-info {
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  color: var(--error, #c44);
+  background: var(--bg-secondary);
+  border-radius: var(--radius-sm);
+  border-left: 2px solid var(--error, #c44);
+  padding: var(--space-xs) var(--space-sm);
+  margin-bottom: var(--space-sm);
+}
+
 /* ---- Messages ---- */
 
 .context-modal-message {

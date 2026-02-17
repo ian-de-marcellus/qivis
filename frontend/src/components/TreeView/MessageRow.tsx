@@ -57,12 +57,17 @@ interface MessageRowProps {
   onEdit?: (nodeId: string, editedContent: string | null) => void
   onInspect?: () => void
   onBookmarkToggle?: () => void
+  onExcludeToggle?: () => void
+  isExcludedOnPath?: boolean
+  groupSelectable?: boolean
+  groupSelected?: boolean
+  onGroupToggle?: () => void
   diffSummary?: DiffSummary
   onSplitView?: () => void
   highlightClass?: 'highlight-used' | 'highlight-other'
 }
 
-export function MessageRow({ node, siblings, onSelectSibling, onFork, onPrefill, onGenerate, onCompare, onEdit, onInspect, onBookmarkToggle, diffSummary, onSplitView, highlightClass }: MessageRowProps) {
+export function MessageRow({ node, siblings, onSelectSibling, onFork, onPrefill, onGenerate, onCompare, onEdit, onInspect, onBookmarkToggle, onExcludeToggle, isExcludedOnPath, groupSelectable, groupSelected, onGroupToggle, diffSummary, onSplitView, highlightClass }: MessageRowProps) {
   const [showLogprobs, setShowLogprobs] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
   const [editValue, setEditValue] = useState('')
@@ -79,11 +84,16 @@ export function MessageRow({ node, siblings, onSelectSibling, onFork, onPrefill,
 
   const isManual = node.role === 'assistant' && node.mode === 'manual'
   const hasEdit = node.edited_content != null
-  const hasEditHistory = hasEdit || (editHistoryCache[node.node_id]?.length ?? 0) > 0
-  const rowClasses = ['message-row', node.role, highlightClass].filter(Boolean).join(' ')
+  const hasEditHistory = hasEdit || node.edit_count > 0 || (editHistoryCache[node.node_id]?.length ?? 0) > 0
+  const rowClasses = [
+    'message-row', node.role, highlightClass,
+    isExcludedOnPath && 'excluded',
+    groupSelectable && 'group-selectable',
+    groupSelected && 'group-selected',
+  ].filter(Boolean).join(' ')
 
   return (
-    <div className={rowClasses}>
+    <div className={rowClasses} onClick={groupSelectable ? onGroupToggle : undefined}>
       <div className="message-header">
         <span className="message-role">{roleLabel}</span>
         {node.role === 'assistant' && node.model && (
@@ -143,6 +153,18 @@ export function MessageRow({ node, siblings, onSelectSibling, onFork, onPrefill,
             aria-label={node.is_bookmarked ? 'Remove bookmark' : 'Bookmark'}
           >
             {node.is_bookmarked ? 'Marked' : 'Mark'}
+          </button>
+        )}
+        {isExcludedOnPath && (
+          <span className="excluded-label">excluded from context</span>
+        )}
+        {onExcludeToggle && (
+          <button
+            className={`exclude-btn${isExcludedOnPath ? ' active' : ''}`}
+            onClick={onExcludeToggle}
+            aria-label={isExcludedOnPath ? 'Include in context' : 'Exclude from context'}
+          >
+            {isExcludedOnPath ? 'Include' : 'Exclude'}
           </button>
         )}
       </div>

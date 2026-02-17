@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { GenerateRequest, NodeResponse } from '../../api/types.ts'
 import { getActivePath, useTreeStore } from '../../store/treeStore.ts'
 import { ComparisonView } from '../ComparisonView/ComparisonView.tsx'
@@ -7,9 +7,11 @@ import { ContextSplitView } from './ContextSplitView.tsx'
 import { reconstructContext } from './contextReconstruction.ts'
 import { computeDiffSummary, buildDiffRows, getTreeDefaults } from './contextDiffs.ts'
 import type { DiffSummary } from './contextDiffs.ts'
+import { DigressionCreator } from './DigressionPanel.tsx'
 import { ForkPanel } from './ForkPanel.tsx'
 import { MessageRow } from './MessageRow.tsx'
 import { ThinkingSection } from './ThinkingSection.tsx'
+import './DigressionPanel.css'
 import './LinearView.css'
 
 interface ForkTarget {
@@ -49,6 +51,15 @@ export function LinearView() {
     bookmarks,
     addBookmark,
     removeBookmark,
+    exclusions,
+    digressionGroups,
+    excludeNode,
+    includeNode,
+    groupSelectionMode,
+    selectedGroupNodeIds,
+    setGroupSelectionMode,
+    toggleGroupNodeSelection,
+    createDigressionGroup,
   } = useTreeStore()
 
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -80,10 +91,16 @@ export function LinearView() {
     }
   }
 
-  // Auto-scroll on new content
+  // Auto-scroll only when path grows or streaming content arrives
   const activeMultiContent = streamingContents[activeStreamIndex]
+  const prevPathLenRef = useRef(path.length)
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    const pathGrew = path.length > prevPathLenRef.current
+    prevPathLenRef.current = path.length
+    const hasStreamContent = !!streamingContent || !!streamingThinkingContent || !!activeMultiContent
+    if (pathGrew || hasStreamContent) {
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    }
   }, [path.length, streamingContent, streamingThinkingContent, activeMultiContent])
 
   if (!currentTree) return null
@@ -159,6 +176,61 @@ export function LinearView() {
     return map
   }, [currentTree, path])
 
+  // Compute which nodes are effectively excluded on the current path
+  const effectiveExcludedIds = useMemo(() => {
+    const pathNodeIds = new Set(path.map((n) => n.node_id))
+    const excluded = new Set<string>()
+
+    // Node-level exclusions: apply if scope_node_id is on the current path
+    for (const ex of exclusions) {
+      if (pathNodeIds.has(ex.scope_node_id)) {
+        excluded.add(ex.node_id)
+      }
+    }
+
+    // Group-level exclusions: if group is toggled off and all its nodes are on the path
+    for (const group of digressionGroups) {
+      if (!group.included && group.node_ids.every((nid) => pathNodeIds.has(nid))) {
+        for (const nid of group.node_ids) {
+          excluded.add(nid)
+        }
+      }
+    }
+
+    return excluded
+  }, [path, exclusions, digressionGroups])
+
+  const handleExcludeToggle = useCallback((nodeId: string) => {
+    if (!leafNodeId) return
+    if (effectiveExcludedIds.has(nodeId)) {
+      // Find the exclusion record that applies on this path to remove it
+      const pathNodeIds = new Set(path.map((n) => n.node_id))
+      const matchingExclusion = exclusions.find(
+        (ex) => ex.node_id === nodeId && pathNodeIds.has(ex.scope_node_id),
+      )
+      if (matchingExclusion) {
+        includeNode(nodeId, matchingExclusion.scope_node_id)
+      }
+    } else {
+      excludeNode(nodeId, leafNodeId)
+    }
+  }, [leafNodeId, effectiveExcludedIds, path, exclusions, excludeNode, includeNode])
+
+  const handleGroupNodeToggle = useCallback((nodeId: string) => {
+    toggleGroupNodeSelection(nodeId)
+  }, [toggleGroupNodeSelection])
+
+  const handleCreateGroup = useCallback(async (label: string) => {
+    if (selectedGroupNodeIds.length < 2) return
+    // Order by path position
+    const pathOrder = path.map((n) => n.node_id)
+    const ordered = [...selectedGroupNodeIds].sort(
+      (a, b) => pathOrder.indexOf(a) - pathOrder.indexOf(b),
+    )
+    const ok = await createDigressionGroup({ node_ids: ordered, label })
+    if (ok) setGroupSelectionMode(false)
+  }, [selectedGroupNodeIds, path, createDigressionGroup, setGroupSelectionMode])
+
   const handleSelectSibling = (parentId: string, siblingId: string) => {
     selectBranch(parentId, siblingId)
   }
@@ -196,6 +268,15 @@ export function LinearView() {
   return (
     <div className="linear-view">
       <div className="messages">
+        {groupSelectionMode && (
+          <DigressionCreator
+            selectedNodeIds={selectedGroupNodeIds}
+            onToggleNode={handleGroupNodeToggle}
+            onCancel={() => setGroupSelectionMode(false)}
+            onCreate={handleCreateGroup}
+          />
+        )}
+
         {path.map((node) => {
           const siblings = childMap.get(node.parent_id) ?? []
           const nodeParentKey = node.parent_id ?? ''
@@ -243,6 +324,11 @@ export function LinearView() {
                     addBookmark(node.node_id, node.content.slice(0, 60))
                   }
                 }}
+                onExcludeToggle={() => handleExcludeToggle(node.node_id)}
+                isExcludedOnPath={effectiveExcludedIds.has(node.node_id)}
+                groupSelectable={groupSelectionMode}
+                groupSelected={selectedGroupNodeIds.includes(node.node_id)}
+                onGroupToggle={() => handleGroupNodeToggle(node.node_id)}
                 onCompare={siblings.length > 1 ? () => setComparingAtParent(
                   comparingAtParent === nodeParentKey ? null : nodeParentKey,
                 ) : undefined}

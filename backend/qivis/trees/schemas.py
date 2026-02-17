@@ -83,6 +83,8 @@ class NodeResponse(BaseModel):
     sibling_index: int = 0
     annotation_count: int = 0
     is_bookmarked: bool = False
+    edit_count: int = 0
+    is_excluded: bool = False
 
 
 class EditHistoryEntry(BaseModel):
@@ -159,6 +161,42 @@ class BookmarkResponse(BaseModel):
     summary: str | None = None
     summary_model: str | None = None
     summarized_node_ids: list[str] | None = None
+    created_at: str
+
+
+class ExcludeNodeRequest(BaseModel):
+    scope_node_id: str
+    reason: str | None = None
+
+
+class IncludeNodeRequest(BaseModel):
+    scope_node_id: str
+
+
+class NodeExclusionResponse(BaseModel):
+    tree_id: str
+    node_id: str
+    scope_node_id: str
+    reason: str | None = None
+    created_at: str
+
+
+class CreateDigressionGroupRequest(BaseModel):
+    node_ids: list[str]
+    label: str
+    excluded_by_default: bool = False
+
+
+class ToggleDigressionGroupRequest(BaseModel):
+    included: bool
+
+
+class DigressionGroupResponse(BaseModel):
+    group_id: str
+    tree_id: str
+    label: str
+    node_ids: list[str]
+    included: bool
     created_at: str
 
 

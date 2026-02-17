@@ -18,23 +18,31 @@ from qivis.trees.schemas import (
     AnnotationResponse,
     BookmarkResponse,
     CreateBookmarkRequest,
+    CreateDigressionGroupRequest,
     CreateNodeRequest,
     CreateTreeRequest,
+    DigressionGroupResponse,
     EditHistoryResponse,
+    ExcludeNodeRequest,
     GenerateRequest,
+    IncludeNodeRequest,
     InterventionTimelineResponse,
+    NodeExclusionResponse,
     NodeResponse,
     PatchNodeContentRequest,
     PatchTreeRequest,
     TaxonomyResponse,
+    ToggleDigressionGroupRequest,
     TreeDetailResponse,
     TreeSummary,
 )
 from qivis.trees.service import (
     AnnotationNotFoundError,
     BookmarkNotFoundError,
+    DigressionGroupNotFoundError,
     InvalidParentError,
     NodeNotFoundError,
+    NonContiguousGroupError,
     SummaryClientNotConfiguredError,
     TreeNotFoundError,
     TreeService,
@@ -261,6 +269,101 @@ async def summarize_bookmark(
     except SummaryClientNotConfiguredError:
         raise HTTPException(
             status_code=503, detail="Summary API key not configured"
+        )
+
+
+@router.post("/{tree_id}/nodes/{node_id}/exclude")
+async def exclude_node(
+    tree_id: str,
+    node_id: str,
+    request: ExcludeNodeRequest,
+    service: TreeService = Depends(get_tree_service),
+) -> NodeExclusionResponse:
+    try:
+        return await service.exclude_node(tree_id, node_id, request)
+    except TreeNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Tree not found: {tree_id}")
+    except NodeNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.post(
+    "/{tree_id}/nodes/{node_id}/include",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def include_node(
+    tree_id: str,
+    node_id: str,
+    request: IncludeNodeRequest,
+    service: TreeService = Depends(get_tree_service),
+) -> None:
+    await service.include_node(tree_id, node_id, request.scope_node_id)
+
+
+@router.get("/{tree_id}/exclusions")
+async def get_tree_exclusions(
+    tree_id: str,
+    service: TreeService = Depends(get_tree_service),
+) -> list[NodeExclusionResponse]:
+    return await service.get_tree_exclusions(tree_id)
+
+
+@router.post(
+    "/{tree_id}/digression-groups",
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_digression_group(
+    tree_id: str,
+    request: CreateDigressionGroupRequest,
+    service: TreeService = Depends(get_tree_service),
+) -> DigressionGroupResponse:
+    try:
+        return await service.create_digression_group(tree_id, request)
+    except TreeNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Tree not found: {tree_id}")
+    except NodeNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except NonContiguousGroupError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/{tree_id}/digression-groups")
+async def get_digression_groups(
+    tree_id: str,
+    service: TreeService = Depends(get_tree_service),
+) -> list[DigressionGroupResponse]:
+    return await service.get_digression_groups(tree_id)
+
+
+@router.post("/{tree_id}/digression-groups/{group_id}/toggle")
+async def toggle_digression_group(
+    tree_id: str,
+    group_id: str,
+    request: ToggleDigressionGroupRequest,
+    service: TreeService = Depends(get_tree_service),
+) -> DigressionGroupResponse:
+    try:
+        return await service.toggle_digression_group(tree_id, group_id, request.included)
+    except DigressionGroupNotFoundError:
+        raise HTTPException(
+            status_code=404, detail=f"Digression group not found: {group_id}"
+        )
+
+
+@router.delete(
+    "/{tree_id}/digression-groups/{group_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_digression_group(
+    tree_id: str,
+    group_id: str,
+    service: TreeService = Depends(get_tree_service),
+) -> None:
+    try:
+        await service.delete_digression_group(tree_id, group_id)
+    except DigressionGroupNotFoundError:
+        raise HTTPException(
+            status_code=404, detail=f"Digression group not found: {group_id}"
         )
 
 

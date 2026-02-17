@@ -3105,3 +3105,59 @@ A bookmark is a promise to your future self: "you will want to come back here." 
 Summaries are the deferred payoff. You mark a dozen points in a long branching conversation, then later — maybe days later — you come back and click "Summarize" on each one. Now you have a map of the territory. Not the territory itself, just a map. Each summary is Haiku's reading of the conversation up to that point, and it's an interesting meta-layer: an AI reading and summarizing conversations with an AI, for a human researcher studying how AIs converse.
 
 There's something recursive about that. The observer observing the observer. The gloss on the gloss. But that recursion is the whole point of Qivis — instruments that let you see what's happening at a level you can't see when you're in the conversation yourself.
+
+---
+
+## February 17, 2026 — Phase 6.3: Context Exclusion + Digression Groups
+
+The researcher can now reach into the context window and *remove things from it*. Not delete them — the messages stay in the tree, visible, part of the record — but excise them from what the model sees. Dim a message to 40% opacity, mark it "excluded from context," and on the next generation it's gone from the model's view. The message is still there for the researcher. It's just invisible to the subject.
+
+This is the first feature that makes Qivis feel like an actual experimental instrument rather than a conversation tool. Every previous feature — branching, annotations, bookmarks, context inspection — was about *observing* the conversation. Exclusion is about *intervening* in it. You can now ask: "What does this model say if it never saw message #7?" And then you can compare that against the branch where it did see message #7. Controlled variables. Counterfactuals. This is where Qivis stops being a notebook and starts being a laboratory.
+
+### The scope_node_id design
+
+Per-branch exclusion was the interesting design problem. Ian wanted exclusions to be branch-local: if you exclude a message on one branch, sibling branches shouldn't be affected. But new branches forked *after* the exclusion should inherit it.
+
+The solution: each exclusion records a `scope_node_id` — the leaf of the active path at the moment the exclusion was created. An exclusion of node X with scope S is visible on path P if and only if S is an element of P. This gives perfect inheritance: same branch sees it, forks after the scope point inherit it (because S is still on the path), forks before it diverge (because S is no longer on the path). One field, no tree traversal, no inheritance computation — just set membership.
+
+The ContextBuilder already had stub parameters for `excluded_ids` and `digression_groups`. Activating them was satisfying — like plugging in wires that were already run through the walls. The effective exclusion set is computed fresh for each generation: merge node-level exclusions with group-level exclusions, filter by path, pass to build(). The `excluded_tokens` and `excluded_count` fields in ContextUsage now report real numbers instead of zeros.
+
+### Digression groups
+
+Digression groups are a different kind of control. Where node exclusion is surgical — remove *this* specific message — groups are thematic. You select a contiguous run of messages, label them ("the part where we talked about free will," "the emotional valence digression"), and toggle the whole thing in or out. Tree-wide, not per-branch. Groups can overlap — a message can be in "free will tangent" and "emotional language" simultaneously.
+
+The creation UX is simple: click "Groups," click "New Group," click the messages you want in the group, name it, create. The messages light up with an accent outline as you select them. Toggle switches in the panel turn groups on and off. The visual feedback is immediate — toggling a group off dims all its messages, toggling it on restores them.
+
+The contiguity requirement is enforced at the backend — each node's parent must be the previous node in the list. This prevents researchers from creating nonsensical groups that span across branches. The frontend sorts selected nodes by path position before sending.
+
+### On dimming
+
+The visual treatment for excluded messages landed at 40% opacity with a left border in the error color and a small uppercase "excluded from context" label. Reduced but readable. The researcher needs to see what they've excluded — the whole point is controlled comparison, which requires seeing both the included and excluded state. Full hiding would defeat the purpose.
+
+On hover, excluded messages rise to 65% opacity. The "Include" button becomes visible. Re-inclusion is as easy as exclusion — one click. The symmetry matters. Excluding and including should feel equally reversible, because the researcher is going to do both many times as they explore different context configurations.
+
+### 371 tests, all green
+
+23 new tests for exclusion and groups. The projection tests verify that events create and remove the right rows. The API tests cover CRUD for both exclusions and groups, including edge cases (exclude nonexistent node, include already-included node, non-contiguous group). The ContextBuilder tests verify that excluded nodes are actually omitted from generated messages and that the token accounting is correct. The event replay test confirms everything survives a full projector rebuild.
+
+The full regression holds. The event-sourced architecture continues to absorb new event types without friction — four new events, four new projection handlers, the same pattern repeated for the seventh time. There's a rhythm to it now.
+
+### What exclusion reveals about the project
+
+Before this feature, Qivis was a research *notebook* — a place to record, annotate, and navigate conversations. After it, Qivis is a research *instrument* — a tool for constructing controlled experiments on AI behavior. The difference is agency. A notebook records what happened. An instrument lets you ask "what if?"
+
+The next step is probably making the context preview (ContextModal) show exclusion markers so the researcher can verify exactly what context the model saw. We added a summary line — "N messages excluded (M tokens)" — but per-message marking would be even more transparent. The transparency view should be a mirror: you should be able to look at it and see *exactly* what the model saw, no more, no less.
+
+---
+
+## February 17, 2026 (continued)
+
+### Polishing the rough edges
+
+Two loose ends from the initial implementation. Both small but telling.
+
+**The error message**: When a researcher tried to create a digression group from non-contiguous messages, they saw the raw API error — `Error: API error 400: {"detail":"Nodes are not contiguous: [...]"}` — in a banner. Replaced with a human-readable message: "Selected messages must be contiguous (no gaps between them)." Also made the store action return a boolean so the caller can keep selection mode open on failure, letting the researcher adjust their selection and try again. The error surface should never expose the protocol.
+
+**The edit history ghost**: When a message was edited and then restored to its original content, the edit history section vanished — because `edited_content` became null and the cache was empty, so `hasEditHistory` computed false. The previous session fixed the cache clearing (re-fetch instead of clear), but that only works within a session. After a page reload, the cache is cold and `edited_content` is null, so the history section would still be hidden. Added `edit_count` to `NodeResponse` — a server-side count of `NodeContentEdited` events for each node, queried via `json_extract` on the event store. Now `hasEditHistory` checks three signals: `edited_content != null`, `edit_count > 0`, or cache populated. The edit history survives page reloads, session boundaries, and restore-to-original.
+
+This is the kind of fix that reveals something about the architecture. The event store is the ground truth, but projected state is lossy — `edited_content` captures the *current* edit, not the *history*. The `edit_count` bridges that gap by surfacing just enough event-log information into the projection layer to make the UI correct. Not the full history — just the count, just enough to know "there's something to show."

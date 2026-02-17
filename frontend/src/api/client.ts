@@ -5,12 +5,15 @@ import type {
   AnnotationResponse,
   BookmarkResponse,
   CreateBookmarkRequest,
+  CreateDigressionGroupRequest,
   CreateNodeRequest,
   CreateTreeRequest,
+  DigressionGroupResponse,
   EditHistoryResponse,
   GenerateRequest,
   InterventionTimelineResponse,
   MessageStopEvent,
+  NodeExclusionResponse,
   NodeResponse,
   PatchTreeRequest,
   ProviderInfo,
@@ -175,6 +178,71 @@ export function summarizeBookmark(
 ): Promise<BookmarkResponse> {
   return request(`/trees/${treeId}/bookmarks/${bookmarkId}/summarize`, {
     method: 'POST',
+  })
+}
+
+// -- Context exclusion --
+
+export function excludeNode(
+  treeId: string,
+  nodeId: string,
+  scopeNodeId: string,
+  reason?: string,
+): Promise<NodeExclusionResponse> {
+  return request(`/trees/${treeId}/nodes/${nodeId}/exclude`, {
+    method: 'POST',
+    body: JSON.stringify({ scope_node_id: scopeNodeId, reason }),
+  })
+}
+
+export function includeNode(
+  treeId: string,
+  nodeId: string,
+  scopeNodeId: string,
+): Promise<void> {
+  return request(`/trees/${treeId}/nodes/${nodeId}/include`, {
+    method: 'POST',
+    body: JSON.stringify({ scope_node_id: scopeNodeId }),
+  })
+}
+
+export function getExclusions(treeId: string): Promise<NodeExclusionResponse[]> {
+  return request(`/trees/${treeId}/exclusions`)
+}
+
+// -- Digression groups --
+
+export function createDigressionGroup(
+  treeId: string,
+  req: CreateDigressionGroupRequest,
+): Promise<DigressionGroupResponse> {
+  return request(`/trees/${treeId}/digression-groups`, {
+    method: 'POST',
+    body: JSON.stringify(req),
+  })
+}
+
+export function getDigressionGroups(treeId: string): Promise<DigressionGroupResponse[]> {
+  return request(`/trees/${treeId}/digression-groups`)
+}
+
+export function toggleDigressionGroup(
+  treeId: string,
+  groupId: string,
+  included: boolean,
+): Promise<DigressionGroupResponse> {
+  return request(`/trees/${treeId}/digression-groups/${groupId}/toggle`, {
+    method: 'POST',
+    body: JSON.stringify({ included }),
+  })
+}
+
+export function deleteDigressionGroup(
+  treeId: string,
+  groupId: string,
+): Promise<void> {
+  return request(`/trees/${treeId}/digression-groups/${groupId}`, {
+    method: 'DELETE',
   })
 }
 

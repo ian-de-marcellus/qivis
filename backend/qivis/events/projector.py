@@ -15,8 +15,12 @@ from qivis.models import (
     BookmarkCreatedPayload,
     BookmarkRemovedPayload,
     BookmarkSummaryGeneratedPayload,
+    DigressionGroupCreatedPayload,
+    DigressionGroupToggledPayload,
     EventEnvelope,
     NodeContentEditedPayload,
+    NodeContextExcludedPayload,
+    NodeContextIncludedPayload,
     NodeCreatedPayload,
     TreeCreatedPayload,
     TreeMetadataUpdatedPayload,
@@ -41,6 +45,10 @@ class StateProjector:
             "BookmarkCreated": self._handle_bookmark_created,
             "BookmarkRemoved": self._handle_bookmark_removed,
             "BookmarkSummaryGenerated": self._handle_bookmark_summary_generated,
+            "NodeContextExcluded": self._handle_node_context_excluded,
+            "NodeContextIncluded": self._handle_node_context_included,
+            "DigressionGroupCreated": self._handle_digression_group_created,
+            "DigressionGroupToggled": self._handle_digression_group_toggled,
         }
 
     async def project(self, events: list[EventEnvelope]) -> None:
@@ -225,6 +233,98 @@ class StateProjector:
                 json.dumps(payload.summarized_node_ids),
                 payload.bookmark_id,
             ),
+        )
+
+    async def get_node_exclusions(self, tree_id: str) -> list[dict]:
+        """Read all node exclusions for a tree."""
+        rows = await self._db.fetchall(
+            "SELECT * FROM node_exclusions WHERE tree_id = ?",
+            (tree_id,),
+        )
+        return [dict(row) for row in rows]
+
+    async def get_digression_groups(self, tree_id: str) -> list[dict]:
+        """Read all digression groups for a tree, with member node_ids."""
+        group_rows = await self._db.fetchall(
+            "SELECT * FROM digression_groups WHERE tree_id = ?",
+            (tree_id,),
+        )
+        groups = []
+        for row in group_rows:
+            member_rows = await self._db.fetchall(
+                "SELECT node_id FROM digression_group_nodes WHERE group_id = ? ORDER BY sort_order",
+                (row["group_id"],),
+            )
+            groups.append({
+                **dict(row),
+                "node_ids": [m["node_id"] for m in member_rows],
+            })
+        return groups
+
+    async def _handle_node_context_excluded(self, event: EventEnvelope) -> None:
+        """Project a NodeContextExcluded event into node_exclusions."""
+        payload = NodeContextExcludedPayload.model_validate(event.payload)
+        timestamp = (
+            event.timestamp.isoformat()
+            if hasattr(event.timestamp, "isoformat")
+            else str(event.timestamp)
+        )
+        await self._db.execute(
+            """
+            INSERT OR REPLACE INTO node_exclusions
+                (tree_id, node_id, scope_node_id, reason, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                event.tree_id,
+                payload.node_id,
+                payload.scope_node_id,
+                payload.reason,
+                timestamp,
+            ),
+        )
+
+    async def _handle_node_context_included(self, event: EventEnvelope) -> None:
+        """Project a NodeContextIncluded event: remove matching exclusion."""
+        payload = NodeContextIncludedPayload.model_validate(event.payload)
+        await self._db.execute(
+            "DELETE FROM node_exclusions WHERE tree_id = ? AND node_id = ? AND scope_node_id = ?",
+            (event.tree_id, payload.node_id, payload.scope_node_id),
+        )
+
+    async def _handle_digression_group_created(self, event: EventEnvelope) -> None:
+        """Project a DigressionGroupCreated event into groups + membership."""
+        payload = DigressionGroupCreatedPayload.model_validate(event.payload)
+        timestamp = (
+            event.timestamp.isoformat()
+            if hasattr(event.timestamp, "isoformat")
+            else str(event.timestamp)
+        )
+        included = 0 if payload.excluded_by_default else 1
+        await self._db.execute(
+            """
+            INSERT OR REPLACE INTO digression_groups
+                (group_id, tree_id, label, included, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (payload.group_id, event.tree_id, payload.label, included, timestamp),
+        )
+        for i, node_id in enumerate(payload.node_ids):
+            await self._db.execute(
+                """
+                INSERT OR REPLACE INTO digression_group_nodes
+                    (group_id, node_id, sort_order)
+                VALUES (?, ?, ?)
+                """,
+                (payload.group_id, node_id, i),
+            )
+
+    async def _handle_digression_group_toggled(self, event: EventEnvelope) -> None:
+        """Project a DigressionGroupToggled event: update included flag."""
+        payload = DigressionGroupToggledPayload.model_validate(event.payload)
+        await self._db.execute(
+            "UPDATE digression_groups SET included = ? WHERE group_id = ?",
+            (1 if payload.included else 0, payload.group_id),
         )
 
     async def _handle_node_created(self, event: EventEnvelope) -> None:
