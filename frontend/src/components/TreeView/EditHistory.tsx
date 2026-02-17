@@ -86,6 +86,8 @@ export function EditHistory({ node }: EditHistoryProps) {
     // Set the active version: null for original, entry.new_content for an edit
     const content = entry === null ? null : entry.new_content
     editNodeContent(node.node_id, content)
+    // Clear version selection so highlights don't persist after applying
+    setSelectedEditVersion(node.node_id, null)
   }
 
   // Build display list: original (v0) + all edit entries

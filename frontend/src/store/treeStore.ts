@@ -43,6 +43,7 @@ interface TreeStore {
   comparisonHoveredNodeId: string | null
   selectedEditVersion: { nodeId: string; entry: EditHistoryEntry | null } | null
   editHistoryCache: Record<string, EditHistoryEntry[]>
+  inspectedNodeId: string | null
 
   // Actions
   fetchTrees: () => Promise<void>
@@ -67,6 +68,7 @@ interface TreeStore {
   editNodeContent: (nodeId: string, editedContent: string | null) => Promise<void>
   setSelectedEditVersion: (nodeId: string, entry: EditHistoryEntry | null) => void
   cacheEditHistory: (nodeId: string, entries: EditHistoryEntry[]) => void
+  setInspectedNodeId: (nodeId: string | null) => void
   forkAndGenerate: (
     parentId: string,
     content: string,
@@ -143,6 +145,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
   comparisonHoveredNodeId: null,
   selectedEditVersion: null,
   editHistoryCache: {},
+  inspectedNodeId: null,
 
   fetchTrees: async () => {
     set({ isLoading: true, error: null })
@@ -172,6 +175,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
       selectedTreeId: treeId,
       systemPromptOverride: null,
       branchSelections: {},
+      inspectedNodeId: null,
     })
     try {
       const tree = await api.getTree(treeId)
@@ -440,6 +444,10 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
     set((state) => ({
       editHistoryCache: { ...state.editHistoryCache, [nodeId]: entries },
     }))
+  },
+
+  setInspectedNodeId: (nodeId: string | null) => {
+    set({ inspectedNodeId: nodeId })
   },
 
   forkAndGenerate: async (parentId: string, content: string, overrides: GenerateRequest) => {

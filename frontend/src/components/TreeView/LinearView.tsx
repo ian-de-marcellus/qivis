@@ -2,6 +2,8 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import type { GenerateRequest, NodeResponse } from '../../api/types.ts'
 import { getActivePath, useTreeStore } from '../../store/treeStore.ts'
 import { ComparisonView } from '../ComparisonView/ComparisonView.tsx'
+import { ContextModal } from './ContextModal.tsx'
+import { reconstructContext } from './contextReconstruction.ts'
 import { ForkPanel } from './ForkPanel.tsx'
 import { MessageRow } from './MessageRow.tsx'
 import { ThinkingSection } from './ThinkingSection.tsx'
@@ -37,6 +39,8 @@ export function LinearView() {
     fetchProviders,
     selectedEditVersion,
     editHistoryCache,
+    inspectedNodeId,
+    setInspectedNodeId,
   } = useTreeStore()
 
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -199,6 +203,11 @@ export function LinearView() {
                   }
                 } : undefined}
                 onEdit={(nodeId, editedContent) => editNodeContent(nodeId, editedContent)}
+                onInspect={node.role === 'assistant' && node.mode !== 'manual'
+                  ? () => setInspectedNodeId(
+                      inspectedNodeId === node.node_id ? null : node.node_id
+                    )
+                  : undefined}
                 onCompare={siblings.length > 1 ? () => setComparingAtParent(
                   comparingAtParent === nodeParentKey ? null : nodeParentKey,
                 ) : undefined}
@@ -352,6 +361,17 @@ export function LinearView() {
 
         <div ref={bottomRef} />
       </div>
+
+      {inspectedNodeId && (() => {
+        const inspectedNode = nodes.find((n) => n.node_id === inspectedNodeId)
+        if (!inspectedNode) return null
+        return (
+          <ContextModal
+            context={reconstructContext(inspectedNode, nodes)}
+            onDismiss={() => setInspectedNodeId(null)}
+          />
+        )
+      })()}
     </div>
   )
 }

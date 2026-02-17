@@ -154,6 +154,10 @@ class NodeCreatedPayload(BaseModel):
     # Thinking / reasoning
     thinking_content: str | None = None
 
+    # Context flags — snapshot of tree-level settings at generation time
+    include_thinking_in_context: bool = False
+    include_timestamps: bool = False
+
     # Multi-agent identity
     participant_id: str | None = None
     participant_name: str | None = None

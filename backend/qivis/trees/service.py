@@ -371,6 +371,8 @@ class TreeService:
             participant_name=row["participant_name"],
             thinking_content=row.get("thinking_content"),
             edited_content=row.get("edited_content"),
+            include_thinking_in_context=bool(row.get("include_thinking_in_context", 0)),
+            include_timestamps=bool(row.get("include_timestamps", 0)),
             created_at=row["created_at"],
             archived=row["archived"],
             sibling_index=si,

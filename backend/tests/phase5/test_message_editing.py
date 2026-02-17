@@ -224,7 +224,7 @@ class TestContextBuilderEditing:
         assert messages[2]["content"] == "Follow up"
 
     def test_timestamp_prepended_to_edited_content(self, builder: ContextBuilder):
-        """With include_timestamps=True, timestamp is prepended to edited content."""
+        """With include_timestamps=True, timestamp is prepended to edited user content."""
         nodes = [
             {"node_id": "n1", "parent_id": None, "role": "user",
              "content": "Original", "edited_content": "Edited",

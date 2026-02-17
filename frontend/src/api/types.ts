@@ -43,6 +43,8 @@ export interface NodeResponse {
   logprobs: LogprobData | null
   thinking_content: string | null
   edited_content: string | null
+  include_thinking_in_context: boolean
+  include_timestamps: boolean
   context_usage: ContextUsage | null
   participant_id: string | null
   participant_name: string | null

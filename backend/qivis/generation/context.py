@@ -159,9 +159,15 @@ class ContextBuilder:
 
     @staticmethod
     def _maybe_prepend_timestamp(node: dict, include: bool) -> str:
-        """Optionally prepend [YYYY-MM-DD HH:MM] to node content."""
+        """Optionally prepend [YYYY-MM-DD HH:MM] to node content.
+
+        Only applies to user and tool messages — assistant messages are left
+        untouched to prevent the model from mirroring the timestamp format.
+        """
         content = node.get("edited_content") or node["content"]
         if not include:
+            return content
+        if node["role"] == "assistant":
             return content
         created_at = node.get("created_at")
         if not created_at:

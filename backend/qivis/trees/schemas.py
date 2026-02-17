@@ -75,6 +75,8 @@ class NodeResponse(BaseModel):
     participant_name: str | None = None
     thinking_content: str | None = None
     edited_content: str | None = None
+    include_thinking_in_context: bool = False
+    include_timestamps: bool = False
     created_at: str
     archived: int = 0
     sibling_count: int = 1

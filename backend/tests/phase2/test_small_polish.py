@@ -57,7 +57,7 @@ def builder() -> ContextBuilder:
 
 
 class TestContextTimestamps:
-    """ContextBuilder timestamp injection."""
+    """ContextBuilder timestamp injection (user/tool only, not assistant)."""
 
     def test_no_timestamps_by_default(self, builder: ContextBuilder):
         """Default build() does not prepend timestamps to messages."""
@@ -71,8 +71,8 @@ class TestContextTimestamps:
         for msg in messages:
             assert not msg["content"].startswith("[")
 
-    def test_timestamps_prepended_when_enabled(self, builder: ContextBuilder):
-        """include_timestamps=True prepends [datetime] to each message."""
+    def test_timestamps_prepended_to_user_messages(self, builder: ContextBuilder):
+        """include_timestamps=True prepends [datetime] to user messages."""
         nodes = _make_nodes_with_timestamps()
         messages, _, _ = builder.build(
             nodes=nodes,
@@ -81,12 +81,27 @@ class TestContextTimestamps:
             model_context_limit=200_000,
             include_timestamps=True,
         )
-        for msg in messages:
+        user_msgs = [m for m in messages if m["role"] == "user"]
+        for msg in user_msgs:
             assert msg["content"].startswith("[")
             assert "] " in msg["content"]
 
+    def test_timestamps_not_prepended_to_assistant_messages(self, builder: ContextBuilder):
+        """include_timestamps=True does NOT prepend timestamps to assistant messages."""
+        nodes = _make_nodes_with_timestamps()
+        messages, _, _ = builder.build(
+            nodes=nodes,
+            target_node_id="n4",
+            system_prompt="Be helpful.",
+            model_context_limit=200_000,
+            include_timestamps=True,
+        )
+        assistant_msgs = [m for m in messages if m["role"] == "assistant"]
+        for msg in assistant_msgs:
+            assert not msg["content"].startswith("[")
+
     def test_timestamp_format(self, builder: ContextBuilder):
-        """Timestamps follow [YYYY-MM-DD HH:MM] format."""
+        """Timestamps on user messages follow [YYYY-MM-DD HH:MM] format."""
         nodes = _make_nodes_with_timestamps()
         messages, _, _ = builder.build(
             nodes=nodes,
@@ -96,7 +111,8 @@ class TestContextTimestamps:
             include_timestamps=True,
         )
         pattern = re.compile(r"^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}\] ")
-        for msg in messages:
+        user_msgs = [m for m in messages if m["role"] == "user"]
+        for msg in user_msgs:
             assert pattern.match(msg["content"]), f"Bad format: {msg['content'][:30]}"
 
     def test_original_content_preserved(self, builder: ContextBuilder):
@@ -112,27 +128,11 @@ class TestContextTimestamps:
         # n2 is user "Hello" at 10:01
         assert messages[0]["content"].endswith("Hello")
         assert "[2026-02-15 10:01] Hello" == messages[0]["content"]
+        # n3 is assistant "Hi there!" — should be untouched
+        assert messages[1]["content"] == "Hi there!"
 
-    def test_token_count_includes_timestamp_text(self, builder: ContextBuilder):
-        """Token count is higher when timestamps are included."""
-        nodes = _make_nodes_with_timestamps()
-        _, usage_without, _ = builder.build(
-            nodes=nodes,
-            target_node_id="n4",
-            system_prompt="Be helpful.",
-            model_context_limit=200_000,
-        )
-        _, usage_with, _ = builder.build(
-            nodes=nodes,
-            target_node_id="n4",
-            system_prompt="Be helpful.",
-            model_context_limit=200_000,
-            include_timestamps=True,
-        )
-        assert usage_with.total_tokens > usage_without.total_tokens
-
-    def test_system_role_not_timestamped(self, builder: ContextBuilder):
-        """System messages are excluded from messages array, so timestamps don't apply."""
+    def test_system_role_excluded(self, builder: ContextBuilder):
+        """System messages are excluded from messages array."""
         nodes = _make_nodes_with_timestamps()
         messages, _, _ = builder.build(
             nodes=nodes,

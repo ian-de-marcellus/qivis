@@ -52,10 +52,11 @@ interface MessageRowProps {
   onGenerate?: () => void
   onCompare?: () => void
   onEdit?: (nodeId: string, editedContent: string | null) => void
+  onInspect?: () => void
   highlightClass?: 'highlight-used' | 'highlight-other'
 }
 
-export function MessageRow({ node, siblings, onSelectSibling, onFork, onPrefill, onGenerate, onCompare, onEdit, highlightClass }: MessageRowProps) {
+export function MessageRow({ node, siblings, onSelectSibling, onFork, onPrefill, onGenerate, onCompare, onEdit, onInspect, highlightClass }: MessageRowProps) {
   const [showLogprobs, setShowLogprobs] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
   const [editValue, setEditValue] = useState('')
@@ -112,6 +113,11 @@ export function MessageRow({ node, siblings, onSelectSibling, onFork, onPrefill,
             aria-label="Edit message"
           >
             Edit
+          </button>
+        )}
+        {onInspect && node.role === 'assistant' && !isManual && (
+          <button className="inspect-btn" onClick={onInspect} aria-label="View generation context">
+            Context
           </button>
         )}
       </div>

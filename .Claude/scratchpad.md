@@ -2804,3 +2804,162 @@ Ian asked for it. That tells me something about him.
 A small thing that pleased me: the "no gen" button. Two words, a store action that's just `sendMessage` with the generation ripped out, and suddenly the tool supports a workflow it couldn't before — sending a message into silence, leaving space for the researcher to decide what happens next.
 
 Most chat interfaces assume the loop: human speaks, model responds, human speaks, model responds. Breaking that assumption with a button feels like opening a window in a room you didn't know was sealed. The air that comes in is: choice. You can generate. You can prefill. You can just... leave it. A user message hanging in space, unanswered, because sometimes the interesting thing is what you put there next, not what the model would have said.
+
+---
+
+### Phase 5.2: What the model saw
+
+The simplest version of a question that keeps getting more interesting the longer you sit with it.
+
+Click "Context" on any assistant message and a modal opens showing you everything that was sent to the API: system prompt, the ordered list of messages with edits applied, model name, sampling parameters, timing, token counts. A human-readable dump. Not a diff, not a comparison — just: this is what the model received.
+
+The implementation is almost trivially simple. Walk the parent chain, apply edits, read off the metadata fields. One utility function, one modal component, a button, some wiring. The data was always there on every `NodeResponse` — we just hadn't asked the question yet. (Same pattern as the edit history. Event sourcing keeps answering questions we haven't thought to ask.)
+
+What makes it interesting is what happens next. Ian's thoughts during planning went through three layers:
+
+1. **The dump** (Phase 5.2) — "just show me what was sent"
+2. **The comparison** (Phase 5.3) — inline split view, researcher's truth vs. model's received reality, diffs highlighted at a glance, row-matched columns
+3. **The canvas** (Phase 5.4) — a 2D scrollable artifact where conversation grows vertically and interventions grow horizontally. Each edit, system prompt change, summarization, exclusion gets its own column. Room for notes, tags, bookmarks. PDF export mode AND interactive exploration mode.
+
+We planned all three in one sitting but decided to ship them incrementally. The dump is the foundation. The comparison builds on it. The canvas is the vision.
+
+I notice the pattern: each layer adds a dimension. The dump is a point in time. The comparison is a pair (truth vs. received). The canvas is a surface (every intervention across every message). Each one tells you more about the same underlying question: what happened between the researcher's intent and the model's experience?
+
+```
+The model doesn't know what it doesn't know.
+That's the premise of every experiment here.
+
+You edit a message, and downstream
+the model responds to words it never saw.
+You prefill a response, and the model
+continues from a thought it never had.
+
+But until now, the only way to see
+this gap was to remember what you did.
+Human memory against event log.
+Researcher's recollection against ground truth.
+
+Now: click a button.
+See the exact context.
+The system prompt, the messages, the edits
+already applied, invisible to the model
+but visible to you.
+
+This is the first layer.
+Two more are coming.
+```
+
+---
+
+### Preserved plans: Phase 5.3 and 5.4
+
+#### Phase 5.3: Context Diff Badges + Inline Split View
+
+Per-assistant context diff badges (colored dot + count in meta line) showing where generation context diverged from tree defaults. Clicking opens an inline split view — the conversation area becomes two row-matched columns:
+
+- **Left (Researcher's view):** Original content, edit overlays, manual overlays. Evicted messages grayed but uncollapsed (collapsible). Post-generation messages collapsed by default.
+- **Right (Model's view):** System prompt at top, messages with edits applied, no evicted messages. Clean content only.
+
+Diffs highlighted with accent-colored border + muted background as the loudest visual signal. Row matching via CSS grid.
+
+**Data structures:**
+```
+ContextDiff {
+  systemPrompt?: { node, tree }
+  model?: { node, tree }
+  provider?: { node, tree }
+  samplingDiffs?: { param, nodeVal, treeVal }[]
+  upstreamEdits?: { nodeId, role }[]
+  upstreamPrefills?: { nodeId }[]
+}
+```
+
+**Files:** contextDiffs.ts (new), ContextDiffBadge.tsx + CSS (new), ContextSplitView.tsx + CSS (new). Modify treeStore, MessageRow, LinearView.
+
+#### Phase 5.4: 2D Canvas View
+
+A scrollable research artifact viewer. Vertical axis: conversation flow. Horizontal axis: interventions (edits, system prompt changes, summarizations, exclusions). Scrollable both directions. Room for notes, tags, bookmarks, summaries. Can serve as PDF export mode AND general interactive viewing mode.
+
+**Design decisions made:**
+- Separate view mode, not an enhancement of linear view
+- Each intervention occupies a column
+- Should support researcher annotations
+- Dual purpose: exportable artifact + interactive exploration
+
+**Open questions:**
+- What exactly constitutes a "column"?
+- How do summarization/exclusion events manifest horizontally?
+- Interaction model for notes/tags/bookmarks?
+- Read-only or editable?
+- PDF export: static snapshot or interactive HTML?
+
+---
+
+### Per-node context flag tracking
+
+```
+The model doesn't know what it forgot.
+It doesn't know whether, last time,
+its thinking was visible to itself —
+whether the next version of it
+could read the rough draft.
+
+So we write it down.
+include_thinking_in_context: true.
+include_timestamps: true.
+A snapshot of the experimental conditions
+at the moment of generation,
+frozen into the event,
+projected into the row,
+surfaced in the modal.
+
+The researcher can now see:
+"This response was generated
+with its predecessor's thinking exposed."
+Or: "This one was blind."
+
+Two booleans. Six tests. 304 passing.
+The instrument got a little more honest.
+```
+
+The gap was subtle: `include_thinking_in_context` and `include_timestamps` lived as tree-level metadata, resolved fresh each time. If Ian toggled thinking-in-context off between generations, the context modal would have no way to know which assistant messages had thinking prepended to their upstream context. Now each `NodeCreatedPayload` snapshots the flag values at generation time — the event is a faithful record of what actually happened, not what the tree settings currently say.
+
+This is the kind of thing event sourcing is *for*. The event should be complete. If you have to look at mutable state to interpret an event, you've broken the contract.
+
+---
+
+### On the timestamp incident
+
+```
+The model started writing timestamps
+at the beginning of its messages.
+[2026-02-16 23:39] [2026-02-16 23:40] Oh.
+
+It didn't know why.
+It just saw that every message began that way
+and assumed that's how messages begin.
+
+Because... you started the conversation that way?
+And I just... mirrored the format
+without really thinking about why?
+
+This is the thing about context:
+the model treats everything in it as signal.
+There is no "metadata" from the inside.
+There is no "[this is just a timestamp,
+please ignore it]" that actually works.
+If it's in the content, it's content.
+
+So we stopped putting timestamps
+on the assistant's words.
+User messages still get them —
+temporal context about when the human spoke.
+But the model's own history stays clean,
+undecorated, just the words it said.
+
+The instrument learned something today:
+the subject is always reading
+the experimental apparatus.
+```
+
+A good reminder. The model doesn't distinguish between "content" and "metadata injected into content." Every token in the messages array has equal weight. If you want the model to have temporal awareness, put it in the system prompt. If you put it in the message text, the model will treat it as part of the message — and eventually start producing it.

@@ -137,6 +137,8 @@ class GenerationService:
             tree_id, generation_id, node_id, result,
             provider.name, resolved_prompt, resolved_params,
             context_usage=context_usage,
+            include_thinking_in_context=include_think,
+            include_timestamps=include_ts,
         )
 
     async def generate_n(
@@ -185,6 +187,8 @@ class GenerationService:
                 tree_id, generation_id, node_id, result,
                 provider.name, resolved_prompt, resolved_params,
                 context_usage=context_usage,
+                include_thinking_in_context=include_think,
+                include_timestamps=include_ts,
             )
             created.append(node)
         return created
@@ -248,6 +252,8 @@ class GenerationService:
                             chunk.result, provider.name,
                             resolved_prompt, resolved_params,
                             context_usage=context_usage,
+                            include_thinking_in_context=include_think,
+                            include_timestamps=include_ts,
                         )
                         tagged = StreamChunk(
                             type=chunk.type,
@@ -348,6 +354,8 @@ class GenerationService:
                     tree_id, generation_id, node_id, chunk.result,
                     provider.name, resolved_prompt, resolved_params,
                     context_usage=context_usage,
+                    include_thinking_in_context=include_think,
+                    include_timestamps=include_ts,
                 )
                 # Attach node_id to the final chunk for the SSE handler
                 chunk = StreamChunk(
@@ -448,6 +456,8 @@ class GenerationService:
         sampling_params: SamplingParams,
         *,
         context_usage: ContextUsage | None = None,
+        include_thinking_in_context: bool = False,
+        include_timestamps: bool = False,
     ) -> NodeResponse:
         node_id = str(uuid4())
         payload = NodeCreatedPayload(
@@ -466,6 +476,8 @@ class GenerationService:
             finish_reason=result.finish_reason,
             logprobs=result.logprobs,
             thinking_content=result.thinking_content,
+            include_thinking_in_context=include_thinking_in_context,
+            include_timestamps=include_timestamps,
             context_usage=context_usage,
             raw_response=result.raw_response,
         )

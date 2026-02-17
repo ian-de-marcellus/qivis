@@ -50,6 +50,8 @@ CREATE TABLE IF NOT EXISTS nodes (
     participant_name TEXT,
     thinking_content TEXT,
     edited_content TEXT,
+    include_thinking_in_context INTEGER NOT NULL DEFAULT 0,
+    include_timestamps INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL,
     archived INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY (tree_id) REFERENCES trees(tree_id)
@@ -63,6 +65,8 @@ CREATE INDEX IF NOT EXISTS idx_nodes_parent_id ON nodes(parent_id);
 _MIGRATIONS = [
     "ALTER TABLE nodes ADD COLUMN thinking_content TEXT",
     "ALTER TABLE nodes ADD COLUMN edited_content TEXT",
+    "ALTER TABLE nodes ADD COLUMN include_thinking_in_context INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE nodes ADD COLUMN include_timestamps INTEGER NOT NULL DEFAULT 0",
 ]
 
 
