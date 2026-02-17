@@ -117,6 +117,23 @@ export interface EditHistoryResponse {
   entries: EditHistoryEntry[]
 }
 
+export interface InterventionEntry {
+  event_id: string
+  sequence_num: number
+  timestamp: string
+  intervention_type: 'node_edited' | 'system_prompt_changed'
+  node_id: string | null
+  original_content: string | null
+  new_content: string | null
+  old_value: string | null
+  new_value: string | null
+}
+
+export interface InterventionTimelineResponse {
+  tree_id: string
+  interventions: InterventionEntry[]
+}
+
 // -- Requests --
 
 export interface CreateTreeRequest {

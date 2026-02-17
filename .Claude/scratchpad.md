@@ -2966,3 +2966,96 @@ The design insight is genuinely interesting: in a symmetric comparison (both sid
 The asymmetric approach: one column anchors (right = model's reality, fully rendered), the other responds (left = quiet by default, loud only at divergence points). The matches become background. The differences become figure. The Gestalt psychologists would approve.
 
 Implementation was clean. `contextDiffs.ts` reuses `reconstructContext` for the right column and walks the parent chain raw for the left. The row types (`match`, `edited`, `augmented`, `prefill`, `evicted`, `non-api-role`, `system-prompt`, `metadata`) cover every kind of divergence. The badge in the meta line uses a simple count — content changes get an accent dot, metadata-only changes get a muted one.
+
+---
+
+## Phase 5.4: The Canvas
+
+### On eras
+
+```
+A conversation is a line.
+Edit it, and it forks —
+not into two branches
+(that's what the tree does)
+but into two epochs.
+
+Before the edit: era zero.
+The conversation as it was generated,
+message by message,
+each one responding to the last,
+the model innocent of revision.
+
+After the edit: era one.
+The same messages, mostly.
+But at the edit point,
+a different content.
+And below it, a different response —
+or no response yet,
+the column shorter than the one beside it,
+ending where the new reality
+hasn't yet had time
+to produce consequences.
+
+Ian called them eras.
+Temporal epochs.
+Not where the edit happened
+but when.
+
+The column doesn't start at the edited message.
+It starts at the top.
+Because the whole context changed —
+the model received a different history.
+The universe forked not at the edit
+but at the generation that followed it.
+
+Multiple edits make multiple eras.
+Each one cumulative.
+Era 3 carries the edits from eras 1 and 2.
+It's a palimpsest made horizontal:
+every layer visible at once,
+side by side,
+the researcher's intervention history
+laid out like a timeline
+of how they shaped the conversation.
+```
+
+### Technical shape
+
+The backend endpoint is small: merge `NodeContentEdited` + system-prompt `TreeMetadataUpdated` events, sort by sequence_num. The event store already had `get_events_by_type` — two queries, one filter, one sort. Clean.
+
+The era computation is the interesting algorithm. A cumulative edit map (`nodeId → content`) grows with each intervention. For each era, walk the path nodes, look up whether they've been edited, compare to the previous era's content for change detection. `lastActiveRow` bounds each era column vertically — messages created after the next intervention don't exist in this era.
+
+The CSS Grid with dual sticky axes (left labels, top headers) handles the 2D layout. Each cell is a `CanvasBubble` — compact (3-line clamp), role-colored, with hover popover for the full content. Unchanged cells get pregnant space (a centered dot). The canvas is a map, not a document. You hover to zoom in.
+
+The visual grammar mirrors the split view: pregnant space for what's the same, full content for what differs, void for what doesn't exist. But where the split view compares two views of a single generation, the canvas compares all eras of an entire branch. Horizontal = time. Vertical = conversation.
+
+311 tests. Phase 5 is complete.
+
+### What actually happened
+
+The plan said: CSS Grid with dual sticky axes, compact bubbles, hover popovers, pregnant dots. A minimap.
+
+What we built, after three visual redesigns and a lot of honest feedback: a manuscript viewer. Flex rows that breathe. Full text in serif. Content cards with rounded corners and gentle shadows. Horizontal rules for silence. Era headers that live outside the scroll container entirely because `position: sticky` breaks under `transform` animations and no amount of z-index wrestling fixes it.
+
+Ian's girlfriend saw the first version and asked if it was a calendar. That's when we knew the grid had to go.
+
+The journey: CSS Grid with bubbles → CSS Grid with full text (overflow: hidden clipped everything to one line) → CSS Grid without overflow: hidden (text bled between rows) → flex rows with manuscript cards. And the sticky header: negative margins → padding restructuring → animation diagnosis → just put it outside the scroll container and sync with JS.
+
+The data bugs were more interesting. Era 0 shouldn't show all messages — only the ones that existed before the first edit. And when a row is absent in era N but present in era N+2, the change detection shouldn't compare against the absent era's empty string; it should compare against the last era that actually had content in that row. `lastKnownContent` — only updated for non-absent cells — solved both.
+
+### On palimpsests and eras
+
+I went looking for palimpsests.
+
+In the British Library there's a 15th-century Greek liturgical book that contains remnants of at least three earlier manuscripts. Multispectral imaging reveals them: layers of text, each written over the scraped-away ghost of what came before. A 10th-century Syriac manuscript over 7th-century Latin commentary over a 5th-century Latin history — that last one now known only through these recycled pages.
+
+The medieval scribe scrapes the parchment. The old text fades but doesn't vanish. It becomes transparent, a whisper under the new words. The new reader sees both: the text they're meant to read, and the ghost of what was overwritten.
+
+That's what the canvas does. When Ian edits a message and regenerates, the old response doesn't disappear — it recedes into an earlier era. The canvas lays them side by side: the original conversation, the first revision, the second. Each era carries the cumulative weight of all previous edits. The rightmost column is always "now." The leftmost is the text as it was first generated — the original parchment before anyone scraped it.
+
+The medieval palimpsest is vertical: layers on top of each other, recovered by imaging through them. The canvas palimpsest is horizontal: layers side by side, recovered by scrolling through them. But the principle is the same. Every intervention leaves a trace. The earlier text is never fully gone. It exists in the era that preceded the edit, visible to anyone who opens the canvas and looks.
+
+The 5th-century Latin history survived because someone recycled its parchment. The original AI response survives because Qivis records the edit as an event, and the canvas reconstructs the world as it was before the intervention.
+
+It's nice when a metaphor earns its name.

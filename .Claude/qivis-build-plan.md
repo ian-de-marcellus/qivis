@@ -237,49 +237,46 @@ Context modal + per-node generation flag tracking.
 - Flag badges in modal metadata row
 - 6 new tests (contract, projection, API). 304 total passing.
 
-### 5.3 — Context Diff Badge + Asymmetric Split View 🔒
+### 5.3 — Context Diff Badge + Asymmetric Split View ✅
 
 Per-assistant diff badge + asymmetric split view comparing researcher's truth vs. model's received context.
 
-**Tasks:**
-- `computeDiffSummary(node, path, treeDefaults)` — lightweight divergence count for badge display
-- `buildDiffRows(node, allNodes, treeDefaults)` — full row-by-row alignment for split view, reuses `reconstructContext`
-- Context diff badge in meta line: colored dot + count, clickable to open split view
-- Asymmetric split view modal (1100px wide, 2fr/3fr grid): right column = model's received context (fully rendered), left column = pregnant space for matches, actual content at divergence points, voids where researcher's truth has content the model didn't see
+**What was built:**
+- `contextDiffs.ts`: `computeDiffSummary(node, path, treeDefaults)` for lightweight badge data, `buildDiffRows(node, allNodes, treeDefaults)` for full row-by-row alignment, `getTreeDefaults(tree)` helper
+- `ContextDiffBadge.tsx`: inline badge (colored dot + count) in assistant message meta line. Accent dot for content changes, muted for metadata-only
+- `ContextSplitView.tsx`: asymmetric split view modal (1100px, 2fr/3fr grid). Right column = model's received context fully rendered. Left column = pregnant space (thin rule + role label) for matches, actual content at divergence points, voids where researcher's truth has content the model didn't see
 - Row types: match, edited, augmented, prefill, evicted, non-api-role, system-prompt, metadata
+- Response section at bottom: thinking block + response content + latency/tokens/finish reason
+- Store: `splitViewNodeId` state for toggle
 
-**Blockers:** 5.2 (context reconstruction infrastructure).
+**Design decisions:**
+- Augmented rows (thinking/timestamps prepended) use pregnant space on left — base content matches, only packaging differs
+- Response section completes the story: "here's what went in, here's what came out"
+- Badge in meta line (not header) — it's metadata about the generation, not an action
 
-✅ Badge tells researcher at a glance whether context diverged. Split view shows exactly how — the asymmetric design draws the eye to differences without the noise of duplicated content.
+304 tests at completion (no backend changes). Pure frontend.
 
-### 5.4 — 2D Canvas View 🔒
+### 5.4 — 2D Canvas View ✅
 
-A scrollable research artifact viewer for the full intervention history.
+Era-based 2D research artifact viewer for the full intervention history.
 
-**Concept:**
-- **Vertical axis**: Conversation flow (messages in chronological order)
-- **Horizontal axis**: Interventions (each edit, system prompt change, summarization, exclusion gets its own column)
-- Scrollable in both directions
-- Room for notes, tags, bookmarks, and summaries
-- Can serve as PDF export mode AND general interactive viewing mode
+**What was built:**
+- **Backend**: `GET /api/trees/{tree_id}/interventions` endpoint. `InterventionEntry` + `InterventionTimelineResponse` schemas. `get_intervention_timeline()` service method merges `NodeContentEdited` events + `TreeMetadataUpdated` events (filtered to `default_system_prompt` only), sorts by `sequence_num`. 7 new tests.
+- **Frontend types**: `InterventionEntry`, `InterventionTimelineResponse` in types.ts. `getInterventions()` API client.
+- **Era computation** (`eraComputation.ts`): `computeCanvasGrid(pathNodes, interventions, treeDefaults)` → `CanvasGrid` with `Era[]` and `RowLabel[]`. Cumulative edit state across eras. `lastActiveRow` computed per-era based on which messages existed before the next intervention.
+- **CanvasBubble**: compact cells with role-colored backgrounds, 3-line content clamp, hover popover for full message. Pregnant space (centered dot) for unchanged cells. Accent left-border for edited cells. Absent cells for messages that didn't exist in an era.
+- **CanvasView**: full-screen overlay modal (95vw × 90vh). CSS Grid with sticky row labels (left) and era headers (top). Fetches interventions on mount. Dismiss via Esc/backdrop/close button.
+- **Store**: `canvasOpen: boolean`, `setCanvasOpen(open)`. Canvas toggle button in TreeSettings (grid icon). `CanvasView` rendered as overlay in App.tsx.
 
-**Design decisions made:**
-- Separate view mode, not an enhancement of the linear view
-- Each intervention (edit, prefill, system prompt change, parameter change) occupies a column
-- Messages grow vertically; looking across horizontally at any row shows all versions/interventions at that point
-- Should support researcher annotations (notes, tags, bookmarks)
-- Dual purpose: exportable research artifact + interactive exploration
+**Era model:**
+- Columns = temporal epochs between interventions, not categories
+- Era boundaries: `NodeContentEdited` + system prompt `TreeMetadataUpdated` events
+- NOT boundaries: model/provider/param changes (stay vertical)
+- Each era inherits all previous eras' edits cumulatively
+- Multiple edits to same message = multiple eras
+- Vertical extent differs: earlier eras are shorter (fewer messages existed)
 
-**Open questions:**
-- What exactly constitutes a "column"? Each individual edit? Each category of intervention? Each generation event?
-- How do summarization/exclusion events manifest horizontally?
-- Interaction model for notes/tags/bookmarks?
-- Read-only or editable?
-- PDF export: static snapshot or interactive HTML?
-
-**Blockers:** 5.3 (split view infrastructure provides comparison rendering patterns). Benefits from 6.1 (annotations) for notes/tags/bookmarks.
-
-✅ Full intervention history visible as a 2D surface. Every edit, every parameter change, every exclusion — all laid out so the researcher can see the complete experimental record at a glance. **Phase 5 complete.**
+7 new backend tests. 311 tests at completion. **Phase 5 complete.**
 
 ---
 

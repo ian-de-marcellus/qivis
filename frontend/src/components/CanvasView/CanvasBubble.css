@@ -1,0 +1,106 @@
+/* ---- Canvas Cell (shared base) ---- */
+
+.canvas-cell {
+  min-height: 1rem;
+}
+
+/* ---- Match: unchanged from the previous era ---- */
+
+.canvas-match {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.35rem var(--space-sm);
+  opacity: 0.35;
+}
+
+.canvas-match-rule {
+  display: block;
+  width: 2rem;
+  height: 1px;
+  background: var(--border);
+  border-radius: 1px;
+}
+
+/* ---- Absent: the void ---- */
+
+.canvas-absent {
+  /* Nothing. */
+}
+
+/* ---- Content card: manuscript-style ---- */
+
+.canvas-content {
+  background: var(--bg-secondary);
+  border-radius: var(--radius-md);
+  padding: var(--space-sm) var(--space-md);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  transition: box-shadow 0.15s ease;
+}
+
+.canvas-content:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+/* Accent left border for changed cells in non-original eras */
+.canvas-content.changed {
+  border-left: 2px solid var(--accent);
+  border-radius: var(--radius-md);
+}
+
+/* Role-specific card tinting */
+.canvas-content.role-system,
+.canvas-content.system {
+  background: var(--bg-system-message);
+}
+
+.canvas-content.role-user {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-subtle);
+}
+
+.canvas-content.role-assistant {
+  background: var(--bg-secondary);
+}
+
+/* ---- Typography ---- */
+
+.canvas-text {
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  line-height: var(--leading-relaxed);
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* System prompt in mono */
+.canvas-content.system .canvas-text {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+}
+
+/* ---- Tags ---- */
+
+.canvas-tag {
+  display: inline-block;
+  font-family: var(--font-ui);
+  font-size: 0.6rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 0.1rem 0.35rem;
+  border-radius: var(--radius-sm);
+  margin-bottom: var(--space-xs);
+}
+
+.canvas-tag.edited {
+  background: var(--accent-muted);
+  color: var(--accent);
+}
+
+.canvas-tag.system-tag {
+  background: var(--bg-secondary);
+  color: var(--text-tertiary);
+  border: 1px solid var(--border-subtle);
+}

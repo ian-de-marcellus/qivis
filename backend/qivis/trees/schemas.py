@@ -97,6 +97,23 @@ class EditHistoryResponse(BaseModel):
     entries: list[EditHistoryEntry]
 
 
+class InterventionEntry(BaseModel):
+    event_id: str
+    sequence_num: int
+    timestamp: str
+    intervention_type: str  # "node_edited" | "system_prompt_changed"
+    node_id: str | None = None
+    original_content: str | None = None
+    new_content: str | None = None
+    old_value: str | None = None
+    new_value: str | None = None
+
+
+class InterventionTimelineResponse(BaseModel):
+    tree_id: str
+    interventions: list[InterventionEntry]
+
+
 class TreeSummary(BaseModel):
     tree_id: str
     title: str | None = None

@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { CanvasView } from './components/CanvasView/CanvasView.tsx'
 import { GraphView } from './components/GraphView/GraphView.tsx'
 import { TreeList } from './components/Library/TreeList.tsx'
+import { getTreeDefaults } from './components/TreeView/contextDiffs.ts'
 import { LinearView } from './components/TreeView/LinearView.tsx'
 import { MessageInput } from './components/TreeView/MessageInput.tsx'
 import { SystemPromptInput } from './components/TreeView/SystemPromptInput.tsx'
 import { TreeSettings } from './components/TreeView/TreeSettings.tsx'
-import { useTreeStore } from './store/treeStore.ts'
+import { getActivePath, useTreeStore } from './store/treeStore.ts'
 import './App.css'
 
 type ThemeMode = 'system' | 'light' | 'dark'
@@ -33,7 +35,7 @@ function applyTheme(mode: ThemeMode) {
 }
 
 function App() {
-  const { fetchTrees, currentTree, error, clearError } = useTreeStore()
+  const { fetchTrees, currentTree, error, clearError, canvasOpen, setCanvasOpen, branchSelections } = useTreeStore()
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [theme, setTheme] = useState<ThemeMode>(getInitialTheme)
   const [graphOpen, setGraphOpen] = useState(false)
@@ -154,6 +156,15 @@ function App() {
             <h1>Qivis</h1>
             <p>Select a tree or create a new one to begin.</p>
           </div>
+        )}
+
+        {canvasOpen && currentTree && (
+          <CanvasView
+            treeId={currentTree.tree_id}
+            pathNodes={getActivePath(currentTree.nodes, branchSelections)}
+            treeDefaults={getTreeDefaults(currentTree)}
+            onDismiss={() => setCanvasOpen(false)}
+          />
         )}
       </main>
     </div>

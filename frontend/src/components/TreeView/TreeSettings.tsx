@@ -10,7 +10,7 @@ interface TreeSettingsProps {
 }
 
 export function TreeSettings({ graphOpen, onToggleGraph }: TreeSettingsProps) {
-  const { currentTree, updateTree, providers, fetchProviders } = useTreeStore()
+  const { currentTree, updateTree, providers, fetchProviders, canvasOpen, setCanvasOpen } = useTreeStore()
   const [isOpen, setIsOpen] = useState(false)
   const [isEditingTitle, setIsEditingTitle] = useState(false)
 
@@ -195,6 +195,18 @@ export function TreeSettings({ graphOpen, onToggleGraph }: TreeSettingsProps) {
             </svg>
           </button>
         )}
+        <button
+          className={`graph-toggle canvas-toggle ${canvasOpen ? 'active' : ''}`}
+          onClick={() => setCanvasOpen(!canvasOpen)}
+          aria-label={canvasOpen ? 'Hide palimpsest' : 'Show palimpsest'}
+          title={canvasOpen ? 'Hide palimpsest' : 'Show palimpsest'}
+        >
+          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+            <rect x="2" y="3" width="5" height="14" rx="1" />
+            <rect x="8" y="3" width="5" height="10" rx="1" />
+            <rect x="14" y="3" width="4" height="6" rx="1" />
+          </svg>
+        </button>
         <button
           className={`tree-settings-gear ${isOpen ? 'active' : ''}`}
           onClick={() => setIsOpen(!isOpen)}

@@ -1,0 +1,202 @@
+/* ---- Canvas View: manuscript-inspired research artifact viewer ---- */
+
+.canvas-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: backdrop-enter 0.15s ease;
+}
+
+.canvas-view {
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  width: 95vw;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.18);
+  animation: canvas-enter 0.2s ease;
+}
+
+/* Opacity-only animation — transform breaks sticky positioning */
+@keyframes canvas-enter {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* ---- Title bar ---- */
+
+.canvas-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-sm) var(--space-lg);
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+
+.canvas-header-left {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-sm);
+}
+
+.canvas-title {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.canvas-subtitle {
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+.canvas-close {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-xs) var(--space-sm);
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.canvas-close:hover {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+
+/* ---- Loading / Error ---- */
+
+.canvas-loading,
+.canvas-error {
+  padding: var(--space-xl);
+  text-align: center;
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  color: var(--text-tertiary);
+}
+
+.canvas-error {
+  color: var(--error-text);
+}
+
+/* ---- Era header strip — OUTSIDE the scroll container ---- */
+
+.canvas-era-strip {
+  display: flex;
+  flex-shrink: 0;
+  overflow: hidden; /* no scrollbar — synced via JS from body scroll */
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border-subtle);
+  padding: var(--space-sm) 0;
+}
+
+.canvas-era-strip-gutter {
+  flex: 0 0 3.5rem;
+}
+
+.canvas-era-strip-cells {
+  display: flex;
+  gap: var(--space-sm);
+}
+
+.canvas-era-header {
+  flex: 0 0 320px;
+  padding: 0 var(--space-sm);
+}
+
+.canvas-era-label {
+  font-family: var(--font-display);
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.canvas-era-timestamp {
+  font-family: var(--font-ui);
+  font-size: 0.7rem;
+  color: var(--text-tertiary);
+  margin-top: 0.1rem;
+}
+
+.canvas-era-subtitle {
+  font-family: var(--font-ui);
+  font-size: 0.65rem;
+  color: var(--accent);
+  font-weight: 500;
+}
+
+/* ---- Scrollable body ---- */
+
+.canvas-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+/* ---- Message rows ---- */
+
+.canvas-row {
+  display: flex;
+  align-items: stretch;
+  gap: var(--space-sm);
+  margin-bottom: 2px;
+  padding: 0 var(--space-md);
+}
+
+/* Role gutter — narrow annotation column */
+.canvas-row-gutter {
+  flex: 0 0 3rem;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  padding-top: var(--space-sm);
+  padding-right: var(--space-xs);
+}
+
+.canvas-row-role {
+  font-family: var(--font-ui);
+  font-size: 0.6rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+.canvas-row-index {
+  font-family: var(--font-mono);
+  font-size: 0.55rem;
+  color: var(--text-tertiary);
+  margin-left: 0.15rem;
+  opacity: 0.7;
+}
+
+/* The cells container — one per era, horizontal */
+.canvas-row-cells {
+  display: flex;
+  gap: var(--space-sm);
+  flex: 1;
+  min-width: 0;
+}
+
+/* Individual cell wrapper — fixed width per era */
+.canvas-era-cell {
+  flex: 0 0 320px;
+  min-height: 1.25rem;
+}
+
+.canvas-era-cell.beyond-era {
+  opacity: 0.1;
+}

@@ -18,6 +18,7 @@ from qivis.trees.schemas import (
     CreateTreeRequest,
     EditHistoryResponse,
     GenerateRequest,
+    InterventionTimelineResponse,
     NodeResponse,
     PatchNodeContentRequest,
     PatchTreeRequest,
@@ -123,6 +124,17 @@ async def get_edit_history(
         raise HTTPException(status_code=404, detail=f"Tree not found: {tree_id}")
     except NodeNotFoundError:
         raise HTTPException(status_code=404, detail=f"Node not found: {node_id}")
+
+
+@router.get("/{tree_id}/interventions")
+async def get_interventions(
+    tree_id: str,
+    service: TreeService = Depends(get_tree_service),
+) -> InterventionTimelineResponse:
+    try:
+        return await service.get_intervention_timeline(tree_id)
+    except TreeNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Tree not found: {tree_id}")
 
 
 @router.post(

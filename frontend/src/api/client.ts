@@ -5,6 +5,7 @@ import type {
   CreateTreeRequest,
   EditHistoryResponse,
   GenerateRequest,
+  InterventionTimelineResponse,
   MessageStopEvent,
   NodeResponse,
   PatchTreeRequest,
@@ -89,6 +90,12 @@ export function getEditHistory(
   nodeId: string,
 ): Promise<EditHistoryResponse> {
   return request(`/trees/${treeId}/nodes/${nodeId}/edit-history`)
+}
+
+// -- Intervention timeline --
+
+export function getInterventions(treeId: string): Promise<InterventionTimelineResponse> {
+  return request(`/trees/${treeId}/interventions`)
 }
 
 // -- Generation (non-streaming) --

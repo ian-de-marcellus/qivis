@@ -20,6 +20,8 @@ from qivis.trees.schemas import (
     CreateTreeRequest,
     EditHistoryEntry,
     EditHistoryResponse,
+    InterventionEntry,
+    InterventionTimelineResponse,
     NodeResponse,
     PatchNodeContentRequest,
     PatchTreeRequest,
@@ -280,6 +282,53 @@ class TreeService:
             current_content=current_content,
             entries=entries,
         )
+
+    async def get_intervention_timeline(
+        self, tree_id: str,
+    ) -> InterventionTimelineResponse:
+        """Get all interventions (edits + system prompt changes) for a tree."""
+        tree = await self._projector.get_tree(tree_id)
+        if tree is None:
+            raise TreeNotFoundError(tree_id)
+
+        # Fetch edit events
+        edit_events = await self._store.get_events_by_type(tree_id, "NodeContentEdited")
+
+        # Fetch metadata events, filter for system prompt only
+        metadata_events = await self._store.get_events_by_type(tree_id, "TreeMetadataUpdated")
+        system_prompt_events = [
+            ev for ev in metadata_events
+            if ev.payload.get("field") == "default_system_prompt"
+        ]
+
+        # Build entries from edit events
+        entries: list[InterventionEntry] = []
+        for ev in edit_events:
+            entries.append(InterventionEntry(
+                event_id=ev.event_id,
+                sequence_num=ev.sequence_num,
+                timestamp=ev.timestamp.isoformat() if hasattr(ev.timestamp, "isoformat") else str(ev.timestamp),
+                intervention_type="node_edited",
+                node_id=ev.payload["node_id"],
+                original_content=ev.payload.get("original_content"),
+                new_content=ev.payload.get("new_content"),
+            ))
+
+        # Build entries from system prompt events
+        for ev in system_prompt_events:
+            entries.append(InterventionEntry(
+                event_id=ev.event_id,
+                sequence_num=ev.sequence_num,
+                timestamp=ev.timestamp.isoformat() if hasattr(ev.timestamp, "isoformat") else str(ev.timestamp),
+                intervention_type="system_prompt_changed",
+                old_value=ev.payload.get("old_value"),
+                new_value=ev.payload.get("new_value"),
+            ))
+
+        # Sort by sequence_num
+        entries.sort(key=lambda e: e.sequence_num)
+
+        return InterventionTimelineResponse(tree_id=tree_id, interventions=entries)
 
     @staticmethod
     def _compute_sibling_info(
