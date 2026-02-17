@@ -65,9 +65,11 @@ interface MessageRowProps {
   diffSummary?: DiffSummary
   onSplitView?: () => void
   highlightClass?: 'highlight-used' | 'highlight-other'
+  comparisonPickable?: boolean
+  onComparisonPick?: () => void
 }
 
-export function MessageRow({ node, siblings, onSelectSibling, onFork, onPrefill, onGenerate, onCompare, onEdit, onInspect, onBookmarkToggle, onExcludeToggle, isExcludedOnPath, groupSelectable, groupSelected, onGroupToggle, diffSummary, onSplitView, highlightClass }: MessageRowProps) {
+export function MessageRow({ node, siblings, onSelectSibling, onFork, onPrefill, onGenerate, onCompare, onEdit, onInspect, onBookmarkToggle, onExcludeToggle, isExcludedOnPath, groupSelectable, groupSelected, onGroupToggle, diffSummary, onSplitView, highlightClass, comparisonPickable, onComparisonPick }: MessageRowProps) {
   const [showLogprobs, setShowLogprobs] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
   const [editValue, setEditValue] = useState('')
@@ -85,15 +87,24 @@ export function MessageRow({ node, siblings, onSelectSibling, onFork, onPrefill,
   const isManual = node.role === 'assistant' && node.mode === 'manual'
   const hasEdit = node.edited_content != null
   const hasEditHistory = hasEdit || node.edit_count > 0 || (editHistoryCache[node.node_id]?.length ?? 0) > 0
+  const inPickingMode = comparisonPickable != null
   const rowClasses = [
     'message-row', node.role, highlightClass,
     isExcludedOnPath && 'excluded',
     groupSelectable && 'group-selectable',
     groupSelected && 'group-selected',
+    comparisonPickable && 'comparison-pickable',
+    inPickingMode && !comparisonPickable && 'comparison-dimmed',
   ].filter(Boolean).join(' ')
 
+  const handleRowClick = groupSelectable
+    ? onGroupToggle
+    : comparisonPickable
+      ? onComparisonPick
+      : undefined
+
   return (
-    <div className={rowClasses} onClick={groupSelectable ? onGroupToggle : undefined}>
+    <div className={rowClasses} onClick={handleRowClick}>
       <div className="message-header">
         <span className="message-role">{roleLabel}</span>
         {node.role === 'assistant' && node.model && (

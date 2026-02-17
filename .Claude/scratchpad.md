@@ -3193,3 +3193,46 @@ The key difference: in manuscript palimpsests, the undertext is damaged. Recover
 Ian's next idea pushes this further: comparing any node's context to any other node's, including across branches. The current split view compares to "original" (the tree defaults, no edits). But the interesting comparison might be between two siblings — what did the model see differently when it gave *this* answer vs. *that* answer? The diff becomes cross-branch, not just temporal. That's closer to a collation table in textual criticism — aligning witnesses of the same text to find variants.
 
 Also noticed CTK (Conversation Toolkit) — a plugin-based system for managing AI conversations across providers, using SQLite with tree-structured message storage. Similar architectural instincts (SQLite, trees as first-class), but it's a *management* tool (import, search, export) rather than a *research* tool (annotate, intervene, compare). The export strategies are telling: "longest path," "first path," "most recent path" — they flatten the tree to a line for export. Qivis never flattens. The tree is the point.
+
+---
+
+### Cross-branch comparison: the collation table
+
+The diff view generalization is done. What was a fixed "original vs. actual" comparison is now a generalized context comparator — any node's context against any other node's, including across branches. The "original" becomes a special case: a synthetic context where nothing was changed.
+
+The algorithm was the interesting part. Two nodes share some prefix of their paths (everything before the fork point) and have divergent suffixes. For the shared prefix, each message might be in a different *state* in each context — in-context vs excluded, or with different content due to edits and augmentations. After the fork, everything is side-specific. The comparison rows form a kind of alignment:
+
+```
+[shared prefix: match | content-differs | status-differs]
+[fork-point divider]
+[left-only suffix]
+[right-only suffix]
+```
+
+This is, I realize, exactly the structure of a critical apparatus in a scholarly edition. The shared prefix is the established text. The fork point is the locus of variation. The left and right suffixes are the variant readings. The status-differs rows are like lacunae or interpolations — present in one witness, absent in another.
+
+The picking mode interaction is satisfying. You're in the split view, you click "Compare to...", and the modal dissolves, returning you to the conversation with a banner showing what you're comparing from. The message rows dim except for pickable targets — non-manual assistant nodes, excluding the source. Navigate branches freely, click a target, the split view returns with the comparison. Esc at any point takes you back. The split view Esc still closes normally.
+
+What I like about this design: it doesn't try to show the comparison inline. The tree is for navigation and the split view is for analysis. The picking mode is the bridge — a temporary state where navigation serves analysis. When you click a target, you're not switching contexts, you're completing a query: "show me the difference between *that* generation and *this* one."
+
+The column labels change with the mode. Original mode: "Original" / "Model received". Node mode: model name and timestamp on each side. The right labeling tells you immediately what you're looking at.
+
+15 vitest tests for the core algorithm. The test fixtures are minimal — hand-built `NodeResponse` objects with the exact fields needed, avoiding the overhead of full API fixtures. `getPathToNode`, `buildOriginalContext`, and `buildComparisonRows` all tested for same-path, cross-branch, metadata differences, and edge cases (no shared prefix, self-comparison guard in the store).
+
+The fork-point divider is a tiny visual element — just a spanning row with "paths diverge" between two horizontal rules — but it does real work. Without it, the transition from shared rows to side-specific rows would be disorienting. The eye needs the break.
+
+---
+
+### Post-implementation refinements
+
+Three rounds of feedback after the initial build:
+
+**Scroll containment.** The split view header and column labels were scrolling out of view. The fix was architectural: flex column layout on the modal, header fixed above, a new `.split-view-scroll` wrapper holds just the labels + body, and the labels use `position: sticky` within that scroll context. The header stays put because it's outside the scrollable area entirely.
+
+**Event propagation in picking mode.** Branch navigation arrows (the < > siblings) were either greyed out (on user messages, because the row was dimmed) or immediately triggering the pick handler (on assistant messages, because click bubbled from button to row). Two fixes: replace blanket `pointer-events: none` on dimmed rows with targeted disabling of just the content/meta children (preserving branch arrows), and `e.stopPropagation()` on arrow clicks to keep them from reaching the row's pick handler. The right granularity was per-element, not per-row.
+
+**Layout shift.** The original design stacked post-fork messages vertically — left-only rows, then right-only rows. But for siblings (which never reconverge), side-by-side is more natural. This led to the `fork-pair` row type: zip the two suffixes together so message 1 from path A sits beside message 1 from path B. Left-only and right-only survive only for the tail when branches have different lengths. Match rows also shifted from the two-column grid (pregnant space on left, content on right) to spanning both columns — since the content is identical on both sides, showing it once is clearer.
+
+**Self-comparison guard.** A subtle state persistence bug: `comparisonNodeId` outlives closing the split view. If you had previously compared node X to node Y, then closed the view, then opened the diff on node Y itself, you'd get Y compared to Y — meaningless. The fix is a derived value in the rendering path: `effectiveComparisonId = comparisonNodeId !== splitViewNodeId ? comparisonNodeId : null`. When they match, it falls back to Original mode.
+
+16 tests, clean build. The comparison view is now genuinely useful for the research question it was built for: what was different about the input that led to *this* answer versus *that* one?

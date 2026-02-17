@@ -1,5 +1,6 @@
 import type { NodeResponse, SamplingParams, TreeDetail } from '../../api/types.ts'
 import { reconstructContext } from './contextReconstruction.ts'
+import type { ReconstructedContext, ReconstructedMessage } from './contextReconstruction.ts'
 
 export interface TreeDefaults {
   default_system_prompt: string | null
@@ -345,4 +346,341 @@ export function getTreeDefaults(tree: TreeDetail): TreeDefaults {
     default_provider: tree.default_provider,
     default_sampling_params: tree.default_sampling_params,
   }
+}
+
+// -- Comparison Rows (generalized, for cross-node context comparison) --
+
+export type ComparisonRowType =
+  | 'match'           // same content + status on both sides
+  | 'content-differs' // same node, content differs (edit, augmentation, etc.)
+  | 'status-differs'  // same node, one excluded/evicted, other in-context
+  | 'left-only'       // message only in left context (tail of longer branch)
+  | 'right-only'      // message only in right context (tail of longer branch)
+  | 'fork-pair'       // paired messages from divergent branches (side by side)
+  | 'fork-point'      // visual divider where paths diverge
+  | 'system-prompt'   // system prompt comparison
+  | 'metadata'        // model/provider/params comparison
+
+export type MessageStatus = 'in-context' | 'excluded' | 'evicted' | 'non-api'
+
+export interface ComparisonRow {
+  type: ComparisonRowType
+  nodeId: string | null
+  rightNodeId: string | null    // for fork-pair rows (different node on each side)
+  role: string | null
+  rightRole: string | null      // for fork-pair rows (may differ from left role)
+  leftContent: string | null
+  rightContent: string | null
+  leftStatus: MessageStatus | null
+  rightStatus: MessageStatus | null
+  leftTags: string[]
+  rightTags: string[]
+}
+
+/**
+ * Walk parent chain from a node's parent to root, returning nodes root-first.
+ * Shared helper to avoid duplicating the walk logic.
+ */
+export function getPathToNode(
+  targetNode: NodeResponse,
+  allNodes: NodeResponse[],
+): NodeResponse[] {
+  const nodeMap = new Map(allNodes.map((n) => [n.node_id, n]))
+  const path: NodeResponse[] = []
+  let currentId = targetNode.parent_id
+  while (currentId != null) {
+    const node = nodeMap.get(currentId)
+    if (!node) break
+    path.push(node)
+    currentId = node.parent_id
+  }
+  path.reverse()
+  return path
+}
+
+/**
+ * Build a synthetic ReconstructedContext representing the "Original" baseline:
+ * no edits, no exclusions, no augmentation, tree-default system prompt/metadata.
+ */
+export function buildOriginalContext(
+  targetNode: NodeResponse,
+  allNodes: NodeResponse[],
+  treeDefaults: TreeDefaults,
+): ReconstructedContext {
+  const pathNodes = getPathToNode(targetNode, allNodes)
+
+  const apiNodes = pathNodes.filter((n) =>
+    n.role === 'user' || n.role === 'assistant' || n.role === 'tool',
+  )
+
+  const messages: ReconstructedMessage[] = apiNodes.map((node) => ({
+    role: node.role,
+    content: node.content,
+    baseContent: node.content,
+    nodeId: node.node_id,
+    wasEdited: false,
+    wasManual: node.mode === 'manual',
+    hadThinkingPrepended: false,
+    hadTimestampPrepended: false,
+    thinkingPrefix: null,
+    timestampPrefix: null,
+    isExcluded: false,
+    isEvicted: false,
+  }))
+
+  return {
+    systemPrompt: treeDefaults.default_system_prompt,
+    messages,
+    evictedCount: 0,
+    evictedTokens: 0,
+    excludedCount: 0,
+    excludedTokens: 0,
+    model: treeDefaults.default_model,
+    provider: treeDefaults.default_provider,
+    samplingParams: treeDefaults.default_sampling_params,
+    timestamp: targetNode.created_at,
+    latencyMs: null,
+    usage: null,
+    finishReason: null,
+    contextUsage: null,
+    thinkingContent: null,
+    includeThinkingInContext: false,
+    includeTimestamps: false,
+  }
+}
+
+function messageStatus(msg: ReconstructedMessage): MessageStatus {
+  if (msg.isExcluded) return 'excluded'
+  if (msg.isEvicted) return 'evicted'
+  return 'in-context'
+}
+
+function messageTags(msg: ReconstructedMessage): string[] {
+  const tags: string[] = []
+  if (msg.wasEdited) tags.push('edited')
+  if (msg.wasManual) tags.push('manual')
+  if (msg.hadTimestampPrepended) tags.push('+timestamp')
+  if (msg.hadThinkingPrepended) tags.push('+thinking')
+  if (msg.isExcluded) tags.push('excluded')
+  if (msg.isEvicted) tags.push('evicted')
+  return tags
+}
+
+/**
+ * Build comparison rows between two reconstructed contexts.
+ *
+ * Finds the shared prefix (nodes on both paths by ID), then emits
+ * left-only and right-only rows for the divergent suffixes.
+ */
+export function buildComparisonRows(
+  contextA: ReconstructedContext,
+  contextB: ReconstructedContext,
+  pathA: NodeResponse[],
+  pathB: NodeResponse[],
+): ComparisonRow[] {
+  const rows: ComparisonRow[] = []
+
+  // Index messages by nodeId for quick lookup
+  const messagesA = new Map(contextA.messages.map((m) => [m.nodeId, m]))
+  const messagesB = new Map(contextB.messages.map((m) => [m.nodeId, m]))
+
+  // Build ordered nodeId lists for both paths (all roles, not just API)
+  const pathAIds = pathA.map((n) => n.node_id)
+  const pathBIds = pathB.map((n) => n.node_id)
+  // Find the shared prefix length (nodes in both paths in same order)
+  let sharedLength = 0
+  while (
+    sharedLength < pathAIds.length &&
+    sharedLength < pathBIds.length &&
+    pathAIds[sharedLength] === pathBIds[sharedLength]
+  ) {
+    sharedLength++
+  }
+
+  // System prompt comparison
+  const sysA = contextA.systemPrompt
+  const sysB = contextB.systemPrompt
+  if (sysA || sysB) {
+    rows.push({
+      type: sysA === sysB ? 'match' : 'system-prompt',
+      nodeId: null,
+      rightNodeId: null,
+      role: 'system',
+      rightRole: null,
+      leftContent: sysA,
+      rightContent: sysB,
+      leftStatus: null,
+      rightStatus: null,
+      leftTags: [],
+      rightTags: [],
+    })
+  }
+
+  // Shared prefix: nodes on both paths
+  const apiRoles = new Set(['user', 'assistant', 'tool'])
+  for (let i = 0; i < sharedLength; i++) {
+    const node = pathA[i]
+    const msgA = messagesA.get(node.node_id)
+    const msgB = messagesB.get(node.node_id)
+
+    // Non-API role: show spanning (same on both sides)
+    if (!apiRoles.has(node.role)) {
+      rows.push({
+        type: 'match',
+        nodeId: node.node_id,
+        rightNodeId: null,
+        role: node.role,
+        rightRole: null,
+        leftContent: node.content,
+        rightContent: node.content,
+        leftStatus: 'non-api',
+        rightStatus: 'non-api',
+        leftTags: [],
+        rightTags: [],
+      })
+      continue
+    }
+
+    // Both contexts should have this message (shared path, API role)
+    if (!msgA && !msgB) continue
+
+    const statusA = msgA ? messageStatus(msgA) : null
+    const statusB = msgB ? messageStatus(msgB) : null
+    const contentA = msgA?.content ?? null
+    const contentB = msgB?.content ?? null
+    const tagsA = msgA ? messageTags(msgA) : []
+    const tagsB = msgB ? messageTags(msgB) : []
+
+    // Determine row type
+    let type: ComparisonRowType
+    if (statusA !== statusB) {
+      type = 'status-differs'
+    } else if (contentA !== contentB) {
+      type = 'content-differs'
+    } else {
+      type = 'match'
+    }
+
+    rows.push({
+      type,
+      nodeId: node.node_id,
+      rightNodeId: null,
+      role: node.role,
+      rightRole: null,
+      leftContent: contentA,
+      rightContent: contentB,
+      leftStatus: statusA,
+      rightStatus: statusB,
+      leftTags: tagsA,
+      rightTags: tagsB,
+    })
+  }
+
+  // If paths diverge, emit fork point + paired divergent rows
+  const leftSuffix = pathA.slice(sharedLength)
+  const rightSuffix = pathB.slice(sharedLength)
+
+  if (leftSuffix.length > 0 || rightSuffix.length > 0) {
+    rows.push({
+      type: 'fork-point',
+      nodeId: null,
+      rightNodeId: null,
+      role: null,
+      rightRole: null,
+      leftContent: null,
+      rightContent: null,
+      leftStatus: null,
+      rightStatus: null,
+      leftTags: [],
+      rightTags: [],
+    })
+
+    // Zip the two suffixes side by side
+    const maxLen = Math.max(leftSuffix.length, rightSuffix.length)
+    for (let i = 0; i < maxLen; i++) {
+      const leftNode = leftSuffix[i] ?? null
+      const rightNode = rightSuffix[i] ?? null
+      const leftMsg = leftNode ? messagesA.get(leftNode.node_id) ?? null : null
+      const rightMsg = rightNode ? messagesB.get(rightNode.node_id) ?? null : null
+
+      if (leftNode && rightNode) {
+        // Both sides have a message at this position
+        rows.push({
+          type: 'fork-pair',
+          nodeId: leftNode.node_id,
+          rightNodeId: rightNode.node_id,
+          role: leftNode.role,
+          rightRole: rightNode.role,
+          leftContent: leftMsg?.content ?? leftNode.content,
+          rightContent: rightMsg?.content ?? rightNode.content,
+          leftStatus: !apiRoles.has(leftNode.role) ? 'non-api' : leftMsg ? messageStatus(leftMsg) : 'in-context',
+          rightStatus: !apiRoles.has(rightNode.role) ? 'non-api' : rightMsg ? messageStatus(rightMsg) : 'in-context',
+          leftTags: leftMsg ? messageTags(leftMsg) : [],
+          rightTags: rightMsg ? messageTags(rightMsg) : [],
+        })
+      } else if (leftNode) {
+        rows.push({
+          type: 'left-only',
+          nodeId: leftNode.node_id,
+          rightNodeId: null,
+          role: leftNode.role,
+          rightRole: null,
+          leftContent: leftMsg?.content ?? leftNode.content,
+          rightContent: null,
+          leftStatus: !apiRoles.has(leftNode.role) ? 'non-api' : leftMsg ? messageStatus(leftMsg) : 'in-context',
+          rightStatus: null,
+          leftTags: leftMsg ? messageTags(leftMsg) : [],
+          rightTags: [],
+        })
+      } else if (rightNode) {
+        rows.push({
+          type: 'right-only',
+          nodeId: null,
+          rightNodeId: rightNode.node_id,
+          role: null,
+          rightRole: rightNode.role,
+          leftContent: null,
+          rightContent: rightMsg?.content ?? rightNode.content,
+          leftStatus: null,
+          rightStatus: !apiRoles.has(rightNode.role) ? 'non-api' : rightMsg ? messageStatus(rightMsg) : 'in-context',
+          leftTags: [],
+          rightTags: rightMsg ? messageTags(rightMsg) : [],
+        })
+      }
+    }
+  }
+
+  // Metadata comparison
+  const metaA: string[] = []
+  const metaB: string[] = []
+  if (contextA.model) metaA.push(`model: ${contextA.model}`)
+  if (contextA.provider) metaA.push(`provider: ${contextA.provider}`)
+  if (contextB.model) metaB.push(`model: ${contextB.model}`)
+  if (contextB.provider) metaB.push(`provider: ${contextB.provider}`)
+
+  const metaLeftStr = metaA.join('\n') || null
+  const metaRightStr = metaB.join('\n') || null
+  const paramsEqual = samplingParamsEqual(contextA.samplingParams, contextB.samplingParams)
+
+  if (metaLeftStr !== metaRightStr || !paramsEqual) {
+    if (!paramsEqual) {
+      metaA.push('sampling params differ')
+      metaB.push('sampling params differ')
+    }
+    rows.push({
+      type: 'metadata',
+      nodeId: null,
+      rightNodeId: null,
+      role: null,
+      rightRole: null,
+      leftContent: metaA.join('\n') || null,
+      rightContent: metaB.join('\n') || null,
+      leftStatus: null,
+      rightStatus: null,
+      leftTags: [],
+      rightTags: [],
+    })
+  }
+
+  return rows
 }

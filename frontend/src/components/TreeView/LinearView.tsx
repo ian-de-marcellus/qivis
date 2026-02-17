@@ -2,10 +2,17 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import type { GenerateRequest, NodeResponse } from '../../api/types.ts'
 import { getActivePath, useTreeStore } from '../../store/treeStore.ts'
 import { ComparisonView } from '../ComparisonView/ComparisonView.tsx'
+import { ComparisonPickerBanner } from './ComparisonPickerBanner.tsx'
 import { ContextModal } from './ContextModal.tsx'
 import { ContextSplitView } from './ContextSplitView.tsx'
 import { reconstructContext } from './contextReconstruction.ts'
-import { computeDiffSummary, buildDiffRows, getTreeDefaults } from './contextDiffs.ts'
+import {
+  computeDiffSummary,
+  buildComparisonRows,
+  buildOriginalContext,
+  getPathToNode,
+  getTreeDefaults,
+} from './contextDiffs.ts'
 import type { DiffSummary } from './contextDiffs.ts'
 import { DigressionCreator } from './DigressionPanel.tsx'
 import { ForkPanel } from './ForkPanel.tsx'
@@ -60,6 +67,13 @@ export function LinearView() {
     setGroupSelectionMode,
     toggleGroupNodeSelection,
     createDigressionGroup,
+    comparisonNodeId,
+    comparisonPickingMode,
+    comparisonPickingSourceId,
+    setComparisonNodeId,
+    enterComparisonPicking,
+    pickComparisonTarget,
+    cancelComparisonPicking,
   } = useTreeStore()
 
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -102,6 +116,19 @@ export function LinearView() {
       bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
     }
   }, [path.length, streamingContent, streamingThinkingContent, activeMultiContent])
+
+  // Esc key cancels comparison picking mode
+  useEffect(() => {
+    if (!comparisonPickingMode) return
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        cancelComparisonPicking()
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [comparisonPickingMode, cancelComparisonPicking])
 
   if (!currentTree) return null
 
@@ -265,10 +292,36 @@ export function LinearView() {
     }
   }
 
+  // In picking mode, determine which nodes are pickable (non-manual assistant nodes, excluding source)
+  const pickableNodeIds = useMemo(() => {
+    if (!comparisonPickingMode) return null
+    const set = new Set<string>()
+    for (const node of path) {
+      if (node.role === 'assistant' && node.mode !== 'manual' && node.node_id !== comparisonPickingSourceId) {
+        set.add(node.node_id)
+      }
+    }
+    return set
+  }, [comparisonPickingMode, path, comparisonPickingSourceId])
+
+  // Find the source node for the picker banner
+  const pickingSourceNode = comparisonPickingMode && comparisonPickingSourceId
+    ? nodes.find((n) => n.node_id === comparisonPickingSourceId) ?? null
+    : null
+
   return (
     <div className="linear-view">
       <div className="messages">
-        {groupSelectionMode && (
+        {comparisonPickingMode && pickingSourceNode && (
+          <ComparisonPickerBanner
+            sourceModel={pickingSourceNode.model}
+            sourceTimestamp={pickingSourceNode.created_at}
+            sourceResponsePreview={pickingSourceNode.content.slice(0, 200)}
+            onCancel={cancelComparisonPicking}
+          />
+        )}
+
+        {!comparisonPickingMode && groupSelectionMode && (
           <DigressionCreator
             selectedNodeIds={selectedGroupNodeIds}
             onToggleNode={handleGroupNodeToggle}
@@ -280,6 +333,8 @@ export function LinearView() {
         {path.map((node) => {
           const siblings = childMap.get(node.parent_id) ?? []
           const nodeParentKey = node.parent_id ?? ''
+          const isPicking = comparisonPickingMode
+          const isPickable = pickableNodeIds?.has(node.node_id) ?? false
 
           return (
             <Fragment key={node.node_id}>
@@ -289,34 +344,34 @@ export function LinearView() {
                 onSelectSibling={(siblingId) =>
                   handleSelectSibling(nodeParentKey, siblingId)
                 }
-                onFork={() => handleFork(nodeParentKey, node.role)}
-                onPrefill={node.role === 'user' ? () => {
+                onFork={isPicking ? () => {} : () => handleFork(nodeParentKey, node.role)}
+                onPrefill={isPicking ? undefined : node.role === 'user' ? () => {
                   if (forkTarget?.parentId === node.node_id && forkTarget.mode === 'prefill') {
                     setForkTarget(null)
                   } else {
                     setForkTarget({ parentId: node.node_id, mode: 'prefill' })
                   }
                 } : undefined}
-                onGenerate={node.role === 'user' ? () => {
+                onGenerate={isPicking ? undefined : node.role === 'user' ? () => {
                   if (forkTarget?.parentId === node.node_id && forkTarget.mode === 'generate') {
                     setForkTarget(null)
                   } else {
                     setForkTarget({ parentId: node.node_id, mode: 'generate' })
                   }
                 } : undefined}
-                onEdit={(nodeId, editedContent) => editNodeContent(nodeId, editedContent)}
-                onInspect={node.role === 'assistant' && node.mode !== 'manual'
+                onEdit={isPicking ? undefined : (nodeId, editedContent) => editNodeContent(nodeId, editedContent)}
+                onInspect={isPicking ? undefined : node.role === 'assistant' && node.mode !== 'manual'
                   ? () => setInspectedNodeId(
                       inspectedNodeId === node.node_id ? null : node.node_id
                     )
                   : undefined}
-                diffSummary={diffSummaries.get(node.node_id)}
-                onSplitView={diffSummaries.has(node.node_id)
+                diffSummary={isPicking ? undefined : diffSummaries.get(node.node_id)}
+                onSplitView={isPicking ? undefined : diffSummaries.has(node.node_id)
                   ? () => setSplitViewNodeId(
                       splitViewNodeId === node.node_id ? null : node.node_id
                     )
                   : undefined}
-                onBookmarkToggle={() => {
+                onBookmarkToggle={isPicking ? undefined : () => {
                   if (node.is_bookmarked) {
                     const bm = bookmarks.find((b) => b.node_id === node.node_id)
                     if (bm) removeBookmark(bm.bookmark_id)
@@ -324,17 +379,19 @@ export function LinearView() {
                     addBookmark(node.node_id, node.content.slice(0, 60))
                   }
                 }}
-                onExcludeToggle={() => handleExcludeToggle(node.node_id)}
+                onExcludeToggle={isPicking ? undefined : () => handleExcludeToggle(node.node_id)}
                 isExcludedOnPath={effectiveExcludedIds.has(node.node_id)}
-                groupSelectable={groupSelectionMode}
+                groupSelectable={!isPicking && groupSelectionMode}
                 groupSelected={selectedGroupNodeIds.includes(node.node_id)}
                 onGroupToggle={() => handleGroupNodeToggle(node.node_id)}
-                onCompare={siblings.length > 1 ? () => setComparingAtParent(
+                onCompare={isPicking ? undefined : siblings.length > 1 ? () => setComparingAtParent(
                   comparingAtParent === nodeParentKey ? null : nodeParentKey,
                 ) : undefined}
                 highlightClass={highlights.get(node.node_id)}
+                comparisonPickable={isPicking ? isPickable : undefined}
+                onComparisonPick={isPicking && isPickable ? () => pickComparisonTarget(node.node_id) : undefined}
               />
-              {comparingAtParent === nodeParentKey && (
+              {!isPicking && comparingAtParent === nodeParentKey && (
                 <ComparisonView
                   siblings={siblings}
                   selectedNodeId={node.node_id}
@@ -345,7 +402,7 @@ export function LinearView() {
                   onDismiss={() => setComparingAtParent(null)}
                 />
               )}
-              {!isGenerating && forkTarget != null && (
+              {!isPicking && !isGenerating && forkTarget != null && (
                 forkTarget.mode === 'prefill' || forkTarget.mode === 'generate'
                   ? forkTarget.parentId === node.node_id
                   : forkTarget.parentId === nodeParentKey
@@ -498,13 +555,43 @@ export function LinearView() {
         const splitNode = nodes.find((n) => n.node_id === splitViewNodeId)
         if (!splitNode) return null
         const treeDefaults = getTreeDefaults(currentTree)
+
+        const contextB = reconstructContext(splitNode, nodes)
+        const pathB = getPathToNode(splitNode, nodes)
+
+        let contextA
+        let responseContentA: string | null = null
+        let comparisonMode: 'original' | 'node' = 'original'
+
+        // Guard: if comparisonNodeId === splitViewNodeId, fall back to Original
+        const effectiveComparisonId = comparisonNodeId !== splitViewNodeId ? comparisonNodeId : null
+        const compNode = effectiveComparisonId
+          ? nodes.find((n) => n.node_id === effectiveComparisonId) ?? null
+          : null
+
+        if (compNode) {
+          contextA = reconstructContext(compNode, nodes)
+          responseContentA = compNode.content
+          comparisonMode = 'node'
+        } else {
+          contextA = buildOriginalContext(splitNode, nodes, treeDefaults)
+        }
+
+        const pathA = compNode ? getPathToNode(compNode, nodes) : pathB
+        const comparisonRows = buildComparisonRows(contextA, contextB, pathA, pathB)
+
         return (
           <ContextSplitView
-            rows={buildDiffRows(splitNode, nodes, treeDefaults)}
-            summary={computeDiffSummary(splitNode, path, treeDefaults)}
-            context={reconstructContext(splitNode, nodes)}
-            responseContent={splitNode.content}
+            rows={comparisonRows}
+            summary={comparisonMode === 'original' ? computeDiffSummary(splitNode, path, treeDefaults) : null}
+            contextA={contextA}
+            contextB={contextB}
+            responseContentA={responseContentA}
+            responseContentB={splitNode.content}
+            comparisonMode={comparisonMode}
             onDismiss={() => setSplitViewNodeId(null)}
+            onCompareToOther={enterComparisonPicking}
+            onCompareToOriginal={() => setComparisonNodeId(null)}
           />
         )
       })()}

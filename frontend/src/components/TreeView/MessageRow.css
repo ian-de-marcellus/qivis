@@ -443,6 +443,27 @@
 }
 
 
+/* ---- Comparison picking mode ---- */
+
+.message-row.comparison-pickable {
+  cursor: pointer;
+}
+
+.message-row.comparison-pickable:hover {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.message-row.comparison-dimmed {
+  opacity: 0.35;
+}
+
+.message-row.comparison-dimmed > .message-content,
+.message-row.comparison-dimmed > .edit-overlay,
+.message-row.comparison-dimmed > .message-meta {
+  pointer-events: none;
+}
+
 /* ---- Sampling param tags in meta line ---- */
 .sampling-meta {
   font-family: var(--font-mono);

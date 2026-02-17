@@ -1,15 +1,21 @@
 import { useEffect, useRef } from 'react'
 import type { ReconstructedContext } from './contextReconstruction.ts'
 import { formatSamplingParams } from './contextReconstruction.ts'
-import type { DiffRow, DiffSummary } from './contextDiffs.ts'
+import type { ComparisonRow, ComparisonRowType } from './contextDiffs.ts'
+import type { DiffSummary } from './contextDiffs.ts'
 import './ContextSplitView.css'
 
 interface ContextSplitViewProps {
-  rows: DiffRow[]
-  summary: DiffSummary
-  context: ReconstructedContext
-  responseContent: string
+  rows: ComparisonRow[]
+  summary: DiffSummary | null
+  contextA: ReconstructedContext
+  contextB: ReconstructedContext
+  responseContentA: string | null
+  responseContentB: string
+  comparisonMode: 'original' | 'node'
   onDismiss: () => void
+  onCompareToOther: () => void
+  onCompareToOriginal: () => void
 }
 
 function formatTimestamp(isoString: string): string {
@@ -30,7 +36,18 @@ function roleLabel(role: string | null): string {
   return role
 }
 
-export function ContextSplitView({ rows, summary, context, responseContent, onDismiss }: ContextSplitViewProps) {
+export function ContextSplitView({
+  rows,
+  summary,
+  contextA,
+  contextB,
+  responseContentA,
+  responseContentB,
+  comparisonMode,
+  onDismiss,
+  onCompareToOther,
+  onCompareToOriginal,
+}: ContextSplitViewProps) {
   const modalRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -50,20 +67,30 @@ export function ContextSplitView({ rows, summary, context, responseContent, onDi
     }
   }
 
-  // Build summary chips
+  // Build summary chips (only in original mode)
   const chips: string[] = []
-  if (summary.editedUpstream > 0) chips.push(`${summary.editedUpstream} edited`)
-  if (summary.manualUpstream > 0) chips.push(`${summary.manualUpstream} prefilled`)
-  if (summary.evictedCount > 0) chips.push(`${summary.evictedCount} evicted`)
-  if (summary.excludedCount > 0) chips.push(`${summary.excludedCount} excluded`)
-  if (summary.systemPromptChanged) chips.push('system prompt')
-  if (summary.modelChanged) chips.push('model')
-  if (summary.providerChanged) chips.push('provider')
-  if (summary.samplingChanged) chips.push('params')
-  if (summary.thinkingInContextFlag) chips.push('thinking in ctx')
-  if (summary.timestampsFlag) chips.push('timestamps')
+  if (summary) {
+    if (summary.editedUpstream > 0) chips.push(`${summary.editedUpstream} edited`)
+    if (summary.manualUpstream > 0) chips.push(`${summary.manualUpstream} prefilled`)
+    if (summary.evictedCount > 0) chips.push(`${summary.evictedCount} evicted`)
+    if (summary.excludedCount > 0) chips.push(`${summary.excludedCount} excluded`)
+    if (summary.systemPromptChanged) chips.push('system prompt')
+    if (summary.modelChanged) chips.push('model')
+    if (summary.providerChanged) chips.push('provider')
+    if (summary.samplingChanged) chips.push('params')
+    if (summary.thinkingInContextFlag) chips.push('thinking in ctx')
+    if (summary.timestampsFlag) chips.push('timestamps')
+  }
 
-  const samplingItems = formatSamplingParams(context.samplingParams)
+  const samplingItemsB = formatSamplingParams(contextB.samplingParams)
+
+  // Column labels
+  const leftLabel = comparisonMode === 'original'
+    ? 'Original'
+    : `${contextA.model ?? 'Unknown'} \u00b7 ${formatTimestamp(contextA.timestamp)}`
+  const rightLabel = comparisonMode === 'original'
+    ? 'Model received'
+    : `${contextB.model ?? 'Unknown'} \u00b7 ${formatTimestamp(contextB.timestamp)}`
 
   return (
     <div className="split-view-backdrop" onClick={handleBackdropClick}>
@@ -71,60 +98,133 @@ export function ContextSplitView({ rows, summary, context, responseContent, onDi
 
         {/* Header */}
         <div className="split-view-header">
-          <div className="split-view-header-left">
-            <span className="split-view-title">{context.model ?? 'Unknown model'}</span>
-            {context.provider && (
-              <span className="split-view-provider">via {context.provider}</span>
-            )}
-            <span className="split-view-timestamp">{formatTimestamp(context.timestamp)}</span>
-          </div>
-          <div className="split-view-header-right">
-            <div className="split-view-chips">
-              {chips.map((chip) => (
-                <span key={chip} className="split-view-chip">{chip}</span>
-              ))}
+          {comparisonMode === 'node' ? (
+            <div className="split-view-header-left split-view-header-comparison">
+              <div className="split-view-comparison-side">
+                <span className="split-view-comparison-label">A</span>
+                <span className="split-view-title">{contextA.model ?? 'Unknown'}</span>
+                {contextA.provider && (
+                  <span className="split-view-provider">via {contextA.provider}</span>
+                )}
+                <span className="split-view-timestamp">{formatTimestamp(contextA.timestamp)}</span>
+              </div>
+              <span className="split-view-comparison-vs">vs</span>
+              <div className="split-view-comparison-side">
+                <span className="split-view-comparison-label">B</span>
+                <span className="split-view-title">{contextB.model ?? 'Unknown'}</span>
+                {contextB.provider && (
+                  <span className="split-view-provider">via {contextB.provider}</span>
+                )}
+                <span className="split-view-timestamp">{formatTimestamp(contextB.timestamp)}</span>
+              </div>
             </div>
+          ) : (
+            <div className="split-view-header-left">
+              <span className="split-view-title">{contextB.model ?? 'Unknown model'}</span>
+              {contextB.provider && (
+                <span className="split-view-provider">via {contextB.provider}</span>
+              )}
+              <span className="split-view-timestamp">{formatTimestamp(contextB.timestamp)}</span>
+            </div>
+          )}
+          <div className="split-view-header-right">
+            {chips.length > 0 && (
+              <div className="split-view-chips">
+                {chips.map((chip) => (
+                  <span key={chip} className="split-view-chip">{chip}</span>
+                ))}
+              </div>
+            )}
+            {comparisonMode === 'original' ? (
+              <button className="split-view-compare-btn" onClick={onCompareToOther}>
+                Compare to...
+              </button>
+            ) : (
+              <button className="split-view-compare-btn" onClick={onCompareToOriginal}>
+                Compare to Original
+              </button>
+            )}
             <button className="split-view-close" onClick={onDismiss}>Close</button>
           </div>
         </div>
 
+        {/* Scrollable area: labels + rows */}
+        <div className="split-view-scroll">
+
         {/* Column labels */}
         <div className="split-view-grid split-view-labels">
-          <div className="split-view-col-label">Researcher's truth</div>
-          <div className="split-view-col-label">Model received</div>
+          <div className="split-view-col-label">{leftLabel}</div>
+          <div className="split-view-col-label">{rightLabel}</div>
         </div>
 
         {/* Rows */}
         <div className="split-view-body">
           {rows.map((row, i) => (
-            <SplitRow key={row.nodeId ?? `meta-${i}`} row={row} />
+            <SplitRow key={row.nodeId ? `${row.nodeId}-${row.rightNodeId ?? ''}` : `meta-${row.type}-${i}`} row={row} />
           ))}
 
-          {/* Response — what came out of this context */}
-          <div className="split-view-grid split-row response-row">
-            <div className="split-row-cell split-row-left match">
-              <span className="split-row-pregnant-rule" />
-              <span className="split-row-pregnant-label">response</span>
-            </div>
-            <div className="split-row-cell split-row-right">
-              <div className="split-row-section-label">Response</div>
-              {context.thinkingContent && (
-                <div className="split-row-response-thinking">{context.thinkingContent}</div>
-              )}
-              <div className="split-row-content">{responseContent}</div>
-              {context.latencyMs != null && context.usage && (
-                <div className="split-row-response-meta">
-                  {(context.latencyMs / 1000).toFixed(1)}s
-                  {' \u00b7 '}
-                  {context.usage.output_tokens?.toLocaleString()} tokens
-                  {context.finishReason && ` \u00b7 ${context.finishReason}`}
+          {/* Response section */}
+          <div className={`split-view-grid split-row response-row${comparisonMode === 'node' ? ' two-responses' : ''}`}>
+            {comparisonMode === 'node' && responseContentA != null ? (
+              <>
+                <div className="split-row-cell split-row-left">
+                  <div className="split-row-section-label">Response</div>
+                  {contextA.thinkingContent && (
+                    <div className="split-row-response-thinking">{contextA.thinkingContent}</div>
+                  )}
+                  <div className="split-row-content">{responseContentA}</div>
+                  {contextA.latencyMs != null && contextA.usage && (
+                    <div className="split-row-response-meta">
+                      {(contextA.latencyMs / 1000).toFixed(1)}s
+                      {' \u00b7 '}
+                      {contextA.usage.output_tokens?.toLocaleString()} tokens
+                      {contextA.finishReason && ` \u00b7 ${contextA.finishReason}`}
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
+                <div className="split-row-cell split-row-right">
+                  <div className="split-row-section-label">Response</div>
+                  {contextB.thinkingContent && (
+                    <div className="split-row-response-thinking">{contextB.thinkingContent}</div>
+                  )}
+                  <div className="split-row-content">{responseContentB}</div>
+                  {contextB.latencyMs != null && contextB.usage && (
+                    <div className="split-row-response-meta">
+                      {(contextB.latencyMs / 1000).toFixed(1)}s
+                      {' \u00b7 '}
+                      {contextB.usage.output_tokens?.toLocaleString()} tokens
+                      {contextB.finishReason && ` \u00b7 ${contextB.finishReason}`}
+                    </div>
+                  )}
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="split-row-cell split-row-left match">
+                  <span className="split-row-pregnant-rule" />
+                  <span className="split-row-pregnant-label">response</span>
+                </div>
+                <div className="split-row-cell split-row-right">
+                  <div className="split-row-section-label">Response</div>
+                  {contextB.thinkingContent && (
+                    <div className="split-row-response-thinking">{contextB.thinkingContent}</div>
+                  )}
+                  <div className="split-row-content">{responseContentB}</div>
+                  {contextB.latencyMs != null && contextB.usage && (
+                    <div className="split-row-response-meta">
+                      {(contextB.latencyMs / 1000).toFixed(1)}s
+                      {' \u00b7 '}
+                      {contextB.usage.output_tokens?.toLocaleString()} tokens
+                      {contextB.finishReason && ` \u00b7 ${contextB.finishReason}`}
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
           </div>
 
           {/* Sampling params if any */}
-          {samplingItems.length > 0 && (
+          {samplingItemsB.length > 0 && (
             <div className="split-view-grid split-view-footer-row">
               <div className="split-row-cell split-row-left match">
                 <span className="split-row-pregnant-rule" />
@@ -133,7 +233,7 @@ export function ContextSplitView({ rows, summary, context, responseContent, onDi
               <div className="split-row-cell split-row-right">
                 <div className="split-row-section-label">Sampling parameters</div>
                 <div className="split-row-params">
-                  {samplingItems.map((item) => (
+                  {samplingItemsB.map((item) => (
                     <div key={item.label} className="split-row-param">
                       <span className="split-row-param-label">{item.label}</span>
                       <span className="split-row-param-value">{item.value}</span>
@@ -144,142 +244,151 @@ export function ContextSplitView({ rows, summary, context, responseContent, onDi
             </div>
           )}
         </div>
+        </div>
       </div>
     </div>
   )
 }
 
-function SplitRow({ row }: { row: DiffRow }) {
-  switch (row.type) {
+function SplitRow({ row }: { row: ComparisonRow }) {
+  const type: ComparisonRowType = row.type
+
+  switch (type) {
     case 'match':
       return (
-        <div className="split-view-grid split-row match">
-          {/* Left: pregnant space */}
-          <div className="split-row-cell split-row-left match">
-            <span className="split-row-pregnant-rule" />
-            <span className="split-row-pregnant-label">{roleLabel(row.role)}</span>
+        <div className="split-row match spanning">
+          <div className="split-row-cell split-row-spanning">
+            <div className="split-row-role">{roleLabel(row.role)}</div>
+            <div className="split-row-content">{row.rightContent}</div>
           </div>
-          {/* Right: full content */}
+        </div>
+      )
+
+    case 'content-differs':
+      return (
+        <div className="split-view-grid split-row content-differs">
+          <div className="split-row-cell split-row-left divergent">
+            <div className="split-row-role-line">
+              <span className="split-row-role">{roleLabel(row.role)}</span>
+              {row.leftTags.map((tag) => (
+                <span key={tag} className={`split-row-tag ${tagClass(tag)}`}>{tag}</span>
+              ))}
+            </div>
+            <div className="split-row-content">{row.leftContent}</div>
+          </div>
+          <div className="split-row-cell split-row-right divergent">
+            <div className="split-row-role-line">
+              <span className="split-row-role">{roleLabel(row.role)}</span>
+              {row.rightTags.map((tag) => (
+                <span key={tag} className={`split-row-tag ${tagClass(tag)}`}>{tag}</span>
+              ))}
+            </div>
+            <div className="split-row-content">{row.rightContent}</div>
+          </div>
+        </div>
+      )
+
+    case 'status-differs':
+      return (
+        <div className="split-view-grid split-row status-differs">
+          {row.leftStatus === 'in-context' ? (
+            <div className="split-row-cell split-row-left">
+              <div className="split-row-role-line">
+                <span className="split-row-role">{roleLabel(row.role)}</span>
+                {row.leftTags.map((tag) => (
+                  <span key={tag} className={`split-row-tag ${tagClass(tag)}`}>{tag}</span>
+                ))}
+              </div>
+              <div className="split-row-content">{row.leftContent}</div>
+            </div>
+          ) : (
+            <div className="split-row-cell split-row-left void">
+              <span className="split-row-void-label">{statusLabel(row.leftStatus)}</span>
+            </div>
+          )}
+          {row.rightStatus === 'in-context' ? (
+            <div className="split-row-cell split-row-right">
+              <div className="split-row-role-line">
+                <span className="split-row-role">{roleLabel(row.role)}</span>
+                {row.rightTags.map((tag) => (
+                  <span key={tag} className={`split-row-tag ${tagClass(tag)}`}>{tag}</span>
+                ))}
+              </div>
+              <div className="split-row-content">{row.rightContent}</div>
+            </div>
+          ) : (
+            <div className="split-row-cell split-row-right void">
+              <span className="split-row-void-label">{statusLabel(row.rightStatus)}</span>
+            </div>
+          )}
+        </div>
+      )
+
+    case 'left-only':
+      return (
+        <div className="split-view-grid split-row left-only">
+          <div className="split-row-cell split-row-left">
+            <div className="split-row-role-line">
+              <span className="split-row-role">{roleLabel(row.role)}</span>
+              {row.leftTags.map((tag) => (
+                <span key={tag} className={`split-row-tag ${tagClass(tag)}`}>{tag}</span>
+              ))}
+            </div>
+            <div className="split-row-content">{row.leftContent}</div>
+          </div>
+          <div className="split-row-cell split-row-right void">
+            <span className="split-row-void-label">not on this path</span>
+          </div>
+        </div>
+      )
+
+    case 'right-only':
+      return (
+        <div className="split-view-grid split-row right-only">
+          <div className="split-row-cell split-row-left void">
+            <span className="split-row-void-label">not on this path</span>
+          </div>
           <div className="split-row-cell split-row-right">
-            <div className="split-row-role">{roleLabel(row.role)}</div>
-            <div className="split-row-content">{row.rightContent}</div>
-          </div>
-        </div>
-      )
-
-    case 'edited':
-      return (
-        <div className="split-view-grid split-row edited">
-          <div className="split-row-cell split-row-left divergent">
-            <div className="split-row-role">{roleLabel(row.role)}</div>
-            <div className="split-row-content">{row.leftContent}</div>
-          </div>
-          <div className="split-row-cell split-row-right divergent">
             <div className="split-row-role-line">
               <span className="split-row-role">{roleLabel(row.role)}</span>
-              <span className="split-row-tag edited">edited</span>
-              {row.timestampPrefix && <span className="split-row-tag augmented">+timestamp</span>}
-              {row.thinkingPrefix && <span className="split-row-tag augmented">+thinking</span>}
-            </div>
-            <div className="split-row-content">
-              {row.thinkingPrefix && (
-                <span className="split-row-augmented-thinking">{row.thinkingPrefix}</span>
-              )}
-              {row.timestampPrefix && (
-                <span className="split-row-augmented-timestamp">{row.timestampPrefix}</span>
-              )}
-              {row.rightContent && !row.timestampPrefix && !row.thinkingPrefix
-                ? row.rightContent
-                : row.rightContent?.replace(row.timestampPrefix ?? '', '').replace(row.thinkingPrefix ?? '', '')
-              }
-            </div>
-          </div>
-        </div>
-      )
-
-    case 'augmented':
-      return (
-        <div className="split-view-grid split-row augmented">
-          {/* Left: pregnant space — base content is the same, only packaging differs */}
-          <div className="split-row-cell split-row-left match">
-            <span className="split-row-pregnant-rule" />
-            <span className="split-row-pregnant-label">{roleLabel(row.role)}</span>
-          </div>
-          {/* Right: full content with augmented prefixes */}
-          <div className="split-row-cell split-row-right divergent">
-            <div className="split-row-role-line">
-              <span className="split-row-role">{roleLabel(row.role)}</span>
-              {row.timestampPrefix && <span className="split-row-tag augmented">+timestamp</span>}
-              {row.thinkingPrefix && <span className="split-row-tag augmented">+thinking</span>}
-            </div>
-            <div className="split-row-content">
-              {row.thinkingPrefix && (
-                <span className="split-row-augmented-thinking">{row.thinkingPrefix}</span>
-              )}
-              {row.timestampPrefix && (
-                <span className="split-row-augmented-timestamp">{row.timestampPrefix}</span>
-              )}
-              {row.leftContent}
-            </div>
-          </div>
-        </div>
-      )
-
-    case 'prefill':
-      return (
-        <div className="split-view-grid split-row prefill">
-          <div className="split-row-cell split-row-left divergent">
-            <div className="split-row-role-line">
-              <span className="split-row-role">{roleLabel(row.role)}</span>
-              <span className="split-row-tag prefill">researcher authored</span>
-            </div>
-            <div className="split-row-content">{row.leftContent}</div>
-          </div>
-          <div className="split-row-cell split-row-right divergent">
-            <div className="split-row-role-line">
-              <span className="split-row-role">{roleLabel(row.role)}</span>
-              <span className="split-row-tag prefill">manual</span>
+              {row.rightTags.map((tag) => (
+                <span key={tag} className={`split-row-tag ${tagClass(tag)}`}>{tag}</span>
+              ))}
             </div>
             <div className="split-row-content">{row.rightContent}</div>
           </div>
         </div>
       )
 
-    case 'evicted':
+    case 'fork-point':
       return (
-        <div className="split-view-grid split-row evicted">
-          <div className="split-row-cell split-row-left">
-            <div className="split-row-role">{roleLabel(row.role)}</div>
-            <div className="split-row-content">{row.leftContent}</div>
-          </div>
-          <div className="split-row-cell split-row-right void">
-            <span className="split-row-void-label">not in context</span>
+        <div className="split-view-grid split-row fork-point">
+          <div className="split-row-fork-divider">
+            <span className="split-row-fork-label">paths diverge</span>
           </div>
         </div>
       )
 
-    case 'excluded':
+    case 'fork-pair':
       return (
-        <div className="split-view-grid split-row excluded">
+        <div className="split-view-grid split-row fork-pair">
           <div className="split-row-cell split-row-left">
-            <div className="split-row-role">{roleLabel(row.role)}</div>
+            <div className="split-row-role-line">
+              <span className="split-row-role">{roleLabel(row.role)}</span>
+              {row.leftTags.map((tag) => (
+                <span key={tag} className={`split-row-tag ${tagClass(tag)}`}>{tag}</span>
+              ))}
+            </div>
             <div className="split-row-content">{row.leftContent}</div>
           </div>
-          <div className="split-row-cell split-row-right void">
-            <span className="split-row-void-label">excluded</span>
-          </div>
-        </div>
-      )
-
-    case 'non-api-role':
-      return (
-        <div className="split-view-grid split-row non-api-role">
-          <div className="split-row-cell split-row-left">
-            <div className="split-row-role">{roleLabel(row.role)}</div>
-            <div className="split-row-content">{row.leftContent}</div>
-          </div>
-          <div className="split-row-cell split-row-right void">
-            <span className="split-row-void-label">not sent to API</span>
+          <div className="split-row-cell split-row-right">
+            <div className="split-row-role-line">
+              <span className="split-row-role">{roleLabel(row.rightRole ?? row.role)}</span>
+              {row.rightTags.map((tag) => (
+                <span key={tag} className={`split-row-tag ${tagClass(tag)}`}>{tag}</span>
+              ))}
+            </div>
+            <div className="split-row-content">{row.rightContent}</div>
           </div>
         </div>
       )
@@ -290,7 +399,7 @@ function SplitRow({ row }: { row: DiffRow }) {
           <div className="split-row-cell split-row-left">
             {row.leftContent ? (
               <>
-                <div className="split-row-section-label">Tree default</div>
+                <div className="split-row-section-label">System prompt</div>
                 <div className="split-row-system-prompt">{row.leftContent}</div>
               </>
             ) : (
@@ -311,11 +420,11 @@ function SplitRow({ row }: { row: DiffRow }) {
       return (
         <div className="split-view-grid split-row metadata">
           <div className="split-row-cell split-row-left divergent">
-            <div className="split-row-section-label">Tree defaults</div>
+            <div className="split-row-section-label">Configuration</div>
             <div className="split-row-metadata-content">{row.leftContent ?? 'none set'}</div>
           </div>
           <div className="split-row-cell split-row-right divergent">
-            <div className="split-row-section-label">This generation</div>
+            <div className="split-row-section-label">Configuration</div>
             <div className="split-row-metadata-content">{row.rightContent ?? 'none set'}</div>
           </div>
         </div>
@@ -324,4 +433,19 @@ function SplitRow({ row }: { row: DiffRow }) {
     default:
       return null
   }
+}
+
+function tagClass(tag: string): string {
+  if (tag === 'edited') return 'edited'
+  if (tag === 'manual') return 'prefill'
+  if (tag.startsWith('+')) return 'augmented'
+  if (tag === 'excluded' || tag === 'evicted') return 'status-tag'
+  return ''
+}
+
+function statusLabel(status: string | null): string {
+  if (status === 'excluded') return 'excluded'
+  if (status === 'evicted') return 'not in context'
+  if (status === 'non-api') return 'not sent to API'
+  return ''
 }

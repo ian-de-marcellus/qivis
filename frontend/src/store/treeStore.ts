@@ -61,6 +61,9 @@ interface TreeStore {
   digressionPanelOpen: boolean
   groupSelectionMode: boolean
   selectedGroupNodeIds: string[]
+  comparisonNodeId: string | null
+  comparisonPickingMode: boolean
+  comparisonPickingSourceId: string | null
 
   // Actions
   fetchTrees: () => Promise<void>
@@ -117,6 +120,10 @@ interface TreeStore {
   setDigressionPanelOpen: (open: boolean) => void
   setGroupSelectionMode: (active: boolean) => void
   toggleGroupNodeSelection: (nodeId: string) => void
+  setComparisonNodeId: (nodeId: string | null) => void
+  enterComparisonPicking: () => void
+  pickComparisonTarget: (nodeId: string) => void
+  cancelComparisonPicking: () => void
 }
 
 /**
@@ -195,6 +202,9 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
   digressionPanelOpen: false,
   groupSelectionMode: false,
   selectedGroupNodeIds: [],
+  comparisonNodeId: null,
+  comparisonPickingMode: false,
+  comparisonPickingSourceId: null,
 
   fetchTrees: async () => {
     set({ isLoading: true, error: null })
@@ -236,6 +246,9 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
       digressionPanelOpen: false,
       groupSelectionMode: false,
       selectedGroupNodeIds: [],
+      comparisonNodeId: null,
+      comparisonPickingMode: false,
+      comparisonPickingSourceId: null,
     })
     try {
       const tree = await api.getTree(treeId)
@@ -1268,4 +1281,38 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
       ? state.selectedGroupNodeIds.filter((id) => id !== nodeId)
       : [...state.selectedGroupNodeIds, nodeId],
   })),
+
+  setComparisonNodeId: (nodeId: string | null) => {
+    set({ comparisonNodeId: nodeId })
+  },
+
+  enterComparisonPicking: () => {
+    const { splitViewNodeId } = get()
+    set({
+      comparisonPickingMode: true,
+      comparisonPickingSourceId: splitViewNodeId,
+      splitViewNodeId: null,
+    })
+  },
+
+  pickComparisonTarget: (nodeId: string) => {
+    const { comparisonPickingSourceId } = get()
+    // Guard: don't compare a node to itself
+    if (nodeId === comparisonPickingSourceId) return
+    set({
+      comparisonNodeId: nodeId,
+      comparisonPickingMode: false,
+      splitViewNodeId: comparisonPickingSourceId,
+      comparisonPickingSourceId: null,
+    })
+  },
+
+  cancelComparisonPicking: () => {
+    const { comparisonPickingSourceId } = get()
+    set({
+      comparisonPickingMode: false,
+      splitViewNodeId: comparisonPickingSourceId,
+      comparisonPickingSourceId: null,
+    })
+  },
 }))

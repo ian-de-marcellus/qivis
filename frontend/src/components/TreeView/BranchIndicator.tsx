@@ -15,7 +15,7 @@ export function BranchIndicator({ node, siblings, onSelect, onCompare }: BranchI
     <span className="branch-indicator">
       <button
         className="branch-arrow"
-        onClick={() => onSelect(siblings[currentIndex - 1].node_id)}
+        onClick={(e) => { e.stopPropagation(); onSelect(siblings[currentIndex - 1].node_id) }}
         disabled={currentIndex <= 0}
         aria-label="Previous branch"
       >
@@ -26,7 +26,7 @@ export function BranchIndicator({ node, siblings, onSelect, onCompare }: BranchI
       </span>
       <button
         className="branch-arrow"
-        onClick={() => onSelect(siblings[currentIndex + 1].node_id)}
+        onClick={(e) => { e.stopPropagation(); onSelect(siblings[currentIndex + 1].node_id) }}
         disabled={currentIndex >= count - 1}
         aria-label="Next branch"
       >
