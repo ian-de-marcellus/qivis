@@ -56,6 +56,7 @@ export interface NodeResponse {
   edit_count: number
   is_bookmarked: boolean
   is_excluded: boolean
+  is_anchored: boolean
 }
 
 export interface ContextUsage {
@@ -66,6 +67,15 @@ export interface ContextUsage {
   excluded_count: number
   excluded_node_ids?: string[]
   evicted_node_ids?: string[]
+}
+
+export interface EvictionStrategy {
+  mode: 'smart' | 'truncate' | 'none'
+  recent_turns_to_keep: number
+  keep_first_turns: number
+  keep_anchored: boolean
+  summarize_evicted: boolean
+  warn_threshold: number
 }
 
 export interface AlternativeToken {

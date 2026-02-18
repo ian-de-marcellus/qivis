@@ -210,6 +210,17 @@ export function getExclusions(treeId: string): Promise<NodeExclusionResponse[]> 
   return request(`/trees/${treeId}/exclusions`)
 }
 
+// -- Anchors --
+
+export function toggleAnchor(
+  treeId: string,
+  nodeId: string,
+): Promise<{ is_anchored: boolean }> {
+  return request(`/trees/${treeId}/nodes/${nodeId}/anchor`, {
+    method: 'POST',
+  })
+}
+
 // -- Digression groups --
 
 export function createDigressionGroup(
@@ -244,6 +255,36 @@ export function deleteDigressionGroup(
   return request(`/trees/${treeId}/digression-groups/${groupId}`, {
     method: 'DELETE',
   })
+}
+
+// -- Export --
+
+export async function exportTree(
+  treeId: string,
+  format: 'json' | 'csv' = 'json',
+  includeEvents = false,
+): Promise<void> {
+  const params = new URLSearchParams({ format })
+  if (includeEvents) params.set('include_events', 'true')
+  const res = await fetch(`${BASE}/trees/${treeId}/export?${params}`)
+  if (!res.ok) throw new Error(`Export failed: ${res.status}`)
+
+  const blob = await res.blob()
+  const ext = format === 'csv' ? 'csv' : 'json'
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${treeId}.${ext}`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
+export function getTreePaths(
+  treeId: string,
+): Promise<{ paths: string[][] }> {
+  return request(`/trees/${treeId}/paths`)
 }
 
 // -- Generation (non-streaming) --

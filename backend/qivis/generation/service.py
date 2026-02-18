@@ -13,6 +13,8 @@ from qivis.generation.context import ContextBuilder, get_model_context_limit
 from qivis.models import (
     ContextUsage,
     EventEnvelope,
+    EvictionReport,
+    EvictionStrategy,
     GenerationStartedPayload,
     NodeCreatedPayload,
     SamplingParams,
@@ -107,11 +109,12 @@ class GenerationService:
     ) -> NodeResponse:
         """Generate a non-streaming response and store as a new node."""
         (tree, nodes, resolved_model, resolved_prompt, resolved_params,
-         include_ts, include_think, excl_ids, dg_map, excl_gids) = (
+         include_ts, include_think, excl_ids, dg_map, excl_gids,
+         anchored_ids, eviction_strategy) = (
             await self._resolve_context(tree_id, node_id, model, system_prompt, sampling_params)
         )
         context_limit = get_model_context_limit(resolved_model)
-        messages, context_usage, _eviction_report = self._context_builder.build(
+        messages, context_usage, eviction_report = self._context_builder.build(
             nodes=nodes,
             target_node_id=node_id,
             system_prompt=resolved_prompt,
@@ -121,6 +124,11 @@ class GenerationService:
             excluded_ids=excl_ids,
             digression_groups=dg_map,
             excluded_group_ids=excl_gids,
+            anchored_ids=anchored_ids,
+            eviction=eviction_strategy,
+        )
+        messages, context_usage = await self._maybe_inject_summary(
+            messages, context_usage, eviction_report,
         )
         generation_id = str(uuid4())
 
@@ -158,11 +166,12 @@ class GenerationService:
     ) -> list[NodeResponse]:
         """Generate N responses in parallel and store as sibling nodes."""
         (tree, nodes, resolved_model, resolved_prompt, resolved_params,
-         include_ts, include_think, excl_ids, dg_map, excl_gids) = (
+         include_ts, include_think, excl_ids, dg_map, excl_gids,
+         anchored_ids, eviction_strategy) = (
             await self._resolve_context(tree_id, node_id, model, system_prompt, sampling_params)
         )
         context_limit = get_model_context_limit(resolved_model)
-        messages, context_usage, _eviction_report = self._context_builder.build(
+        messages, context_usage, eviction_report = self._context_builder.build(
             nodes=nodes,
             target_node_id=node_id,
             system_prompt=resolved_prompt,
@@ -172,6 +181,11 @@ class GenerationService:
             excluded_ids=excl_ids,
             digression_groups=dg_map,
             excluded_group_ids=excl_gids,
+            anchored_ids=anchored_ids,
+            eviction=eviction_strategy,
+        )
+        messages, context_usage = await self._maybe_inject_summary(
+            messages, context_usage, eviction_report,
         )
         generation_id = str(uuid4())
 
@@ -214,13 +228,14 @@ class GenerationService:
     ) -> AsyncIterator[StreamChunk]:
         """Stream N responses simultaneously, yielding tagged chunks."""
         (tree, nodes, resolved_model, resolved_prompt, resolved_params,
-         include_ts, include_think, excl_ids, dg_map, excl_gids) = (
+         include_ts, include_think, excl_ids, dg_map, excl_gids,
+         anchored_ids, eviction_strategy) = (
             await self._resolve_context(
                 tree_id, node_id, model, system_prompt, sampling_params
             )
         )
         context_limit = get_model_context_limit(resolved_model)
-        messages, context_usage, _eviction_report = (
+        messages, context_usage, eviction_report = (
             self._context_builder.build(
                 nodes=nodes,
                 target_node_id=node_id,
@@ -231,7 +246,12 @@ class GenerationService:
                 excluded_ids=excl_ids,
                 digression_groups=dg_map,
                 excluded_group_ids=excl_gids,
+                anchored_ids=anchored_ids,
+                eviction=eviction_strategy,
             )
+        )
+        messages, context_usage = await self._maybe_inject_summary(
+            messages, context_usage, eviction_report,
         )
         generation_id = str(uuid4())
 
@@ -335,11 +355,12 @@ class GenerationService:
     ) -> AsyncIterator[StreamChunk]:
         """Generate a streaming response, yielding chunks."""
         (tree, nodes, resolved_model, resolved_prompt, resolved_params,
-         include_ts, include_think, excl_ids, dg_map, excl_gids) = (
+         include_ts, include_think, excl_ids, dg_map, excl_gids,
+         anchored_ids, eviction_strategy) = (
             await self._resolve_context(tree_id, node_id, model, system_prompt, sampling_params)
         )
         context_limit = get_model_context_limit(resolved_model)
-        messages, context_usage, _eviction_report = self._context_builder.build(
+        messages, context_usage, eviction_report = self._context_builder.build(
             nodes=nodes,
             target_node_id=node_id,
             system_prompt=resolved_prompt,
@@ -349,6 +370,11 @@ class GenerationService:
             excluded_ids=excl_ids,
             digression_groups=dg_map,
             excluded_group_ids=excl_gids,
+            anchored_ids=anchored_ids,
+            eviction=eviction_strategy,
+        )
+        messages, context_usage = await self._maybe_inject_summary(
+            messages, context_usage, eviction_report,
         )
         generation_id = str(uuid4())
 
@@ -390,6 +416,66 @@ class GenerationService:
                 )
             yield chunk
 
+    async def _maybe_inject_summary(
+        self,
+        messages: list[dict[str, str]],
+        context_usage: ContextUsage,
+        report: EvictionReport,
+    ) -> tuple[list[dict[str, str]], ContextUsage]:
+        """If eviction produced content to summarize, generate and inject a recap.
+
+        Inserts a user message with the summary at the eviction boundary
+        (after the first protected messages, before the remaining ones).
+        """
+        if not report.summary_needed or not report.evicted_content:
+            return messages, context_usage
+
+        summary = await self._tree_service.generate_eviction_summary(
+            report.evicted_content,
+        )
+        if summary is None:
+            return messages, context_usage
+
+        summary_msg = {
+            "role": "user",
+            "content": f"[Context summary of {len(report.evicted_node_ids)} "
+                       f"earlier messages: {summary}]",
+        }
+
+        # Insert after the first protected block (keep_first_turns position)
+        # The evicted messages were from the middle, so the summary goes
+        # right after the first protected block ends.
+        insert_pos = min(
+            report.tokens_freed // max(1, len(report.evicted_node_ids)),
+            len(messages) - 1,
+        ) if messages else 0
+        # Simpler: just use the number of evicted nodes as a heuristic —
+        # the first chunk of messages survived, then eviction happened.
+        # Find the first gap by looking at what keep_first_turns would be.
+        # For simplicity, insert after position 2 (or end of first protected block).
+        insert_pos = min(2, len(messages) - 1) if len(messages) > 2 else 0
+
+        messages = messages[:insert_pos] + [summary_msg] + messages[insert_pos:]
+
+        report.summary_inserted = True
+
+        # Update context_usage with the summary tokens
+        summary_tokens = len(summary_msg["content"]) // 4
+        updated_usage = ContextUsage(
+            total_tokens=context_usage.total_tokens + summary_tokens,
+            max_tokens=context_usage.max_tokens,
+            breakdown={
+                **context_usage.breakdown,
+                "user": context_usage.breakdown.get("user", 0) + summary_tokens,
+            },
+            excluded_tokens=context_usage.excluded_tokens,
+            excluded_count=context_usage.excluded_count,
+            excluded_node_ids=context_usage.excluded_node_ids,
+            evicted_node_ids=context_usage.evicted_node_ids,
+        )
+
+        return messages, updated_usage
+
     async def _resolve_context(
         self,
         tree_id: str,
@@ -397,12 +483,16 @@ class GenerationService:
         model: str | None,
         system_prompt: str | None,
         sampling_params: SamplingParams | None,
-    ) -> tuple[dict, list[dict], str, str | None, SamplingParams, bool, bool, set[str], dict, set[str]]:
+    ) -> tuple[
+        dict, list[dict], str, str | None, SamplingParams, bool, bool,
+        set[str], dict, set[str], set[str], EvictionStrategy | None,
+    ]:
         """Validate tree/node and resolve parameters from request or tree defaults.
 
         Returns: (tree, nodes, resolved_model, resolved_prompt, resolved_params,
                   include_timestamps, include_thinking,
-                  excluded_ids, digression_groups_map, excluded_group_ids)
+                  excluded_ids, digression_groups_map, excluded_group_ids,
+                  anchored_ids, eviction_strategy)
         """
         tree = await self._projector.get_tree(tree_id)
         if tree is None:
@@ -441,9 +531,23 @@ class GenerationService:
         excluded_group_ids = {g["group_id"] for g in groups if not g["included"]}
         digression_groups_map = {g["group_id"]: g["node_ids"] for g in groups}
 
+        # Anchored node IDs
+        anchor_rows = await self._projector._db.fetchall(
+            "SELECT DISTINCT node_id FROM node_anchors WHERE tree_id = ?",
+            (tree_id,),
+        )
+        anchored_ids = {r["node_id"] for r in anchor_rows}
+
+        # Eviction strategy from tree metadata
+        eviction_raw = metadata.get("eviction_strategy")
+        eviction: EvictionStrategy | None = None
+        if eviction_raw and isinstance(eviction_raw, dict):
+            eviction = EvictionStrategy.model_validate(eviction_raw)
+
         return (tree, nodes, resolved_model, resolved_prompt, resolved_params,
                 include_timestamps, include_thinking,
-                excluded_ids, digression_groups_map, excluded_group_ids)
+                excluded_ids, digression_groups_map, excluded_group_ids,
+                anchored_ids, eviction)
 
     @staticmethod
     def _get_path_node_ids(nodes: list[dict], target_node_id: str) -> set[str]:

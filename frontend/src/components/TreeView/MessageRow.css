@@ -443,6 +443,40 @@
 }
 
 
+/* ---- Anchor button ---- */
+.anchor-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.15rem 0.35rem;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-tertiary);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.2s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.message-row:hover .anchor-btn {
+  opacity: 1;
+}
+
+.anchor-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.anchor-btn.active {
+  opacity: 1;
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.anchor-icon {
+  vertical-align: middle;
+}
+
 /* ---- Comparison picking mode ---- */
 
 .message-row.comparison-pickable {

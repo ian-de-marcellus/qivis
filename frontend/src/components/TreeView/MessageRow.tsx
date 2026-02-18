@@ -58,6 +58,7 @@ interface MessageRowProps {
   onInspect?: () => void
   onBookmarkToggle?: () => void
   onExcludeToggle?: () => void
+  onAnchorToggle?: () => void
   isExcludedOnPath?: boolean
   groupSelectable?: boolean
   groupSelected?: boolean
@@ -69,7 +70,7 @@ interface MessageRowProps {
   onComparisonPick?: () => void
 }
 
-export function MessageRow({ node, siblings, onSelectSibling, onFork, onPrefill, onGenerate, onCompare, onEdit, onInspect, onBookmarkToggle, onExcludeToggle, isExcludedOnPath, groupSelectable, groupSelected, onGroupToggle, diffSummary, onSplitView, highlightClass, comparisonPickable, onComparisonPick }: MessageRowProps) {
+export function MessageRow({ node, siblings, onSelectSibling, onFork, onPrefill, onGenerate, onCompare, onEdit, onInspect, onBookmarkToggle, onExcludeToggle, onAnchorToggle, isExcludedOnPath, groupSelectable, groupSelected, onGroupToggle, diffSummary, onSplitView, highlightClass, comparisonPickable, onComparisonPick }: MessageRowProps) {
   const [showLogprobs, setShowLogprobs] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
   const [editValue, setEditValue] = useState('')
@@ -176,6 +177,18 @@ export function MessageRow({ node, siblings, onSelectSibling, onFork, onPrefill,
             aria-label={isExcludedOnPath ? 'Include in context' : 'Exclude from context'}
           >
             {isExcludedOnPath ? 'Include' : 'Exclude'}
+          </button>
+        )}
+        {onAnchorToggle && (
+          <button
+            className={`anchor-btn${node.is_anchored ? ' active' : ''}`}
+            onClick={onAnchorToggle}
+            aria-label={node.is_anchored ? 'Remove anchor (allow eviction)' : 'Anchor (protect from eviction)'}
+            title={node.is_anchored ? 'Anchored — protected from eviction' : 'Anchor — protect from eviction'}
+          >
+            <svg className="anchor-icon" viewBox="0 0 16 16" width="12" height="12">
+              <path d="M8 1a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V6h3a1 1 0 0 1 1 1v1.5a.5.5 0 0 1-1 0V7.5h-3V13c2.5-.5 4-2 4.5-4a.5.5 0 0 1 .97.24C13.8 12.2 11.5 14.5 8 15c-3.5-.5-5.8-2.8-6.47-5.76a.5.5 0 0 1 .97-.24c.5 2 2 3.5 4.5 4V7.5H4V8.5a.5.5 0 0 1-1 0V7a1 1 0 0 1 1-1h3V4.73A2 2 0 0 1 8 1zm0 1a1 1 0 1 0 0 2 1 1 0 0 0 0-2z" fill="currentColor"/>
+            </svg>
           </button>
         )}
       </div>

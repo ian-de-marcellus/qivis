@@ -85,6 +85,7 @@ class NodeResponse(BaseModel):
     is_bookmarked: bool = False
     edit_count: int = 0
     is_excluded: bool = False
+    is_anchored: bool = False
 
 
 class EditHistoryEntry(BaseModel):

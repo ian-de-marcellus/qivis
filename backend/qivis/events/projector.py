@@ -18,10 +18,12 @@ from qivis.models import (
     DigressionGroupCreatedPayload,
     DigressionGroupToggledPayload,
     EventEnvelope,
+    NodeAnchoredPayload,
     NodeContentEditedPayload,
     NodeContextExcludedPayload,
     NodeContextIncludedPayload,
     NodeCreatedPayload,
+    NodeUnanchoredPayload,
     TreeCreatedPayload,
     TreeMetadataUpdatedPayload,
 )
@@ -49,6 +51,8 @@ class StateProjector:
             "NodeContextIncluded": self._handle_node_context_included,
             "DigressionGroupCreated": self._handle_digression_group_created,
             "DigressionGroupToggled": self._handle_digression_group_toggled,
+            "NodeAnchored": self._handle_node_anchored,
+            "NodeUnanchored": self._handle_node_unanchored,
         }
 
     async def project(self, events: list[EventEnvelope]) -> None:
@@ -325,6 +329,31 @@ class StateProjector:
         await self._db.execute(
             "UPDATE digression_groups SET included = ? WHERE group_id = ?",
             (1 if payload.included else 0, payload.group_id),
+        )
+
+    async def _handle_node_anchored(self, event: EventEnvelope) -> None:
+        """Project a NodeAnchored event into the node_anchors table."""
+        payload = NodeAnchoredPayload.model_validate(event.payload)
+        timestamp = (
+            event.timestamp.isoformat()
+            if hasattr(event.timestamp, "isoformat")
+            else str(event.timestamp)
+        )
+        await self._db.execute(
+            """
+            INSERT OR REPLACE INTO node_anchors
+                (tree_id, node_id, created_at)
+            VALUES (?, ?, ?)
+            """,
+            (event.tree_id, payload.node_id, timestamp),
+        )
+
+    async def _handle_node_unanchored(self, event: EventEnvelope) -> None:
+        """Project a NodeUnanchored event: delete from node_anchors table."""
+        payload = NodeUnanchoredPayload.model_validate(event.payload)
+        await self._db.execute(
+            "DELETE FROM node_anchors WHERE tree_id = ? AND node_id = ?",
+            (event.tree_id, payload.node_id),
         )
 
     async def _handle_node_created(self, event: EventEnvelope) -> None:

@@ -73,8 +73,24 @@
   color: var(--text-primary);
 }
 
+.context-breakdown-warning {
+  padding: var(--space-sm) var(--space-md);
+  margin-bottom: var(--space-sm);
+  background: color-mix(in srgb, var(--ctx-yellow) 15%, transparent);
+  border-left: 2px solid var(--ctx-yellow);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  color: var(--ctx-yellow);
+}
+
 .context-breakdown-row.excluded {
   color: var(--text-tertiary);
+  font-style: italic;
+}
+
+.context-breakdown-row.evicted {
+  color: var(--ctx-red);
   font-style: italic;
 }
 

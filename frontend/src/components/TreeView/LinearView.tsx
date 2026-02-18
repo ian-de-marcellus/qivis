@@ -62,6 +62,7 @@ export function LinearView() {
     digressionGroups,
     excludeNode,
     includeNode,
+    toggleAnchor,
     groupSelectionMode,
     selectedGroupNodeIds,
     setGroupSelectionMode,
@@ -380,6 +381,7 @@ export function LinearView() {
                   }
                 }}
                 onExcludeToggle={isPicking ? undefined : () => handleExcludeToggle(node.node_id)}
+                onAnchorToggle={isPicking ? undefined : () => toggleAnchor(node.node_id)}
                 isExcludedOnPath={effectiveExcludedIds.has(node.node_id)}
                 groupSelectable={!isPicking && groupSelectionMode}
                 groupSelected={selectedGroupNodeIds.includes(node.node_id)}

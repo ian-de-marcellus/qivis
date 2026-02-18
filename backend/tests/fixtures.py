@@ -15,10 +15,12 @@ from qivis.models import (
     DigressionGroupCreatedPayload,
     DigressionGroupToggledPayload,
     EventEnvelope,
+    NodeAnchoredPayload,
     NodeContentEditedPayload,
     NodeContextExcludedPayload,
     NodeContextIncludedPayload,
     NodeCreatedPayload,
+    NodeUnanchoredPayload,
     SamplingParams,
     TreeCreatedPayload,
     TreeMetadataUpdatedPayload,
@@ -410,6 +412,38 @@ def make_digression_group_toggled_envelope(
         timestamp=datetime.now(UTC),
         device_id="test",
         event_type="DigressionGroupToggled",
+        payload=payload.model_dump(),
+    )
+
+
+def make_node_anchored_envelope(
+    tree_id: str,
+    node_id: str,
+) -> EventEnvelope:
+    """Create a NodeAnchored EventEnvelope for testing."""
+    payload = NodeAnchoredPayload(node_id=node_id)
+    return EventEnvelope(
+        event_id=str(uuid4()),
+        tree_id=tree_id,
+        timestamp=datetime.now(UTC),
+        device_id="test",
+        event_type="NodeAnchored",
+        payload=payload.model_dump(),
+    )
+
+
+def make_node_unanchored_envelope(
+    tree_id: str,
+    node_id: str,
+) -> EventEnvelope:
+    """Create a NodeUnanchored EventEnvelope for testing."""
+    payload = NodeUnanchoredPayload(node_id=node_id)
+    return EventEnvelope(
+        event_id=str(uuid4()),
+        tree_id=tree_id,
+        timestamp=datetime.now(UTC),
+        device_id="test",
+        event_type="NodeUnanchored",
         payload=payload.model_dump(),
     )
 

@@ -120,6 +120,7 @@ interface TreeStore {
   setDigressionPanelOpen: (open: boolean) => void
   setGroupSelectionMode: (active: boolean) => void
   toggleGroupNodeSelection: (nodeId: string) => void
+  toggleAnchor: (nodeId: string) => Promise<void>
   setComparisonNodeId: (nodeId: string | null) => void
   enterComparisonPicking: () => void
   pickComparisonTarget: (nodeId: string) => void
@@ -1281,6 +1282,27 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
       ? state.selectedGroupNodeIds.filter((id) => id !== nodeId)
       : [...state.selectedGroupNodeIds, nodeId],
   })),
+
+  toggleAnchor: async (nodeId: string) => {
+    const { currentTree } = get()
+    if (!currentTree) return
+
+    try {
+      const result = await api.toggleAnchor(currentTree.tree_id, nodeId)
+      set((state) => ({
+        currentTree: state.currentTree
+          ? {
+              ...state.currentTree,
+              nodes: state.currentTree.nodes.map((n) =>
+                n.node_id === nodeId ? { ...n, is_anchored: result.is_anchored } : n,
+              ),
+            }
+          : null,
+      }))
+    } catch (e) {
+      set({ error: String(e) })
+    }
+  },
 
   setComparisonNodeId: (nodeId: string | null) => {
     set({ comparisonNodeId: nodeId })

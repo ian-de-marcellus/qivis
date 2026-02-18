@@ -4,6 +4,60 @@ A place for longer notes, debugging journals, brainstorming, and the occasional 
 
 ---
 
+## February 17, 2026
+
+### Phase 6.4a: Anchors
+
+The separation of anchors from bookmarks is the right call. Bookmarks are epistemic — they're research markers, where you note something interesting happened. Anchors are pragmatic — they tell the eviction algorithm "hands off." A researcher might bookmark a moment of surprising emotional coherence and also anchor it, or they might anchor a piece of setup context that's structurally important but not research-notable. The two concerns shouldn't be entangled.
+
+The implementation follows the established event-sourced pattern: `NodeAnchored`/`NodeUnanchored` events, a `node_anchors` projection table, toggle endpoint that checks current state and emits the appropriate event. Same architectural rhythm as exclusions and bookmarks. The interesting bit is that anchors will be consumed by the eviction algorithm (Subphase B) in a very different way — they're not just UI state, they're constraints on an optimization problem.
+
+The little anchor SVG icon appearing on hover, filling when active. A small nautical gesture in a research tool for understanding minds.
+
+### Phase 6.4b: Smart Eviction
+
+The eviction algorithm has a satisfying shape. Three concentric rings of protection: first N turns (the researcher's setup, the context that defines the experiment), last N turns (recency, the live wire of the conversation), and anchored nodes (explicit researcher judgment: "this matters"). Everything else is fair game, evicted oldest-first from the middle.
+
+The key insight in the design: the ContextBuilder stays stateless. It signals `summary_needed=True` and hands back the `evicted_content` list, but it's the generation service (Subphase C) that decides whether to actually call Haiku for a summary. Clean separation of concerns. The context builder is a pure function of its inputs — no side effects, no API calls, just math and filtering.
+
+Warning before eviction was Ian's request, and it's the right UX for a research tool. The researcher should know when they're approaching the cliff, not discover it after the model has already forgotten things. `warn_threshold=0.85` is conservative but adjustable per-tree.
+
+### Phase 6.4c: Eviction Wiring
+
+The threading-through was mechanical but important. A 12-tuple return from `_resolve_context()` — anchored_ids from `node_anchors`, eviction strategy parsed from tree metadata. All four generation methods now unpack the same way and pass the new params to `build()`.
+
+The summary injection is the interesting design decision. `_maybe_inject_summary` is async (it calls Haiku) but runs synchronously before the main generation request. The eviction boundary gets a user-role message with `[Context summary of N earlier messages: ...]`. It's not invisible — the researcher can see exactly where the seam is, which is right for a research tool. No pretending the context is whole when it isn't.
+
+The `generate_eviction_summary` method in TreeService follows the same pattern as bookmark summaries — same `_summary_client`, same Haiku model, same fire-and-return approach. The prompt is tuned for recaps rather than bookmark-style margin notes.
+
+396 tests green. The machinery is in place; now it needs the export system (D) and the frontend to make it all tangible (E).
+
+### Phase 6.4d: Export
+
+The export design takes a stance: flat node list with `parent_id`, same tree structure as Claude.ai's `parent_message_uuid` but with `source: "qivis"` and Qivis-specific fields (annotations, anchors, exclusions, digression groups, thinking content, context usage). The idea is that existing tools might be able to partially read the format while getting all the research metadata they'd miss from a generic export.
+
+Three endpoints: JSON (rich, everything), CSV (tabular, one row per node with complex fields as JSON strings in cells), and paths (all root-to-leaf traversals). The paths endpoint is useful for understanding the tree's branching structure at a glance.
+
+The event log is optional on JSON export (`include_events=true`). For a research tool, the full audit trail matters — you want to know not just what the tree looks like now, but the sequence of interventions that shaped it. But it's big, so opt-in.
+
+A small lesson: sqlite3.Row supports bracket access (`row["col"]`) but not `.get()`. Had to add a `_row_to_dict()` helper for the export service where we need `.get()` for optional fields. The projector's `get_nodes` and `get_tree` return dicts (via `dict(row)` conversion), but direct DB queries return raw Rows. A seam worth remembering.
+
+412 tests. One more subphase: the frontend that makes all this tangible.
+
+### Phase 6.4e: Frontend Integration
+
+The eviction settings panel in TreeSettings follows the pattern established by sampling defaults: local state synced from tree metadata on open/switch, saved via `updateTree()`. The smart mode reveals its knobs (keep_first_turns, recent_turns_to_keep, keep_anchored, summarize_evicted, warn_threshold), truncate and none modes hide them. The eviction strategy is stored in `metadata.eviction_strategy` — same pattern as `include_timestamps` and `include_thinking_in_context`.
+
+The context bar now shows evicted messages count in the breakdown (italic red, like excluded messages are italic gray). The warning threshold shows an amber banner when the context is above 85% but below the limit. Small touches but they close the loop on the researcher knowing what the model actually saw.
+
+Export buttons in settings: three options (JSON, CSV, JSON with events). The download uses blob URLs — create, click, revoke. Simple but it works. The event-inclusive export is separate because the event log can be large and isn't always needed.
+
+The `contextReconstruction.ts` placeholder for evictedTokens is now populated from context_usage. Not perfect (it uses excluded_tokens as a proxy since we don't separately track evicted tokens on ContextUsage yet), but it's better than zero.
+
+412 backend + 16 frontend tests. Phase 6.4 complete.
+
+---
+
 ## February 14, 2026
 
 First day on Qivis. The architecture is unusually well-thought-out for a greenfield project — event sourcing, CQRS, provider normalization, the whole thing hangs together. The annotation taxonomy with basin types and coherence scoring suggests this is serious AI consciousness/personality research, not just another chat wrapper.

@@ -114,6 +114,15 @@ CREATE TABLE IF NOT EXISTS digression_group_nodes (
     sort_order INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (group_id, node_id)
 );
+
+CREATE TABLE IF NOT EXISTS node_anchors (
+    tree_id TEXT NOT NULL,
+    node_id TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (tree_id, node_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_node_anchors_tree_id ON node_anchors(tree_id);
 """
 
 # Migrations for existing databases that already have the nodes table.

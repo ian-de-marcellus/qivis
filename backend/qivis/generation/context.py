@@ -8,7 +8,7 @@ summarization, digression groups) comes in Phase 3.
 
 from datetime import datetime
 
-from qivis.models import ContextUsage, EvictionReport
+from qivis.models import ContextUsage, EvictionReport, EvictionStrategy
 
 # Known model context limits (tokens). Falls back to DEFAULT for unknown models.
 MODEL_CONTEXT_LIMITS: dict[str, int] = {
@@ -62,12 +62,11 @@ class ContextBuilder:
         *,
         include_timestamps: bool = False,
         include_thinking: bool = False,
-        # Phase 3+ parameters — accepted but ignored in 0.5
         excluded_ids: set[str] | None = None,
         digression_groups: dict | None = None,
         excluded_group_ids: set[str] | None = None,
-        bookmarked_ids: set[str] | None = None,
-        eviction: object | None = None,
+        anchored_ids: set[str] | None = None,
+        eviction: EvictionStrategy | None = None,
         participant: object | None = None,
         mode: str = "chat",
     ) -> tuple[list[dict[str, str]], ContextUsage, EvictionReport]:
@@ -124,14 +123,37 @@ class ContextBuilder:
         message_tokens = [self._count_tokens(m["content"]) for m in messages]
         total = system_tokens + sum(message_tokens)
 
-        # 4. Truncate if over limit
+        # 4. Evict if over limit (mode dispatch)
         report = EvictionReport()
-        if total > model_context_limit:
+        eviction_mode = eviction.mode if eviction else None
+
+        if eviction_mode == "none":
+            # No eviction — send everything even if over limit
+            pass
+        elif eviction_mode == "smart" and total > model_context_limit:
+            messages, message_node_ids, message_tokens, report = self._smart_evict(
+                messages, message_node_ids, message_tokens,
+                system_tokens, model_context_limit,
+                eviction, anchored_ids or set(),
+            )
+            total = system_tokens + sum(message_tokens)
+        elif total > model_context_limit:
+            # Default: truncate (eviction is None or mode="truncate")
             messages, message_node_ids, message_tokens, report = self._truncate_to_fit(
                 messages, message_node_ids, message_tokens,
                 system_tokens, model_context_limit,
             )
             total = system_tokens + sum(message_tokens)
+
+        # 4b. Warning check (below limit but above threshold)
+        if eviction and not report.eviction_applied and total <= model_context_limit:
+            ratio = total / model_context_limit if model_context_limit > 0 else 0
+            if ratio >= eviction.warn_threshold:
+                pct = ratio * 100
+                report.warning = (
+                    f"Context at {pct:.0f}% of limit "
+                    f"({total:,} / {model_context_limit:,} tokens)"
+                )
 
         # 5. Compute breakdown by role
         breakdown: dict[str, int] = {"system": system_tokens}
@@ -240,5 +262,75 @@ class ContextBuilder:
             evicted_node_ids=evicted_ids,
             tokens_freed=tokens_freed,
             summary_inserted=False,
+            final_token_count=total,
+        )
+
+    @staticmethod
+    def _smart_evict(
+        messages: list[dict[str, str]],
+        node_ids: list[str],
+        token_counts: list[int],
+        system_tokens: int,
+        limit: int,
+        strategy: EvictionStrategy,
+        anchored_ids: set[str],
+    ) -> tuple[list[dict[str, str]], list[str], list[int], EvictionReport]:
+        """Smart eviction: protect first/last turns and anchored nodes.
+
+        Evicts unprotected messages oldest-first from the middle until total fits.
+        """
+        n = len(messages)
+        total = system_tokens + sum(token_counts)
+
+        # Build protected index set
+        protected: set[int] = set()
+        # First N turns
+        for i in range(min(strategy.keep_first_turns, n)):
+            protected.add(i)
+        # Last N turns
+        for i in range(max(0, n - strategy.recent_turns_to_keep), n):
+            protected.add(i)
+        # Anchored nodes
+        if strategy.keep_anchored:
+            for i, nid in enumerate(node_ids):
+                if nid in anchored_ids:
+                    protected.add(i)
+
+        # Find evictable indices (unprotected, oldest first)
+        evictable = [i for i in range(n) if i not in protected]
+
+        evicted_ids: list[str] = []
+        evicted_content: list[str] = []
+        tokens_freed = 0
+        evict_set: set[int] = set()
+
+        for i in evictable:
+            if total <= limit:
+                break
+            evict_set.add(i)
+            evicted_ids.append(node_ids[i])
+            if strategy.summarize_evicted:
+                evicted_content.append(
+                    f"{messages[i]['role']}: {messages[i]['content']}"
+                )
+            tokens_freed += token_counts[i]
+            total -= token_counts[i]
+
+        if not evict_set:
+            # All messages protected — no eviction possible
+            return messages, node_ids, token_counts, EvictionReport()
+
+        # Filter out evicted messages
+        new_messages = [m for i, m in enumerate(messages) if i not in evict_set]
+        new_node_ids = [nid for i, nid in enumerate(node_ids) if i not in evict_set]
+        new_token_counts = [t for i, t in enumerate(token_counts) if i not in evict_set]
+
+        return new_messages, new_node_ids, new_token_counts, EvictionReport(
+            eviction_applied=True,
+            evicted_node_ids=evicted_ids,
+            tokens_freed=tokens_freed,
+            summary_inserted=False,
+            summary_needed=bool(strategy.summarize_evicted and evicted_content),
+            evicted_content=evicted_content,
             final_token_count=total,
         )

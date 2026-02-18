@@ -18,6 +18,9 @@ from qivis.providers.anthropic import AnthropicProvider
 from qivis.providers.openai import OpenAIProvider
 from qivis.providers.openrouter import OpenRouterProvider
 from qivis.providers.registry import clear_providers, get_all_providers, register_provider
+from qivis.export.router import get_export_service
+from qivis.export.router import router as export_router
+from qivis.export.service import ExportService
 from qivis.trees.router import get_generation_service, get_tree_service
 from qivis.trees.router import router as trees_router
 from qivis.trees.service import TreeService
@@ -55,6 +58,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     gen_service = GenerationService(service, store, projector)
     app.dependency_overrides[get_generation_service] = lambda: gen_service
 
+    # Export service
+    export_service = ExportService(db, store, projector)
+    app.dependency_overrides[get_export_service] = lambda: export_service
+
     app.state.db = db
     yield
 
@@ -80,6 +87,7 @@ app.add_middleware(
 )
 
 app.include_router(trees_router)
+app.include_router(export_router)
 
 
 @app.get("/api/health")

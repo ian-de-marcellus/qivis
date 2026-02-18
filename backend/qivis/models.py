@@ -63,7 +63,7 @@ class EvictionStrategy(BaseModel):
     mode: str = "smart"  # "smart" | "truncate" | "none"
     recent_turns_to_keep: int = 4
     keep_first_turns: int = 2
-    keep_bookmarked: bool = True
+    keep_anchored: bool = True
     summarize_evicted: bool = True
     summary_model: str = "claude-haiku-4-5-20251001"
     warn_threshold: float = 0.85
@@ -74,6 +74,8 @@ class EvictionReport(BaseModel):
     evicted_node_ids: list[str] = Field(default_factory=list)
     tokens_freed: int = 0
     summary_inserted: bool = False
+    summary_needed: bool = False
+    evicted_content: list[str] = Field(default_factory=list)
     final_token_count: int = 0
     warning: str | None = None
 
@@ -166,6 +168,14 @@ class NodeCreatedPayload(BaseModel):
     visible_to: list[str] | None = None
 
     raw_response: dict[str, Any] | None = None
+
+
+class NodeAnchoredPayload(BaseModel):
+    node_id: str
+
+
+class NodeUnanchoredPayload(BaseModel):
+    node_id: str
 
 
 class NodeArchivedPayload(BaseModel):

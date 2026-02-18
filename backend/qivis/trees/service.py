@@ -20,10 +20,12 @@ from qivis.models import (
     DigressionGroupCreatedPayload,
     DigressionGroupToggledPayload,
     EventEnvelope,
+    NodeAnchoredPayload,
     NodeContentEditedPayload,
     NodeContextExcludedPayload,
     NodeContextIncludedPayload,
     NodeCreatedPayload,
+    NodeUnanchoredPayload,
     TreeCreatedPayload,
     TreeMetadataUpdatedPayload,
 )
@@ -185,6 +187,13 @@ class TreeService:
         )
         excluded_node_ids = {r["node_id"] for r in excl_rows}
 
+        # Anchored node IDs
+        anchor_rows = await self._db.fetchall(
+            "SELECT DISTINCT node_id FROM node_anchors WHERE tree_id = ?",
+            (tree_id,),
+        )
+        anchored_node_ids = {r["node_id"] for r in anchor_rows}
+
         # Edit counts per node (from event log)
         edit_rows = await self._db.fetchall(
             "SELECT json_extract(payload, '$.node_id') as node_id, COUNT(*) as cnt "
@@ -199,6 +208,7 @@ class TreeService:
             annotation_counts=annotation_counts,
             bookmark_node_ids=bookmark_node_ids,
             excluded_node_ids=excluded_node_ids,
+            anchored_node_ids=anchored_node_ids,
             edit_counts=edit_counts,
         )
 
@@ -675,6 +685,45 @@ class TreeService:
         assert updated_row is not None
         return self._bookmark_from_row(updated_row)
 
+    async def generate_eviction_summary(
+        self, evicted_content: list[str],
+    ) -> str | None:
+        """Generate a concise recap of evicted messages for context continuity.
+
+        Returns the summary text, or None if no summary client is configured.
+        """
+        if self._summary_client is None:
+            return None
+        if not evicted_content:
+            return None
+
+        transcript = "\n".join(evicted_content)
+
+        response = await self._summary_client.messages.create(
+            model="claude-haiku-4-5",
+            max_tokens=200,
+            system=(
+                "You write concise conversation recaps for context continuity. "
+                "Summarize the key points, decisions, and any important details "
+                "from the evicted messages in 2-3 sentences. No markdown, no bullets. "
+                "Write as a neutral observer."
+            ),
+            messages=[
+                {
+                    "role": "user",
+                    "content": (
+                        "These messages were removed from context due to length limits. "
+                        f"Summarize them:\n\n{transcript}"
+                    ),
+                },
+                {
+                    "role": "assistant",
+                    "content": "Summary:",
+                },
+            ],
+        )
+        return response.content[0].text
+
     # -- Context exclusion methods --
 
     async def exclude_node(
@@ -757,6 +806,55 @@ class TreeService:
             )
             for r in rows
         ]
+
+    # -- Anchor methods --
+
+    async def anchor_node(self, tree_id: str, node_id: str) -> bool:
+        """Toggle anchor on a node. Returns True if now anchored, False if unanchored."""
+        tree = await self._projector.get_tree(tree_id)
+        if tree is None:
+            raise TreeNotFoundError(tree_id)
+
+        nodes = await self._projector.get_nodes(tree_id)
+        node_ids = {n["node_id"] for n in nodes}
+        if node_id not in node_ids:
+            raise NodeNotFoundError(node_id)
+
+        # Check current state
+        row = await self._db.fetchone(
+            "SELECT * FROM node_anchors WHERE tree_id = ? AND node_id = ?",
+            (tree_id, node_id),
+        )
+        now = datetime.now(UTC)
+
+        if row is not None:
+            # Unanchor
+            payload = NodeUnanchoredPayload(node_id=node_id)
+            event = EventEnvelope(
+                event_id=str(uuid4()),
+                tree_id=tree_id,
+                timestamp=now,
+                device_id="local",
+                event_type="NodeUnanchored",
+                payload=payload.model_dump(),
+            )
+            await self._store.append(event)
+            await self._projector.project([event])
+            return False
+        else:
+            # Anchor
+            payload = NodeAnchoredPayload(node_id=node_id)
+            event = EventEnvelope(
+                event_id=str(uuid4()),
+                tree_id=tree_id,
+                timestamp=now,
+                device_id="local",
+                event_type="NodeAnchored",
+                payload=payload.model_dump(),
+            )
+            await self._store.append(event)
+            await self._projector.project([event])
+            return True
 
     # -- Digression group methods --
 
@@ -954,6 +1052,7 @@ class TreeService:
         annotation_counts: dict[str, int] | None = None,
         bookmark_node_ids: set[str] | None = None,
         excluded_node_ids: set[str] | None = None,
+        anchored_node_ids: set[str] | None = None,
         edit_counts: dict[str, int] | None = None,
     ) -> TreeDetailResponse:
         """Convert a projected tree row + node rows to a response."""
@@ -986,6 +1085,7 @@ class TreeService:
                     annotation_counts=annotation_counts,
                     bookmark_node_ids=bookmark_node_ids,
                     excluded_node_ids=excluded_node_ids,
+                    anchored_node_ids=anchored_node_ids,
                     edit_counts=edit_counts,
                 )
                 for n in node_rows
@@ -1000,6 +1100,7 @@ class TreeService:
         annotation_counts: dict[str, int] | None = None,
         bookmark_node_ids: set[str] | None = None,
         excluded_node_ids: set[str] | None = None,
+        anchored_node_ids: set[str] | None = None,
         edit_counts: dict[str, int] | None = None,
     ) -> NodeResponse:
         """Convert a projected node row to a response."""
@@ -1026,6 +1127,10 @@ class TreeService:
         ie = False
         if excluded_node_ids is not None:
             ie = row["node_id"] in excluded_node_ids
+
+        ia = False
+        if anchored_node_ids is not None:
+            ia = row["node_id"] in anchored_node_ids
 
         ec = 0
         if edit_counts is not None:
@@ -1061,6 +1166,7 @@ class TreeService:
             edit_count=ec,
             is_bookmarked=ib,
             is_excluded=ie,
+            is_anchored=ia,
         )
 
 

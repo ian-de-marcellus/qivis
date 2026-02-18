@@ -367,6 +367,21 @@ async def delete_digression_group(
         )
 
 
+@router.post("/{tree_id}/nodes/{node_id}/anchor")
+async def toggle_anchor(
+    tree_id: str,
+    node_id: str,
+    service: TreeService = Depends(get_tree_service),
+) -> dict:
+    try:
+        is_anchored = await service.anchor_node(tree_id, node_id)
+        return {"is_anchored": is_anchored}
+    except TreeNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Tree not found: {tree_id}")
+    except NodeNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Node not found: {node_id}")
+
+
 @router.post(
     "/{tree_id}/nodes/{node_id}/generate",
     status_code=status.HTTP_201_CREATED,

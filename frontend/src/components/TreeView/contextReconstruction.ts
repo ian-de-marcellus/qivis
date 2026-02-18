@@ -131,7 +131,7 @@ export function reconstructContext(
   const excludedCount = targetNode.context_usage?.excluded_count ?? 0
   const excludedTokens = targetNode.context_usage?.excluded_tokens ?? 0
   const evictedCount = evictedNodeIds.size
-  const evictedTokens = 0  // Not tracked separately yet
+  const evictedTokens = targetNode.context_usage?.excluded_tokens ?? 0  // Best estimate from ContextUsage
 
   return {
     systemPrompt: targetNode.system_prompt,

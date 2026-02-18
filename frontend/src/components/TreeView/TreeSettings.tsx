@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import type { PatchTreeRequest, SamplingParams } from '../../api/types.ts'
+import type { EvictionStrategy, PatchTreeRequest, SamplingParams } from '../../api/types.ts'
+import { exportTree } from '../../api/client.ts'
 import { useTreeStore } from '../../store/treeStore.ts'
 import { SAMPLING_PRESETS, detectPreset, type PresetName } from './samplingPresets.ts'
 import './TreeSettings.css'
@@ -31,6 +32,14 @@ export function TreeSettings({ graphOpen, onToggleGraph }: TreeSettingsProps) {
   const [extendedThinking, setExtendedThinking] = useState(false)
   const [thinkingBudget, setThinkingBudget] = useState('10000')
 
+  // Eviction strategy state
+  const [evictionMode, setEvictionMode] = useState<'smart' | 'truncate' | 'none'>('smart')
+  const [keepFirstTurns, setKeepFirstTurns] = useState('2')
+  const [recentTurnsToKeep, setRecentTurnsToKeep] = useState('4')
+  const [keepAnchored, setKeepAnchored] = useState(true)
+  const [summarizeEvicted, setSummarizeEvicted] = useState(true)
+  const [warnThreshold, setWarnThreshold] = useState('0.85')
+
   // Sync form state when tree changes or panel opens
   useEffect(() => {
     if (currentTree) {
@@ -55,6 +64,15 @@ export function TreeSettings({ graphOpen, onToggleGraph }: TreeSettingsProps) {
       setThinkingBudget(
         String(sp?.thinking_budget ?? (meta?.thinking_budget as number | undefined) ?? 10000),
       )
+
+      // Eviction strategy from metadata
+      const es = meta?.eviction_strategy as Partial<EvictionStrategy> | undefined
+      setEvictionMode(es?.mode ?? 'smart')
+      setKeepFirstTurns(String(es?.keep_first_turns ?? 2))
+      setRecentTurnsToKeep(String(es?.recent_turns_to_keep ?? 4))
+      setKeepAnchored(es?.keep_anchored ?? true)
+      setSummarizeEvicted(es?.summarize_evicted ?? true)
+      setWarnThreshold(String(es?.warn_threshold ?? 0.85))
     }
   }, [currentTree?.tree_id, isOpen])
 
@@ -488,6 +506,148 @@ export function TreeSettings({ graphOpen, onToggleGraph }: TreeSettingsProps) {
               <span className="tree-settings-note">
                 Feed reasoning traces back into subsequent context. Uses significant tokens.
               </span>
+            </div>
+
+            <div className="tree-settings-divider" />
+
+            <div className="tree-settings-section-label">Context eviction</div>
+
+            <div className="tree-settings-field">
+              <label>Eviction mode</label>
+              <select
+                value={evictionMode}
+                onChange={async (e) => {
+                  const mode = e.target.value as 'smart' | 'truncate' | 'none'
+                  setEvictionMode(mode)
+                  await updateTree(currentTree.tree_id, {
+                    metadata: {
+                      ...currentTree.metadata,
+                      eviction_strategy: {
+                        ...(currentTree.metadata?.eviction_strategy as Record<string, unknown> ?? {}),
+                        mode,
+                      },
+                    },
+                  })
+                }}
+              >
+                <option value="smart">Smart (protect first/last/anchored)</option>
+                <option value="truncate">Truncate (oldest first)</option>
+                <option value="none">None (send everything)</option>
+              </select>
+            </div>
+
+            {evictionMode === 'smart' && (
+              <>
+                <div className="tree-settings-row-pair">
+                  <div className="tree-settings-field">
+                    <label>Keep first turns</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={keepFirstTurns}
+                      onChange={(e) => setKeepFirstTurns(e.target.value)}
+                    />
+                  </div>
+                  <div className="tree-settings-field">
+                    <label>Keep recent turns</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={recentTurnsToKeep}
+                      onChange={(e) => setRecentTurnsToKeep(e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                <div className="tree-settings-field">
+                  <label>Warning threshold</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                    value={warnThreshold}
+                    onChange={(e) => setWarnThreshold(e.target.value)}
+                  />
+                  <span className="tree-settings-note">
+                    Warn when context reaches this fraction of the limit
+                  </span>
+                </div>
+
+                <div className="tree-settings-toggle">
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={keepAnchored}
+                      onChange={(e) => setKeepAnchored(e.target.checked)}
+                    />
+                    Protect anchored messages
+                  </label>
+                </div>
+
+                <div className="tree-settings-toggle">
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={summarizeEvicted}
+                      onChange={(e) => setSummarizeEvicted(e.target.checked)}
+                    />
+                    Summarize evicted messages
+                  </label>
+                  <span className="tree-settings-note">
+                    Generate a recap of evicted content using a small model
+                  </span>
+                </div>
+
+                <button
+                  className="tree-settings-save"
+                  onClick={async () => {
+                    const strategy: EvictionStrategy = {
+                      mode: evictionMode,
+                      keep_first_turns: parseInt(keepFirstTurns, 10) || 2,
+                      recent_turns_to_keep: parseInt(recentTurnsToKeep, 10) || 4,
+                      keep_anchored: keepAnchored,
+                      summarize_evicted: summarizeEvicted,
+                      warn_threshold: parseFloat(warnThreshold) || 0.85,
+                    }
+                    await updateTree(currentTree.tree_id, {
+                      metadata: {
+                        ...currentTree.metadata,
+                        eviction_strategy: strategy,
+                      },
+                    })
+                  }}
+                >
+                  Save eviction settings
+                </button>
+              </>
+            )}
+
+            <div className="tree-settings-divider" />
+
+            <div className="tree-settings-section-label">Export</div>
+
+            <div className="tree-settings-export-buttons">
+              <button
+                className="tree-settings-export-btn"
+                onClick={() => exportTree(currentTree.tree_id, 'json')}
+              >
+                Export JSON
+              </button>
+              <button
+                className="tree-settings-export-btn"
+                onClick={() => exportTree(currentTree.tree_id, 'csv')}
+              >
+                Export CSV
+              </button>
+              <button
+                className="tree-settings-export-btn"
+                onClick={() => exportTree(currentTree.tree_id, 'json', true)}
+              >
+                Export JSON (with events)
+              </button>
             </div>
 
             <div className="tree-settings-actions">
