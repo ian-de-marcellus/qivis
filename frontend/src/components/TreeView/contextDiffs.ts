@@ -67,10 +67,21 @@ export function computeDiffSummary(
   const evictedCount = node.context_usage?.evicted_node_ids?.length ?? 0
   const excludedCount = node.context_usage?.excluded_count ?? 0
 
-  const systemPromptChanged = (node.system_prompt ?? null) !== (treeDefaults.default_system_prompt ?? null)
-  const modelChanged = (node.model ?? null) !== (treeDefaults.default_model ?? null)
-  const providerChanged = (node.provider ?? null) !== (treeDefaults.default_provider ?? null)
-  const samplingChanged = !samplingParamsEqual(node.sampling_params, treeDefaults.default_sampling_params)
+  // Only flag a divergence when the tree has an explicit default AND the node
+  // used something different. A null tree default means "no override" — the
+  // node having any value is expected, not a divergence.
+  const systemPromptChanged =
+    treeDefaults.default_system_prompt != null &&
+    (node.system_prompt ?? null) !== treeDefaults.default_system_prompt
+  const modelChanged =
+    treeDefaults.default_model != null &&
+    (node.model ?? null) !== treeDefaults.default_model
+  const providerChanged =
+    treeDefaults.default_provider != null &&
+    (node.provider ?? null) !== treeDefaults.default_provider
+  const samplingChanged =
+    treeDefaults.default_sampling_params != null &&
+    !samplingParamsEqual(node.sampling_params, treeDefaults.default_sampling_params)
   const thinkingInContextFlag = node.include_thinking_in_context
   const timestampsFlag = node.include_timestamps
 
@@ -302,14 +313,15 @@ export function buildDiffRows(
   }
 
   // Metadata row if model/provider/params differ from tree defaults
+  // Only flag when tree has an explicit default and node used something different
   const metaDiffs: string[] = []
-  if ((targetNode.model ?? null) !== (treeDefaults.default_model ?? null)) {
+  if (treeDefaults.default_model != null && (targetNode.model ?? null) !== treeDefaults.default_model) {
     metaDiffs.push(`model: ${targetNode.model ?? 'none'}`)
   }
-  if ((targetNode.provider ?? null) !== (treeDefaults.default_provider ?? null)) {
+  if (treeDefaults.default_provider != null && (targetNode.provider ?? null) !== treeDefaults.default_provider) {
     metaDiffs.push(`provider: ${targetNode.provider ?? 'none'}`)
   }
-  if (!samplingParamsEqual(targetNode.sampling_params, treeDefaults.default_sampling_params)) {
+  if (treeDefaults.default_sampling_params != null && !samplingParamsEqual(targetNode.sampling_params, treeDefaults.default_sampling_params)) {
     metaDiffs.push('sampling params differ')
   }
 

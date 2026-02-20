@@ -260,6 +260,17 @@ class GarbageCollectedPayload(BaseModel):
     recoverable_until: str  # ISO-8601
 
 
+class NoteAddedPayload(BaseModel):
+    note_id: str
+    node_id: str
+    content: str
+
+
+class NoteRemovedPayload(BaseModel):
+    note_id: str
+    reason: str | None = None
+
+
 class NodeContentEditedPayload(BaseModel):
     node_id: str
     original_content: str  # matches node.content; for event log readability
@@ -283,6 +294,8 @@ EVENT_TYPES: dict[str, type[BaseModel]] = {
     "GenerationStarted": GenerationStartedPayload,
     "NodeCreated": NodeCreatedPayload,
     "NodeContentEdited": NodeContentEditedPayload,
+    "NoteAdded": NoteAddedPayload,
+    "NoteRemoved": NoteRemovedPayload,
     "NodeArchived": NodeArchivedPayload,
     "NodeUnarchived": NodeUnarchivedPayload,
     "AnnotationAdded": AnnotationAddedPayload,

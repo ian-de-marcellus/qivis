@@ -38,6 +38,7 @@ function makeNode(overrides: Partial<NodeResponse> & { node_id: string; role: st
     is_excluded: false,
     is_anchored: false,
     annotation_count: 0,
+    note_count: 0,
     edit_count: 0,
     participant_id: overrides.participant_id ?? null,
     participant_name: overrides.participant_name ?? null,

@@ -54,76 +54,6 @@
   font-size: var(--text-xs);
 }
 
-/* ---- Fork button ---- */
-.fork-btn {
-  margin-left: auto;
-  font-family: var(--font-ui);
-  font-size: var(--text-xs);
-  padding: 0.15rem 0.5rem;
-  background: none;
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
-  color: var(--text-tertiary);
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.2s ease, border-color 0.15s ease, color 0.15s ease;
-}
-
-.message-row:hover .fork-btn {
-  opacity: 1;
-}
-
-.fork-btn:hover {
-  color: var(--text-accent);
-  border-color: var(--text-accent);
-}
-
-/* ---- Prefill button ---- */
-.prefill-btn {
-  font-family: var(--font-ui);
-  font-size: var(--text-xs);
-  padding: 0.15rem 0.5rem;
-  background: none;
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
-  color: var(--text-tertiary);
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.2s ease, border-color 0.15s ease, color 0.15s ease;
-}
-
-.message-row:hover .prefill-btn {
-  opacity: 1;
-}
-
-.prefill-btn:hover {
-  color: var(--text-accent);
-  border-color: var(--text-accent);
-}
-
-/* ---- Generate button ---- */
-.generate-btn {
-  font-family: var(--font-ui);
-  font-size: var(--text-xs);
-  padding: 0.15rem 0.5rem;
-  background: none;
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
-  color: var(--text-tertiary);
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.2s ease, border-color 0.15s ease, color 0.15s ease;
-}
-
-.message-row:hover .generate-btn {
-  opacity: 1;
-}
-
-.generate-btn:hover {
-  color: var(--text-accent);
-  border-color: var(--text-accent);
-}
-
 /* ---- Compare button ---- */
 .compare-btn {
   font-family: var(--font-ui);
@@ -193,35 +123,7 @@
   border-color: var(--text-accent);
 }
 
-/* ---- Annotate button ---- */
-.annotate-btn {
-  font-family: var(--font-ui);
-  font-size: var(--text-xs);
-  padding: 0.15rem 0.5rem;
-  background: none;
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
-  color: var(--text-tertiary);
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.2s ease, border-color 0.15s ease, color 0.15s ease;
-}
-
-.message-row:hover .annotate-btn {
-  opacity: 1;
-}
-
-.annotate-btn:hover {
-  color: var(--accent);
-  border-color: var(--accent);
-}
-
-.annotate-btn.active {
-  opacity: 1;
-  color: var(--accent);
-  border-color: var(--accent);
-}
-
+/* ---- Annotation badge (reused inside action menu items) ---- */
 .annotation-badge {
   display: inline-block;
   background: var(--accent-muted);
@@ -234,35 +136,6 @@
   min-width: 0.7rem;
   text-align: center;
   line-height: 1.2;
-}
-
-/* ---- Bookmark button ---- */
-.bookmark-btn {
-  font-family: var(--font-ui);
-  font-size: var(--text-xs);
-  padding: 0.15rem 0.5rem;
-  background: none;
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
-  color: var(--text-tertiary);
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.2s ease, border-color 0.15s ease, color 0.15s ease;
-}
-
-.message-row:hover .bookmark-btn {
-  opacity: 1;
-}
-
-.bookmark-btn:hover {
-  color: var(--text-accent);
-  border-color: var(--text-accent);
-}
-
-.bookmark-btn.active {
-  opacity: 1;
-  color: var(--text-accent);
-  border-color: var(--text-accent);
 }
 
 /* ---- Inline editor ---- */
@@ -419,34 +292,6 @@
   opacity: 0.7;
 }
 
-/* ---- Exclude button ---- */
-.exclude-btn {
-  font-family: var(--font-ui);
-  font-size: var(--text-xs);
-  padding: 0.15rem 0.5rem;
-  background: none;
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
-  color: var(--text-tertiary);
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.2s ease, border-color 0.15s ease, color 0.15s ease;
-}
-
-.message-row:hover .exclude-btn {
-  opacity: 1;
-}
-
-.exclude-btn:hover {
-  color: var(--error, #c44);
-  border-color: var(--error, #c44);
-}
-
-.exclude-btn.active {
-  opacity: 1;
-  color: var(--error, #c44);
-  border-color: var(--error, #c44);
-}
 
 /* ---- Excluded node visual treatment ---- */
 .message-row.excluded {
@@ -471,39 +316,6 @@
 }
 
 
-/* ---- Anchor button ---- */
-.anchor-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0.15rem 0.35rem;
-  background: none;
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
-  color: var(--text-tertiary);
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.2s ease, border-color 0.15s ease, color 0.15s ease;
-}
-
-.message-row:hover .anchor-btn {
-  opacity: 1;
-}
-
-.anchor-btn:hover {
-  color: var(--accent);
-  border-color: var(--accent);
-}
-
-.anchor-btn.active {
-  opacity: 1;
-  color: var(--accent);
-  border-color: var(--accent);
-}
-
-.anchor-icon {
-  vertical-align: middle;
-}
 
 /* ---- Comparison picking mode ---- */
 

@@ -1,0 +1,148 @@
+/* ---- Action Menu: grouped popover for message actions ---- */
+
+.action-menu {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.action-menu.push-right {
+  margin-left: auto;
+}
+
+/* ---- Trigger button ---- */
+
+.action-menu-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  padding: 0.15rem 0.4rem;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-tertiary);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.2s ease, border-color 0.15s ease, color 0.15s ease;
+  line-height: 1;
+}
+
+.message-row:hover .action-menu-trigger {
+  opacity: 1;
+}
+
+.action-menu-trigger:hover {
+  color: var(--text-accent);
+  border-color: var(--text-accent);
+}
+
+.action-menu-trigger.active {
+  opacity: 1;
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.action-menu-trigger.open {
+  opacity: 1;
+  color: var(--text-accent);
+  border-color: var(--text-accent);
+}
+
+.action-menu-trigger svg {
+  vertical-align: middle;
+}
+
+/* ---- Badge on trigger ---- */
+
+.action-menu-badge {
+  display: inline-block;
+  background: var(--accent-muted);
+  color: var(--accent);
+  font-size: 0.55rem;
+  font-weight: 700;
+  padding: 0 0.3rem;
+  border-radius: 0.5rem;
+  min-width: 0.7rem;
+  text-align: center;
+  line-height: 1.2;
+}
+
+/* ---- Popover ---- */
+
+.action-menu-popover {
+  position: absolute;
+  top: calc(100% + 0.2rem);
+  z-index: 20;
+  min-width: 8rem;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  padding: 0.2rem 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.action-menu-popover.align-left {
+  left: 0;
+}
+
+.action-menu-popover.align-right {
+  right: 0;
+}
+
+/* ---- Menu items ---- */
+
+.action-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  width: 100%;
+  padding: 0.35rem 0.6rem;
+  background: none;
+  border: none;
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s ease, color 0.1s ease;
+  white-space: nowrap;
+}
+
+.action-menu-item:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.action-menu-item.item-active {
+  color: var(--accent);
+}
+
+.action-menu-item.item-active:hover {
+  color: var(--accent);
+}
+
+.action-menu-item .annotation-badge {
+  display: inline-block;
+  background: var(--accent-muted);
+  color: var(--accent);
+  font-size: 0.55rem;
+  font-weight: 700;
+  padding: 0 0.3rem;
+  border-radius: 0.5rem;
+  min-width: 0.7rem;
+  text-align: center;
+  line-height: 1.2;
+}
+
+/* Item with error/warning color (like Exclude) */
+.action-menu-item.item-warn {
+  color: var(--error, #c44);
+}
+
+.action-menu-item.item-warn:hover {
+  color: var(--error, #c44);
+}

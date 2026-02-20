@@ -3928,3 +3928,23 @@ The topological sort was satisfying to write. DFS from roots, emit parent before
 Timestamps get preserved from the source format onto the `EventEnvelope.timestamp` field. So when you look at an imported conversation, the events say when the messages were originally created, not when you pressed the import button. This is the right thing for a research tool — the temporal structure of the original conversation is data.
 
 25 tests. 497 total. Qivis can now study conversations it didn't birth.
+
+### Phase 6.5: Research Notes + Unified Research Pane
+
+Notes are the simplest research entity: just text on a node. No tag hierarchy, no label/summary machinery — pure commentary. "This is where the model started hedging." "Compare with the branch where temperature was 0.3." "Revisit." The kind of marginal annotation a researcher scribbles without wanting to categorize it first.
+
+The implementation followed the event-sourced groove exactly — `NoteAdded`/`NoteRemoved` events, `notes` projection table, CRUD service methods, five endpoints. The parallel with annotations is almost mechanical at this point, and that's good. The architecture has a shape that new entities slide into without resistance. You write the payload models, the projector handlers, the service methods, and it works because the patterns have been earning trust for six phases.
+
+The more interesting piece is the Research Panel. Before this, bookmarks lived in their own sidebar component and annotations were only visible per-node. A researcher studying a conversation had to click through individual messages to see what they'd marked up — a view-from-nowhere when what you want is a view-from-above. The tabbed panel (Bookmarks / Tags / Notes) gives you that altitude. Every piece of research metadata for the current tree, in one place, all click-to-navigate. The tree-wide annotation endpoint (`GET /trees/{id}/annotations`) didn't exist before — annotations were only queryable per-node. Small addition, but it's the difference between "I tagged something somewhere" and "here are all my tags."
+
+The NotePanel inline component mirrors AnnotationPanel's shape: textarea + submit, list with hover-to-remove. Cmd+Enter to add, because researchers' hands should stay on the keyboard. The note button lives next to Tag and Mark in the message action row, with a badge showing count — the same visual language as annotations and bookmarks, which is the point. Research metadata should feel like one system with three flavors, not three unrelated features.
+
+18 new tests. 523 total.
+
+### Action Menu Grouping + Research Panel Scroll
+
+Ten buttons appearing on hover was getting visually noisy. The grouping into three collapsible menus — Generation (fork/regen/prefill/generate), Research (tag/note/mark), Context (exclude/anchor) — reduces the header to three small icons plus Edit and Context. Each icon is an inline SVG: a downward-branching arrow for generation, a quill for research, an eye for context. Click to open a popover, click outside or on an item to close.
+
+The ActionMenu component is intentionally lightweight — no library, just `useState` + `useEffect` for outside-click detection + event delegation for item clicks. The `isActive` prop propagates up: if any child action has state (annotations exist, node is bookmarked, node is anchored), the trigger icon stays visible at full opacity with accent color. This preserves the "at a glance" affordance that the old individual active-state buttons had.
+
+The scroll-to-node fix was a one-liner: `navigateToNode` now sets `scrollToNodeId` alongside `branchSelections`. LinearView's existing `useEffect` on `scrollToNodeId` handles the smooth scroll. Previously only `navigateToSearchResult` did this — the research panel's click-to-navigate was doing the path-switching correctly but not the scrolling. Bookmarks, tags, and notes in the Research Panel all navigate via `navigateToNode`, so all three now scroll.

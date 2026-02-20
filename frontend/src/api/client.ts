@@ -7,6 +7,7 @@ import type {
   CreateBookmarkRequest,
   CreateDigressionGroupRequest,
   CreateNodeRequest,
+  CreateNoteRequest,
   CreateTreeRequest,
   DigressionGroupResponse,
   EditHistoryResponse,
@@ -17,6 +18,7 @@ import type {
   MessageStopEvent,
   NodeExclusionResponse,
   NodeResponse,
+  NoteResponse,
   PatchTreeRequest,
   ProviderInfo,
   SearchResponse,
@@ -143,6 +145,49 @@ export function removeAnnotation(
 
 export function getTreeTaxonomy(treeId: string): Promise<TaxonomyResponse> {
   return request(`/trees/${treeId}/taxonomy`)
+}
+
+// -- Notes --
+
+export function addNote(
+  treeId: string,
+  nodeId: string,
+  req: CreateNoteRequest,
+): Promise<NoteResponse> {
+  return request(`/trees/${treeId}/nodes/${nodeId}/notes`, {
+    method: 'POST',
+    body: JSON.stringify(req),
+  })
+}
+
+export function getNodeNotes(
+  treeId: string,
+  nodeId: string,
+): Promise<NoteResponse[]> {
+  return request(`/trees/${treeId}/nodes/${nodeId}/notes`)
+}
+
+export function getTreeNotes(
+  treeId: string,
+  query?: string,
+): Promise<NoteResponse[]> {
+  const params = query ? `?q=${encodeURIComponent(query)}` : ''
+  return request(`/trees/${treeId}/notes${params}`)
+}
+
+export function removeNote(
+  treeId: string,
+  noteId: string,
+): Promise<void> {
+  return request(`/trees/${treeId}/notes/${noteId}`, {
+    method: 'DELETE',
+  })
+}
+
+export function getTreeAnnotations(
+  treeId: string,
+): Promise<AnnotationResponse[]> {
+  return request(`/trees/${treeId}/annotations`)
 }
 
 // -- Bookmarks --

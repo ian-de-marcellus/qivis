@@ -333,6 +333,23 @@ _Goal: Annotate, bookmark, manage context, export._
 
 ✅ Long conversations gracefully handle context limits. Researcher sees what was evicted. Full export works. **Phase 6 complete.**
 
+### 6.5 — Research Notes + Unified Research Pane ✅
+
+**Tasks:**
+- `notes` table: note_id, tree_id, node_id, content, created_at
+- `NoteAdded` / `NoteRemoved` events + projector handlers
+- Note CRUD endpoints: POST/GET/DELETE per node, GET tree-wide with `?q=` search
+- `note_count` on `NodeResponse` (mirrors annotation_count pattern)
+- Tree-wide annotations endpoint: `GET /api/trees/{id}/annotations`
+- Frontend `NotePanel`: inline below messages (textarea + submit, list with remove)
+- Frontend `ResearchPanel`: tabbed sidebar replacing BookmarkList (Bookmarks, Tags, Notes tabs)
+- Click-to-navigate from any research item to its source node
+- 18 new backend tests (projection, CRUD, note_count, tree annotations, event replay)
+
+**Design notes:** Notes are simpler than annotations (no tag/value taxonomy) and bookmarks (no summary generation). Pure free-form text commentary — "this is where the model started hedging," "compare with the other branch." The research panel unifies all three metadata types into a single navigable sidebar view.
+
+✅ Can add free-form notes on any node. Research panel shows bookmarks, tags, and notes for the current tree. 523 tests.
+
 ---
 
 ## Interlude: Immediate Fixes + Technical Debt

@@ -82,6 +82,7 @@ class NodeResponse(BaseModel):
     sibling_count: int = 1
     sibling_index: int = 0
     annotation_count: int = 0
+    note_count: int = 0
     is_bookmarked: bool = False
     edit_count: int = 0
     is_excluded: bool = False
@@ -146,6 +147,18 @@ class AnnotationResponse(BaseModel):
 class TaxonomyResponse(BaseModel):
     base_tags: list[str]
     used_tags: list[str]
+
+
+class CreateNoteRequest(BaseModel):
+    content: str
+
+
+class NoteResponse(BaseModel):
+    note_id: str
+    tree_id: str
+    node_id: str
+    content: str
+    created_at: str
 
 
 class CreateBookmarkRequest(BaseModel):

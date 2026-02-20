@@ -25,6 +25,8 @@ from qivis.models import (
     NodeContextIncludedPayload,
     NodeCreatedPayload,
     NodeUnanchoredPayload,
+    NoteAddedPayload,
+    NoteRemovedPayload,
     TreeCreatedPayload,
     TreeMetadataUpdatedPayload,
 )
@@ -35,6 +37,7 @@ from qivis.trees.schemas import (
     CreateBookmarkRequest,
     CreateDigressionGroupRequest,
     CreateNodeRequest,
+    CreateNoteRequest,
     CreateTreeRequest,
     DigressionGroupResponse,
     EditHistoryEntry,
@@ -44,6 +47,7 @@ from qivis.trees.schemas import (
     InterventionTimelineResponse,
     NodeExclusionResponse,
     NodeResponse,
+    NoteResponse,
     PatchNodeContentRequest,
     PatchTreeRequest,
     TaxonomyResponse,
@@ -164,6 +168,13 @@ class TreeService:
         )
         annotation_counts = {r["node_id"]: r["cnt"] for r in ann_rows}
 
+        # Note counts per node
+        note_rows = await self._db.fetchall(
+            "SELECT node_id, COUNT(*) as cnt FROM notes WHERE tree_id = ? GROUP BY node_id",
+            (tree_id,),
+        )
+        note_counts = {r["node_id"]: r["cnt"] for r in note_rows}
+
         # Bookmarked node IDs
         bm_rows = await self._db.fetchall(
             "SELECT DISTINCT node_id FROM bookmarks WHERE tree_id = ?",
@@ -197,6 +208,7 @@ class TreeService:
         return self._tree_detail_from_row(
             tree, nodes,
             annotation_counts=annotation_counts,
+            note_counts=note_counts,
             bookmark_node_ids=bookmark_node_ids,
             excluded_node_ids=excluded_node_ids,
             anchored_node_ids=anchored_node_ids,
@@ -494,6 +506,109 @@ class TreeService:
         used_tags = [r["tag"] for r in rows]
 
         return TaxonomyResponse(base_tags=base_tags, used_tags=used_tags)
+
+    # -- Note methods --
+
+    async def add_note(
+        self, tree_id: str, node_id: str, request: CreateNoteRequest,
+    ) -> NoteResponse:
+        """Add a note to a node. Emits NoteAdded, projects, returns it."""
+        tree = await self._projector.get_tree(tree_id)
+        if tree is None:
+            raise TreeNotFoundError(tree_id)
+
+        nodes = await self._projector.get_nodes(tree_id)
+        if not any(n["node_id"] == node_id for n in nodes):
+            raise NodeNotFoundError(node_id)
+
+        note_id = str(uuid4())
+        now = datetime.now(UTC)
+
+        payload = NoteAddedPayload(
+            note_id=note_id,
+            node_id=node_id,
+            content=request.content,
+        )
+        event = EventEnvelope(
+            event_id=str(uuid4()),
+            tree_id=tree_id,
+            timestamp=now,
+            device_id="local",
+            event_type="NoteAdded",
+            payload=payload.model_dump(),
+        )
+
+        await self._store.append(event)
+        await self._projector.project([event])
+
+        row = await self._db.fetchone(
+            "SELECT * FROM notes WHERE note_id = ?",
+            (note_id,),
+        )
+        assert row is not None
+        return self._note_from_row(row)
+
+    async def remove_note(
+        self, tree_id: str, note_id: str,
+    ) -> None:
+        """Remove a note. Emits NoteRemoved, projects."""
+        row = await self._db.fetchone(
+            "SELECT * FROM notes WHERE note_id = ? AND tree_id = ?",
+            (note_id, tree_id),
+        )
+        if row is None:
+            raise NoteNotFoundError(note_id)
+
+        now = datetime.now(UTC)
+        payload = NoteRemovedPayload(note_id=note_id)
+        event = EventEnvelope(
+            event_id=str(uuid4()),
+            tree_id=tree_id,
+            timestamp=now,
+            device_id="local",
+            event_type="NoteRemoved",
+            payload=payload.model_dump(),
+        )
+
+        await self._store.append(event)
+        await self._projector.project([event])
+
+    async def get_node_notes(
+        self, tree_id: str, node_id: str,
+    ) -> list[NoteResponse]:
+        """Get all notes for a node, sorted by created_at."""
+        rows = await self._db.fetchall(
+            "SELECT * FROM notes WHERE node_id = ? AND tree_id = ? ORDER BY created_at",
+            (node_id, tree_id),
+        )
+        return [self._note_from_row(r) for r in rows]
+
+    async def get_tree_notes(
+        self, tree_id: str, query: str | None = None,
+    ) -> list[NoteResponse]:
+        """Get notes for a tree, optionally filtered by content search."""
+        if query:
+            like = f"%{query}%"
+            rows = await self._db.fetchall(
+                "SELECT * FROM notes WHERE tree_id = ? AND content LIKE ? ORDER BY created_at",
+                (tree_id, like),
+            )
+        else:
+            rows = await self._db.fetchall(
+                "SELECT * FROM notes WHERE tree_id = ? ORDER BY created_at",
+                (tree_id,),
+            )
+        return [self._note_from_row(r) for r in rows]
+
+    async def get_tree_annotations(
+        self, tree_id: str,
+    ) -> list[AnnotationResponse]:
+        """Get all annotations for a tree, sorted by created_at."""
+        rows = await self._db.fetchall(
+            "SELECT * FROM annotations WHERE tree_id = ? ORDER BY created_at",
+            (tree_id,),
+        )
+        return [self._annotation_from_row(r) for r in rows]
 
     # -- Bookmark methods --
 
@@ -1061,6 +1176,17 @@ class TreeService:
         )
 
     @staticmethod
+    def _note_from_row(row: dict) -> NoteResponse:
+        """Convert a projected note row to a response."""
+        return NoteResponse(
+            note_id=row["note_id"],
+            tree_id=row["tree_id"],
+            node_id=row["node_id"],
+            content=row["content"],
+            created_at=row["created_at"],
+        )
+
+    @staticmethod
     def _annotation_from_row(row: dict) -> AnnotationResponse:
         """Convert a projected annotation row to a response."""
         value = parse_json_or_none(row["value"])
@@ -1100,6 +1226,7 @@ class TreeService:
         node_rows: list[dict],
         *,
         annotation_counts: dict[str, int] | None = None,
+        note_counts: dict[str, int] | None = None,
         bookmark_node_ids: set[str] | None = None,
         excluded_node_ids: set[str] | None = None,
         anchored_node_ids: set[str] | None = None,
@@ -1124,6 +1251,7 @@ class TreeService:
                     n,
                     sibling_info=sibling_info,
                     annotation_counts=annotation_counts,
+                    note_counts=note_counts,
                     bookmark_node_ids=bookmark_node_ids,
                     excluded_node_ids=excluded_node_ids,
                     anchored_node_ids=anchored_node_ids,
@@ -1139,6 +1267,7 @@ class TreeService:
         *,
         sibling_info: dict[str, tuple[int, int]] | None = None,
         annotation_counts: dict[str, int] | None = None,
+        note_counts: dict[str, int] | None = None,
         bookmark_node_ids: set[str] | None = None,
         excluded_node_ids: set[str] | None = None,
         anchored_node_ids: set[str] | None = None,
@@ -1152,6 +1281,10 @@ class TreeService:
         ac = 0
         if annotation_counts is not None:
             ac = annotation_counts.get(row["node_id"], 0)
+
+        nc = 0
+        if note_counts is not None:
+            nc = note_counts.get(row["node_id"], 0)
 
         ib = False
         if bookmark_node_ids is not None:
@@ -1196,6 +1329,7 @@ class TreeService:
             sibling_index=si,
             sibling_count=sc,
             annotation_count=ac,
+            note_count=nc,
             edit_count=ec,
             is_bookmarked=ib,
             is_excluded=ie,
@@ -1219,6 +1353,12 @@ class AnnotationNotFoundError(Exception):
     def __init__(self, annotation_id: str) -> None:
         self.annotation_id = annotation_id
         super().__init__(f"Annotation not found: {annotation_id}")
+
+
+class NoteNotFoundError(Exception):
+    def __init__(self, note_id: str) -> None:
+        self.note_id = note_id
+        super().__init__(f"Note not found: {note_id}")
 
 
 class BookmarkNotFoundError(Exception):

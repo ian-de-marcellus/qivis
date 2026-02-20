@@ -53,6 +53,7 @@ export interface NodeResponse {
   sibling_count: number
   sibling_index: number
   annotation_count: number
+  note_count: number
   edit_count: number
   is_bookmarked: boolean
   is_excluded: boolean
@@ -175,6 +176,18 @@ export interface BookmarkResponse {
   summary_model: string | null
   summarized_node_ids: string[] | null
   created_at: string
+}
+
+export interface NoteResponse {
+  note_id: string
+  tree_id: string
+  node_id: string
+  content: string
+  created_at: string
+}
+
+export interface CreateNoteRequest {
+  content: string
 }
 
 export interface CreateBookmarkRequest {

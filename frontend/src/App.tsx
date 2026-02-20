@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { CanvasView } from './components/CanvasView/CanvasView.tsx'
 import { GraphView } from './components/GraphView/GraphView.tsx'
-import { BookmarkList } from './components/Library/BookmarkList.tsx'
+import { ResearchPanel } from './components/Library/ResearchPanel.tsx'
 import { SearchPanel } from './components/Library/SearchPanel.tsx'
 import { TreeList } from './components/Library/TreeList.tsx'
 import { getTreeDefaults } from './components/TreeView/contextDiffs.ts'
@@ -100,7 +100,6 @@ function App() {
       <aside className={`sidebar ${sidebarCollapsed ? 'collapsed' : ''}`}>
         {!sidebarCollapsed && <SearchPanel />}
         {!sidebarCollapsed && !searchQuery && <TreeList />}
-        {!sidebarCollapsed && !searchQuery && currentTree && <BookmarkList />}
         <div className="sidebar-toggle-bar">
           <button
             className="theme-toggle"
@@ -147,6 +146,7 @@ function App() {
               >
                 {rightPaneMode === 'graph' && <GraphView />}
                 {rightPaneMode === 'digressions' && <DigressionSidePanel />}
+                {rightPaneMode === 'research' && <ResearchPanel />}
               </div>
             </div>
           ) : (

@@ -124,6 +124,17 @@ CREATE TABLE IF NOT EXISTS node_anchors (
 
 CREATE INDEX IF NOT EXISTS idx_node_anchors_tree_id ON node_anchors(tree_id);
 
+CREATE TABLE IF NOT EXISTS notes (
+    note_id TEXT PRIMARY KEY,
+    tree_id TEXT NOT NULL,
+    node_id TEXT NOT NULL,
+    content TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_notes_node_id ON notes(node_id);
+CREATE INDEX IF NOT EXISTS idx_notes_tree_id ON notes(tree_id);
+
 CREATE TABLE IF NOT EXISTS schema_migrations (
     name TEXT PRIMARY KEY,
     applied_at TEXT NOT NULL
@@ -174,6 +185,19 @@ _MIGRATIONS: list[tuple[str, str]] = [
      "END"),
     ("009_fts_backfill",
      "INSERT INTO nodes_fts(nodes_fts) VALUES('rebuild')"),
+    # Phase 6: Research notes
+    ("010_create_notes_table",
+     "CREATE TABLE IF NOT EXISTS notes ("
+     "note_id TEXT PRIMARY KEY, "
+     "tree_id TEXT NOT NULL, "
+     "node_id TEXT NOT NULL, "
+     "content TEXT NOT NULL, "
+     "created_at TEXT NOT NULL"
+     ")"),
+    ("011_notes_node_id_index",
+     "CREATE INDEX IF NOT EXISTS idx_notes_node_id ON notes(node_id)"),
+    ("012_notes_tree_id_index",
+     "CREATE INDEX IF NOT EXISTS idx_notes_tree_id ON notes(tree_id)"),
 ]
 
 

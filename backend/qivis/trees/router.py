@@ -21,6 +21,7 @@ from qivis.trees.schemas import (
     CreateBookmarkRequest,
     CreateDigressionGroupRequest,
     CreateNodeRequest,
+    CreateNoteRequest,
     CreateTreeRequest,
     DigressionGroupResponse,
     EditHistoryResponse,
@@ -30,6 +31,7 @@ from qivis.trees.schemas import (
     InterventionTimelineResponse,
     NodeExclusionResponse,
     NodeResponse,
+    NoteResponse,
     PatchNodeContentRequest,
     PatchTreeRequest,
     TaxonomyResponse,
@@ -44,6 +46,7 @@ from qivis.trees.service import (
     InvalidParentError,
     NodeNotFoundError,
     NonContiguousGroupError,
+    NoteNotFoundError,
     SummaryClientNotConfiguredError,
     TreeNotFoundError,
     TreeService,
@@ -207,6 +210,67 @@ async def get_tree_taxonomy(
         return await service.get_tree_taxonomy(tree_id)
     except TreeNotFoundError:
         raise HTTPException(status_code=404, detail=f"Tree not found: {tree_id}")
+
+
+@router.post(
+    "/{tree_id}/nodes/{node_id}/notes",
+    status_code=status.HTTP_201_CREATED,
+)
+async def add_note(
+    tree_id: str,
+    node_id: str,
+    request: CreateNoteRequest,
+    service: TreeService = Depends(get_tree_service),
+) -> NoteResponse:
+    try:
+        return await service.add_note(tree_id, node_id, request)
+    except TreeNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Tree not found: {tree_id}")
+    except NodeNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Node not found: {node_id}")
+
+
+@router.get("/{tree_id}/nodes/{node_id}/notes")
+async def get_node_notes(
+    tree_id: str,
+    node_id: str,
+    service: TreeService = Depends(get_tree_service),
+) -> list[NoteResponse]:
+    return await service.get_node_notes(tree_id, node_id)
+
+
+@router.get("/{tree_id}/notes")
+async def get_tree_notes(
+    tree_id: str,
+    q: str | None = None,
+    service: TreeService = Depends(get_tree_service),
+) -> list[NoteResponse]:
+    return await service.get_tree_notes(tree_id, query=q)
+
+
+@router.delete(
+    "/{tree_id}/notes/{note_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def remove_note(
+    tree_id: str,
+    note_id: str,
+    service: TreeService = Depends(get_tree_service),
+) -> None:
+    try:
+        await service.remove_note(tree_id, note_id)
+    except NoteNotFoundError:
+        raise HTTPException(
+            status_code=404, detail=f"Note not found: {note_id}"
+        )
+
+
+@router.get("/{tree_id}/annotations")
+async def get_tree_annotations(
+    tree_id: str,
+    service: TreeService = Depends(get_tree_service),
+) -> list[AnnotationResponse]:
+    return await service.get_tree_annotations(tree_id)
 
 
 @router.post(

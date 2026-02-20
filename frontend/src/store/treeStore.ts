@@ -12,6 +12,7 @@ import type {
   GenerateRequest,
   NodeExclusionResponse,
   NodeResponse,
+  NoteResponse,
   PatchTreeRequest,
   ProviderInfo,
   SearchResultItem,
@@ -60,7 +61,11 @@ interface TreeStore {
   bookmarksLoading: boolean
   exclusions: NodeExclusionResponse[]
   digressionGroups: DigressionGroupResponse[]
-  rightPaneMode: 'graph' | 'digressions' | null
+  nodeNotes: Record<string, NoteResponse[]>
+  treeNotes: NoteResponse[]
+  treeAnnotations: AnnotationResponse[]
+  researchPaneTab: 'bookmarks' | 'tags' | 'notes'
+  rightPaneMode: 'graph' | 'digressions' | 'research' | null
   groupSelectionMode: boolean
   selectedGroupNodeIds: string[]
   comparisonNodeId: string | null
@@ -111,6 +116,12 @@ interface TreeStore {
   removeAnnotation: (nodeId: string, annotationId: string) => Promise<void>
   fetchNodeAnnotations: (nodeId: string) => Promise<void>
   fetchTaxonomy: () => Promise<void>
+  addNote: (nodeId: string, content: string) => Promise<void>
+  removeNote: (nodeId: string, noteId: string) => Promise<void>
+  fetchNodeNotes: (nodeId: string) => Promise<void>
+  fetchTreeNotes: () => Promise<void>
+  fetchTreeAnnotations: () => Promise<void>
+  setResearchPaneTab: (tab: 'bookmarks' | 'tags' | 'notes') => void
   fetchBookmarks: () => Promise<void>
   addBookmark: (nodeId: string, label: string, notes?: string) => Promise<void>
   removeBookmark: (bookmarkId: string) => Promise<void>
@@ -123,7 +134,7 @@ interface TreeStore {
   createDigressionGroup: (req: CreateDigressionGroupRequest) => Promise<boolean>
   toggleDigressionGroup: (groupId: string, included: boolean) => Promise<void>
   deleteDigressionGroup: (groupId: string) => Promise<void>
-  setRightPaneMode: (mode: 'graph' | 'digressions' | null) => void
+  setRightPaneMode: (mode: 'graph' | 'digressions' | 'research' | null) => void
   setGroupSelectionMode: (active: boolean) => void
   toggleGroupNodeSelection: (nodeId: string) => void
   toggleAnchor: (nodeId: string) => Promise<void>
@@ -211,6 +222,10 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
   bookmarksLoading: false,
   exclusions: [],
   digressionGroups: [],
+  nodeNotes: {},
+  treeNotes: [],
+  treeAnnotations: [],
+  researchPaneTab: 'bookmarks',
   rightPaneMode: null,
   groupSelectionMode: false,
   selectedGroupNodeIds: [],
@@ -259,6 +274,9 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
       bookmarksLoading: false,
       exclusions: [],
       digressionGroups: [],
+      nodeNotes: {},
+      treeNotes: [],
+      treeAnnotations: [],
       rightPaneMode: null,
       groupSelectionMode: false,
       selectedGroupNodeIds: [],
@@ -279,6 +297,12 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
       api.getDigressionGroups(treeId).then((digressionGroups) => {
         set({ digressionGroups })
       }).catch(() => {/* ignore group fetch errors */})
+      api.getTreeNotes(treeId).then((treeNotes) => {
+        set({ treeNotes })
+      }).catch(() => {/* ignore */})
+      api.getTreeAnnotations(treeId).then((treeAnnotations) => {
+        set({ treeAnnotations })
+      }).catch(() => {/* ignore */})
     } catch (e) {
       set({ error: String(e), isLoading: false })
     }
@@ -496,7 +520,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
       selections[parentKey] = current.node_id
       current = current.parent_id ? nodeMap.get(current.parent_id) : undefined
     }
-    set({ branchSelections: selections })
+    set({ branchSelections: selections, scrollToNodeId: nodeId })
   },
 
   setComparisonHoveredNodeId: (nodeId: string | null) => {
@@ -1072,6 +1096,106 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
     }
   },
 
+  addNote: async (nodeId: string, content: string) => {
+    const { currentTree } = get()
+    if (!currentTree) return
+
+    try {
+      const note = await api.addNote(currentTree.tree_id, nodeId, { content })
+      set((state) => ({
+        nodeNotes: {
+          ...state.nodeNotes,
+          [nodeId]: [...(state.nodeNotes[nodeId] ?? []), note],
+        },
+        treeNotes: [...state.treeNotes, note],
+        currentTree: state.currentTree
+          ? {
+              ...state.currentTree,
+              nodes: state.currentTree.nodes.map((n) =>
+                n.node_id === nodeId
+                  ? { ...n, note_count: n.note_count + 1 }
+                  : n,
+              ),
+            }
+          : null,
+      }))
+    } catch (e) {
+      set({ error: String(e) })
+    }
+  },
+
+  removeNote: async (nodeId: string, noteId: string) => {
+    const { currentTree } = get()
+    if (!currentTree) return
+
+    try {
+      await api.removeNote(currentTree.tree_id, noteId)
+      set((state) => ({
+        nodeNotes: {
+          ...state.nodeNotes,
+          [nodeId]: (state.nodeNotes[nodeId] ?? []).filter(
+            (n) => n.note_id !== noteId,
+          ),
+        },
+        treeNotes: state.treeNotes.filter((n) => n.note_id !== noteId),
+        currentTree: state.currentTree
+          ? {
+              ...state.currentTree,
+              nodes: state.currentTree.nodes.map((n) =>
+                n.node_id === nodeId
+                  ? { ...n, note_count: Math.max(0, n.note_count - 1) }
+                  : n,
+              ),
+            }
+          : null,
+      }))
+    } catch (e) {
+      set({ error: String(e) })
+    }
+  },
+
+  fetchNodeNotes: async (nodeId: string) => {
+    const { currentTree } = get()
+    if (!currentTree) return
+
+    try {
+      const notes = await api.getNodeNotes(currentTree.tree_id, nodeId)
+      set((state) => ({
+        nodeNotes: { ...state.nodeNotes, [nodeId]: notes },
+      }))
+    } catch (e) {
+      set({ error: String(e) })
+    }
+  },
+
+  fetchTreeNotes: async () => {
+    const { currentTree } = get()
+    if (!currentTree) return
+
+    try {
+      const treeNotes = await api.getTreeNotes(currentTree.tree_id)
+      set({ treeNotes })
+    } catch (e) {
+      set({ error: String(e) })
+    }
+  },
+
+  fetchTreeAnnotations: async () => {
+    const { currentTree } = get()
+    if (!currentTree) return
+
+    try {
+      const treeAnnotations = await api.getTreeAnnotations(currentTree.tree_id)
+      set({ treeAnnotations })
+    } catch (e) {
+      set({ error: String(e) })
+    }
+  },
+
+  setResearchPaneTab: (tab: 'bookmarks' | 'tags' | 'notes') => {
+    set({ researchPaneTab: tab })
+  },
+
   fetchBookmarks: async () => {
     const { currentTree } = get()
     if (!currentTree) return
@@ -1285,7 +1409,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
     }
   },
 
-  setRightPaneMode: (mode: 'graph' | 'digressions' | null) => set({ rightPaneMode: mode }),
+  setRightPaneMode: (mode: 'graph' | 'digressions' | 'research' | null) => set({ rightPaneMode: mode }),
 
   setGroupSelectionMode: (active: boolean) => set({
     groupSelectionMode: active,
@@ -1466,6 +1590,10 @@ export const useResearchMetadata = () => useTreeStore(useShallow(s => ({
   editHistoryCache: s.editHistoryCache,
   selectedEditVersion: s.selectedEditVersion,
   nodeAnnotations: s.nodeAnnotations,
+  nodeNotes: s.nodeNotes,
+  treeNotes: s.treeNotes,
+  treeAnnotations: s.treeAnnotations,
+  researchPaneTab: s.researchPaneTab,
   taxonomy: s.taxonomy,
 })))
 

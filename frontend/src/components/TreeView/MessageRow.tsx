@@ -3,7 +3,9 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { LogprobData, NodeResponse, SamplingParams } from '../../api/types.ts'
 import { useTreeStore } from '../../store/treeStore.ts'
+import { ActionMenu, ActionMenuItem } from './ActionMenu.tsx'
 import { AnnotationPanel } from './AnnotationPanel.tsx'
+import { NotePanel } from './NotePanel.tsx'
 import { BranchIndicator } from './BranchIndicator.tsx'
 import { ContextBar } from './ContextBar.tsx'
 import { ContextDiffBadge } from './ContextDiffBadge.tsx'
@@ -90,6 +92,7 @@ export const MessageRow = memo(function MessageRow({
   const [isEditing, setIsEditing] = useState(false)
   const [editValue, setEditValue] = useState('')
   const [showAnnotations, setShowAnnotations] = useState(false)
+  const [showNotes, setShowNotes] = useState(false)
 
   const editHistoryCache = useTreeStore((s) => s.editHistoryCache)
 
@@ -134,19 +137,26 @@ export const MessageRow = memo(function MessageRow({
             onCompare={onCompare}
           />
         )}
-        <button className="fork-btn" onClick={onFork} aria-label={node.role === 'assistant' ? 'Regenerate' : 'Fork'}>
-          {node.role === 'assistant' ? 'Regen' : 'Fork'}
-        </button>
-        {onPrefill && node.role === 'user' && (
-          <button className="prefill-btn" onClick={onPrefill} aria-label="Prefill response">
-            Prefill
-          </button>
-        )}
-        {onGenerate && node.role === 'user' && (
-          <button className="generate-btn" onClick={onGenerate} aria-label="Generate response">
-            Generate
-          </button>
-        )}
+        {/* ---- Generation group ---- */}
+        <ActionMenu
+          pushRight
+          triggerAriaLabel="Generation actions"
+          trigger={
+            <svg viewBox="0 0 16 16" width="11" height="11">
+              <path d="M7 2a1 1 0 1 1 2 0v4.3l3.3 3.2a1 1 0 0 1 0 1.4l-.1.1a1 1 0 0 1-1.4 0L8 8.2 5.2 11a1 1 0 0 1-1.4 0l-.1-.1a1 1 0 0 1 0-1.4L7 6.3V2z" fill="currentColor"/>
+            </svg>
+          }
+        >
+          <ActionMenuItem onClick={onFork}>
+            {node.role === 'assistant' ? 'Regenerate' : 'Fork'}
+          </ActionMenuItem>
+          {onPrefill && node.role === 'user' && (
+            <ActionMenuItem onClick={onPrefill}>Prefill</ActionMenuItem>
+          )}
+          {onGenerate && node.role === 'user' && (
+            <ActionMenuItem onClick={onGenerate}>Generate</ActionMenuItem>
+          )}
+        </ActionMenu>
         {onEdit && !isEditing && (
           <button
             className="edit-btn"
@@ -164,47 +174,70 @@ export const MessageRow = memo(function MessageRow({
             Context
           </button>
         )}
-        <button
-          className={`annotate-btn${showAnnotations ? ' active' : ''}`}
-          onClick={() => setShowAnnotations(!showAnnotations)}
-          aria-label="Toggle annotations"
+        {/* ---- Research group (quill) ---- */}
+        <ActionMenu
+          triggerAriaLabel="Research actions"
+          isActive={node.annotation_count > 0 || node.note_count > 0 || !!node.is_bookmarked}
+          badge={(node.annotation_count || 0) + (node.note_count || 0)}
+          trigger={
+            <svg viewBox="0 0 16 16" width="11" height="11">
+              <path d="M13.3 1.2c-.6 0-1.4.5-2.3 1.3C9 4.2 7 7 5.8 9.5L4.5 14l.7.5c1.2-1.4 3-3.5 4.5-5.5 1.3-1.8 2.5-4 3-5.6.2-.7.2-1.3 0-1.7-.1-.3-.3-.5-.4-.5zM4 14.5l-.5.5h1l-.5-.5z" fill="currentColor"/>
+            </svg>
+          }
+          align="right"
         >
-          Tag{node.annotation_count > 0 && (
-            <span className="annotation-badge">{node.annotation_count}</span>
-          )}
-        </button>
-        {onBookmarkToggle && (
-          <button
-            className={`bookmark-btn${node.is_bookmarked ? ' active' : ''}`}
-            onClick={onBookmarkToggle}
-            aria-label={node.is_bookmarked ? 'Remove bookmark' : 'Bookmark'}
+          <ActionMenuItem
+            onClick={() => setShowAnnotations(!showAnnotations)}
+            active={showAnnotations}
           >
-            {node.is_bookmarked ? 'Marked' : 'Mark'}
-          </button>
+            Tag{node.annotation_count > 0 && (
+              <span className="annotation-badge">{node.annotation_count}</span>
+            )}
+          </ActionMenuItem>
+          <ActionMenuItem
+            onClick={() => setShowNotes(!showNotes)}
+            active={showNotes}
+          >
+            Note{node.note_count > 0 && (
+              <span className="annotation-badge">{node.note_count}</span>
+            )}
+          </ActionMenuItem>
+          {onBookmarkToggle && (
+            <ActionMenuItem onClick={onBookmarkToggle} active={!!node.is_bookmarked}>
+              {node.is_bookmarked ? 'Marked' : 'Mark'}
+            </ActionMenuItem>
+          )}
+        </ActionMenu>
+        {/* ---- Context group ---- */}
+        {(onExcludeToggle || onAnchorToggle) && (
+          <ActionMenu
+            triggerAriaLabel="Context actions"
+            isActive={!!isExcludedOnPath || !!node.is_anchored}
+            trigger={
+              <svg viewBox="0 0 16 16" width="11" height="11">
+                <path d="M8 3C4.5 3 1.5 8 1.5 8s3 5 6.5 5 6.5-5 6.5-5S11.5 3 8 3zm0 8.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7zM8 6a2 2 0 1 0 0 4 2 2 0 0 0 0-4z" fill="currentColor"/>
+              </svg>
+            }
+            align="right"
+          >
+            {onExcludeToggle && (
+              <ActionMenuItem
+                onClick={onExcludeToggle}
+                active={!!isExcludedOnPath}
+                className={isExcludedOnPath ? 'item-warn' : undefined}
+              >
+                {isExcludedOnPath ? 'Include' : 'Exclude'}
+              </ActionMenuItem>
+            )}
+            {onAnchorToggle && (
+              <ActionMenuItem onClick={onAnchorToggle} active={!!node.is_anchored}>
+                {node.is_anchored ? 'Unanchor' : 'Anchor'}
+              </ActionMenuItem>
+            )}
+          </ActionMenu>
         )}
         {isExcludedOnPath && (
           <span className="excluded-label">excluded from context</span>
-        )}
-        {onExcludeToggle && (
-          <button
-            className={`exclude-btn${isExcludedOnPath ? ' active' : ''}`}
-            onClick={onExcludeToggle}
-            aria-label={isExcludedOnPath ? 'Include in context' : 'Exclude from context'}
-          >
-            {isExcludedOnPath ? 'Include' : 'Exclude'}
-          </button>
-        )}
-        {onAnchorToggle && (
-          <button
-            className={`anchor-btn${node.is_anchored ? ' active' : ''}`}
-            onClick={onAnchorToggle}
-            aria-label={node.is_anchored ? 'Remove anchor (allow eviction)' : 'Anchor (protect from eviction)'}
-            title={node.is_anchored ? 'Anchored — protected from eviction' : 'Anchor — protect from eviction'}
-          >
-            <svg className="anchor-icon" viewBox="0 0 16 16" width="12" height="12">
-              <path d="M8 1a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V6h3a1 1 0 0 1 1 1v1.5a.5.5 0 0 1-1 0V7.5h-3V13c2.5-.5 4-2 4.5-4a.5.5 0 0 1 .97.24C13.8 12.2 11.5 14.5 8 15c-3.5-.5-5.8-2.8-6.47-5.76a.5.5 0 0 1 .97-.24c.5 2 2 3.5 4.5 4V7.5H4V8.5a.5.5 0 0 1-1 0V7a1 1 0 0 1 1-1h3V4.73A2 2 0 0 1 8 1zm0 1a1 1 0 1 0 0 2 1 1 0 0 0 0-2z" fill="currentColor"/>
-            </svg>
-          </button>
         )}
       </div>
       {node.thinking_content && (
@@ -296,6 +329,7 @@ export const MessageRow = memo(function MessageRow({
         <ContextBar contextUsage={node.context_usage} />
       )}
       {showAnnotations && <AnnotationPanel node={node} />}
+      {showNotes && <NotePanel node={node} />}
       <div className="message-meta">
         {formatTimestamp(node.created_at)}
         {hasEditHistory && (

@@ -281,6 +281,16 @@ export function TreeSettings() {
           </svg>
         </button>
         <button
+          className={`graph-toggle ${rightPaneMode === 'research' ? 'active' : ''}`}
+          onClick={() => setRightPaneMode(rightPaneMode === 'research' ? null : 'research')}
+          aria-label={rightPaneMode === 'research' ? 'Hide research panel' : 'Show research panel'}
+          title={rightPaneMode === 'research' ? 'Hide research' : 'Research panel'}
+        >
+          <svg viewBox="0 0 20 20" fill="currentColor" stroke="none">
+            <path d="M15.3 2.2c-.8 0-1.8.6-3 1.7C10 5.8 7.5 9 6 12l-2 6 1 .7c1.5-1.8 3.8-4.5 5.8-7 1.6-2.3 3.2-5.1 3.8-7.2.2-.8.2-1.6 0-2.1-.1-.3-.3-.5-.5-.5zM3.5 18.5L3 19l1.2-.6-.7.1z"/>
+          </svg>
+        </button>
+        <button
           className={`tree-settings-gear ${isOpen ? 'active' : ''}`}
           onClick={() => setIsOpen(!isOpen)}
           aria-label={isOpen ? 'Close settings' : 'Open settings'}

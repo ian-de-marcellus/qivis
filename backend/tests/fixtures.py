@@ -15,6 +15,8 @@ from qivis.models import (
     DigressionGroupCreatedPayload,
     DigressionGroupToggledPayload,
     EventEnvelope,
+    NoteAddedPayload,
+    NoteRemovedPayload,
     NodeAnchoredPayload,
     NodeContentEditedPayload,
     NodeContextExcludedPayload,
@@ -444,6 +446,49 @@ def make_node_unanchored_envelope(
         timestamp=datetime.now(UTC),
         device_id="test",
         event_type="NodeUnanchored",
+        payload=payload.model_dump(),
+    )
+
+
+def make_note_added_envelope(
+    tree_id: str,
+    node_id: str,
+    content: str = "A research note.",
+    note_id: str | None = None,
+) -> EventEnvelope:
+    """Create a NoteAdded EventEnvelope for testing."""
+    note_id = note_id or str(uuid4())
+    payload = NoteAddedPayload(
+        note_id=note_id,
+        node_id=node_id,
+        content=content,
+    )
+    return EventEnvelope(
+        event_id=str(uuid4()),
+        tree_id=tree_id,
+        timestamp=datetime.now(UTC),
+        device_id="test",
+        event_type="NoteAdded",
+        payload=payload.model_dump(),
+    )
+
+
+def make_note_removed_envelope(
+    tree_id: str,
+    note_id: str,
+    reason: str | None = None,
+) -> EventEnvelope:
+    """Create a NoteRemoved EventEnvelope for testing."""
+    payload = NoteRemovedPayload(
+        note_id=note_id,
+        reason=reason,
+    )
+    return EventEnvelope(
+        event_id=str(uuid4()),
+        tree_id=tree_id,
+        timestamp=datetime.now(UTC),
+        device_id="test",
+        event_type="NoteRemoved",
         payload=payload.model_dump(),
     )
 

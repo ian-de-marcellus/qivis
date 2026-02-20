@@ -24,6 +24,8 @@ from qivis.models import (
     NodeContextIncludedPayload,
     NodeCreatedPayload,
     NodeUnanchoredPayload,
+    NoteAddedPayload,
+    NoteRemovedPayload,
     TreeCreatedPayload,
     TreeMetadataUpdatedPayload,
 )
@@ -53,6 +55,8 @@ class StateProjector:
             "DigressionGroupToggled": self._handle_digression_group_toggled,
             "NodeAnchored": self._handle_node_anchored,
             "NodeUnanchored": self._handle_node_unanchored,
+            "NoteAdded": self._handle_note_added,
+            "NoteRemoved": self._handle_note_removed,
         }
 
     async def project(self, events: list[EventEnvelope]) -> None:
@@ -354,6 +358,37 @@ class StateProjector:
         await self._db.execute(
             "DELETE FROM node_anchors WHERE tree_id = ? AND node_id = ?",
             (event.tree_id, payload.node_id),
+        )
+
+    async def _handle_note_added(self, event: EventEnvelope) -> None:
+        """Project a NoteAdded event into the notes table."""
+        payload = NoteAddedPayload.model_validate(event.payload)
+        timestamp = (
+            event.timestamp.isoformat()
+            if hasattr(event.timestamp, "isoformat")
+            else str(event.timestamp)
+        )
+        await self._db.execute(
+            """
+            INSERT OR REPLACE INTO notes
+                (note_id, tree_id, node_id, content, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                payload.note_id,
+                event.tree_id,
+                payload.node_id,
+                payload.content,
+                timestamp,
+            ),
+        )
+
+    async def _handle_note_removed(self, event: EventEnvelope) -> None:
+        """Project a NoteRemoved event: delete from notes table."""
+        payload = NoteRemovedPayload.model_validate(event.payload)
+        await self._db.execute(
+            "DELETE FROM notes WHERE note_id = ?",
+            (payload.note_id,),
         )
 
     async def _handle_node_created(self, event: EventEnvelope) -> None:

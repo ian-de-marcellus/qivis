@@ -215,6 +215,7 @@ class TestEventTypesRegistry:
             "NodeArchived", "NodeUnarchived",
             "AnnotationAdded", "AnnotationRemoved",
             "BookmarkCreated", "BookmarkRemoved", "BookmarkSummaryGenerated",
+            "NoteAdded", "NoteRemoved",
             "NodeContextExcluded", "NodeContextIncluded",
             "DigressionGroupCreated", "DigressionGroupToggled",
             "SummaryGenerated", "GarbageCollected", "GarbagePurged",
