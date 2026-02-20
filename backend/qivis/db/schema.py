@@ -147,6 +147,33 @@ _MIGRATIONS: list[tuple[str, str]] = [
      "ALTER TABLE nodes ADD COLUMN include_thinking_in_context INTEGER NOT NULL DEFAULT 0"),
     ("004_add_include_timestamps",
      "ALTER TABLE nodes ADD COLUMN include_timestamps INTEGER NOT NULL DEFAULT 0"),
+    # Phase 7.1: FTS5 full-text search
+    ("005_create_nodes_fts",
+     "CREATE VIRTUAL TABLE IF NOT EXISTS nodes_fts USING fts5("
+     "content, system_prompt, "
+     "content='nodes', content_rowid='rowid', "
+     "tokenize='porter unicode61'"
+     ")"),
+    ("006_fts_insert_trigger",
+     "CREATE TRIGGER IF NOT EXISTS nodes_fts_insert AFTER INSERT ON nodes BEGIN "
+     "INSERT INTO nodes_fts(rowid, content, system_prompt) "
+     "VALUES (new.rowid, new.content, new.system_prompt); "
+     "END"),
+    ("007_fts_delete_trigger",
+     "CREATE TRIGGER IF NOT EXISTS nodes_fts_delete AFTER DELETE ON nodes BEGIN "
+     "INSERT INTO nodes_fts(nodes_fts, rowid, content, system_prompt) "
+     "VALUES ('delete', old.rowid, old.content, old.system_prompt); "
+     "END"),
+    ("008_fts_update_trigger",
+     "CREATE TRIGGER IF NOT EXISTS nodes_fts_update "
+     "AFTER UPDATE OF content, system_prompt ON nodes BEGIN "
+     "INSERT INTO nodes_fts(nodes_fts, rowid, content, system_prompt) "
+     "VALUES ('delete', old.rowid, old.content, old.system_prompt); "
+     "INSERT INTO nodes_fts(rowid, content, system_prompt) "
+     "VALUES (new.rowid, new.content, new.system_prompt); "
+     "END"),
+    ("009_fts_backfill",
+     "INSERT INTO nodes_fts(nodes_fts) VALUES('rebuild')"),
 ]
 
 

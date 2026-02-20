@@ -63,6 +63,8 @@ export function LinearView() {
   const enterComparisonPicking = useTreeStore(s => s.enterComparisonPicking)
   const pickComparisonTarget = useTreeStore(s => s.pickComparisonTarget)
   const cancelComparisonPicking = useTreeStore(s => s.cancelComparisonPicking)
+  const scrollToNodeId = useTreeStore(s => s.scrollToNodeId)
+  const clearScrollToNode = useTreeStore(s => s.clearScrollToNode)
 
   const bottomRef = useRef<HTMLDivElement>(null)
   const [forkTarget, setForkTarget] = useState<ForkTarget | null>(null)
@@ -72,6 +74,19 @@ export function LinearView() {
   useEffect(() => {
     fetchProviders()
   }, [fetchProviders])
+
+  // Scroll to a specific node (e.g., from search result navigation)
+  useEffect(() => {
+    if (!scrollToNodeId) return
+    // Defer to next frame so the DOM has updated with the new path
+    requestAnimationFrame(() => {
+      const el = document.querySelector(`[data-node-id="${scrollToNodeId}"]`)
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      }
+      clearScrollToNode()
+    })
+  }, [scrollToNodeId, clearScrollToNode])
 
   const nodes = currentTree?.nodes ?? []
   let path = getActivePath(nodes, branchSelections)

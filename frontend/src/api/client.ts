@@ -11,12 +11,15 @@ import type {
   DigressionGroupResponse,
   EditHistoryResponse,
   GenerateRequest,
+  ImportPreviewResponse,
+  ImportResponse,
   InterventionTimelineResponse,
   MessageStopEvent,
   NodeExclusionResponse,
   NodeResponse,
   PatchTreeRequest,
   ProviderInfo,
+  SearchResponse,
   TaxonomyResponse,
   TreeDetail,
   TreeSummary,
@@ -467,4 +470,67 @@ export async function generateMultiStream(
   } finally {
     reader.releaseLock()
   }
+}
+
+// -- Search --
+
+// -- Import --
+
+export async function previewImport(file: File): Promise<ImportPreviewResponse> {
+  const formData = new FormData()
+  formData.append('file', file)
+  const res = await fetch(`${BASE}/import/preview`, {
+    method: 'POST',
+    body: formData,
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`Import preview failed: ${res.status}: ${text}`)
+  }
+  return res.json()
+}
+
+export async function importConversations(
+  file: File,
+  options?: { format?: string; selected?: number[] },
+): Promise<ImportResponse> {
+  const params = new URLSearchParams()
+  if (options?.format) params.set('format', options.format)
+  if (options?.selected) params.set('selected', options.selected.join(','))
+  const qs = params.toString() ? `?${params}` : ''
+  const formData = new FormData()
+  formData.append('file', file)
+  const res = await fetch(`${BASE}/import${qs}`, {
+    method: 'POST',
+    body: formData,
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`Import failed: ${res.status}: ${text}`)
+  }
+  return res.json()
+}
+
+export function searchNodes(params: {
+  q: string
+  tree_ids?: string
+  models?: string
+  providers?: string
+  roles?: string
+  tags?: string
+  date_from?: string
+  date_to?: string
+  limit?: number
+}): Promise<SearchResponse> {
+  const searchParams = new URLSearchParams()
+  searchParams.set('q', params.q)
+  if (params.tree_ids) searchParams.set('tree_ids', params.tree_ids)
+  if (params.models) searchParams.set('models', params.models)
+  if (params.providers) searchParams.set('providers', params.providers)
+  if (params.roles) searchParams.set('roles', params.roles)
+  if (params.tags) searchParams.set('tags', params.tags)
+  if (params.date_from) searchParams.set('date_from', params.date_from)
+  if (params.date_to) searchParams.set('date_to', params.date_to)
+  if (params.limit != null) searchParams.set('limit', String(params.limit))
+  return request(`/search?${searchParams.toString()}`)
 }

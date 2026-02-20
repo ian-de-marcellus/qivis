@@ -275,3 +275,59 @@ export interface GenerationCompleteEvent {
 }
 
 export type SSEEvent = TextDeltaEvent | ThinkingDeltaEvent | MessageStopEvent | GenerationCompleteEvent
+
+// -- Search --
+
+export interface SearchResultItem {
+  node_id: string
+  tree_id: string
+  tree_title: string | null
+  role: string
+  content: string
+  snippet: string
+  model: string | null
+  provider: string | null
+  created_at: string
+}
+
+export interface SearchResponse {
+  query: string
+  results: SearchResultItem[]
+  total: number
+}
+
+// -- Import --
+
+export interface MessagePreview {
+  role: string
+  content_preview: string
+}
+
+export interface ConversationPreview {
+  index: number
+  title: string | null
+  message_count: number
+  has_branches: boolean
+  branch_count: number
+  model_names: string[]
+  system_prompt_preview: string | null
+  first_messages: MessagePreview[]
+  warnings: string[]
+}
+
+export interface ImportPreviewResponse {
+  format_detected: string
+  conversations: ConversationPreview[]
+  total_conversations: number
+}
+
+export interface ImportResult {
+  tree_id: string
+  title: string | null
+  node_count: number
+  warnings: string[]
+}
+
+export interface ImportResponse {
+  results: ImportResult[]
+}

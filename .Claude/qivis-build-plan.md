@@ -385,33 +385,15 @@ Bookends: one looks backward (documenting reality), one looks forward (safer mig
 
 _Goal: Build and search a research corpus. Organize trees. Import external conversations._
 
-### 7.1 — FTS5 Search 🔒
+### 7.1 — FTS5 Search ✅
 
-**Tasks:**
-- FTS5 virtual table on node content + system prompts (porter tokenizer + unicode61)
-- `GET /api/search?q=keyword` — matching nodes with tree context
-- Search UI: bar in sidebar, results with surrounding context and highlighting, click-to-navigate
-- Advanced filters: model, provider, date range, tree scope, role
+FTS5 virtual table with external content (`content='nodes'`, porter + unicode61 tokenizer). Three SQL triggers (INSERT/DELETE/UPDATE) keep index in sync — no projector changes. `SearchService` with dynamic query building: FTS5 MATCH + optional filters (tree_ids, models, providers, roles, annotation tags, date range). Snippet markers `[[mark]]/[[/mark]]` for safe frontend rendering. `GET /api/search?q=keyword` with comma-separated filter params. Persistent search input at top of sidebar — results replace tree list while searching. `navigateToSearchResult` handles cross-tree navigation (first cross-tree store action). 20 new tests. 472 tests at completion.
 
-**Blockers:** Phase 6 complete (annotations should be searchable).
+### 7.2 — Conversation Import ✅
 
-✅ Can search across all conversations by keyword with filters.
+Importer package (`qivis.importer`) with intermediate representation (`ImportedNode`/`ImportedTree` dataclasses), auto-format detection, and two parsers: ChatGPT (tree-native with `mapping` dict, branch preservation, null-message reparenting, system prompt extraction, model/provider inference) and generic linear (ShareGPT `{from,value}` + generic `{role,content}`). `ImportService` with preview (parse without creating) and import (emit `TreeCreated` + `NodeCreated` events with `device_id="import"`, preserved source timestamps, topological sort for parent-before-child ordering). `POST /api/import/preview` and `POST /api/import` with `UploadFile` + optional format/selected params. Import wizard modal in sidebar: drag-and-drop file input, format badge, conversation list with checkboxes, per-conversation preview (title, message count, branch count, models, system prompt, first messages, warnings), import progress, results with "Open" navigation. 25 new tests. 497 tests at completion.
 
-### 7.2 — Conversation Import 🔀
-
-**Tasks:**
-- Parsers for Claude.ai JSON export and ChatGPT export format
-- `POST /api/import` with file upload
-- Graceful handling of missing fields (no logprobs, no context_usage, approximate timestamps)
-- Events emitted as if the conversation happened natively (`TreeCreated` + `NodeCreated`)
-- Import wizard UI with format selection and preview
-- **Import placeholder for default Anthropic system prompt**: when importing Claude.ai conversations, detect and mark the Anthropic default prompt separately from researcher-authored system prompts
-- **Tree merge/reconciliation**: import a continuation of an existing tree from a different source (e.g., conversation started in Claude.ai, continued in OpenRouter, then back to Claude.ai). Match overlapping messages by content hash, graft new branches onto the existing tree
-- Stress-tests data model with "information not available" patterns
-
-**Blockers:** 6.1 (imported conversations should be annotatable). Can parallel with 7.1.
-
-✅ Can import conversations from Claude.ai and ChatGPT. Can merge trees from different sources. Imported trees fully functional.
+**Key decisions:** `mode="chat"` (not `"manual"` — avoids "researcher authored" overlay), system messages extracted to tree property only (not as nodes), import provenance via `metadata.imported=True` + `device_id="import"` (not new event types). Tree merge/reconciliation deferred to 7.2b.
 
 ### 7.3 — Manual Summarization 🔀
 

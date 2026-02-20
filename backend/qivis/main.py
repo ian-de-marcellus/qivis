@@ -21,6 +21,12 @@ from qivis.providers.registry import clear_providers, get_all_providers, registe
 from qivis.export.router import get_export_service
 from qivis.export.router import router as export_router
 from qivis.export.service import ExportService
+from qivis.importer.router import get_import_service
+from qivis.importer.router import router as import_router
+from qivis.importer.service import ImportService
+from qivis.search.router import get_search_service
+from qivis.search.router import router as search_router
+from qivis.search.service import SearchService
 from qivis.trees.router import get_generation_service, get_tree_service
 from qivis.trees.router import router as trees_router
 from qivis.trees.service import TreeService
@@ -62,6 +68,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     export_service = ExportService(db, store, projector)
     app.dependency_overrides[get_export_service] = lambda: export_service
 
+    # Search service
+    search_svc = SearchService(db)
+    app.dependency_overrides[get_search_service] = lambda: search_svc
+
+    # Import service
+    import_svc = ImportService(db, store, projector)
+    app.dependency_overrides[get_import_service] = lambda: import_svc
+
     app.state.db = db
     yield
 
@@ -88,6 +102,8 @@ app.add_middleware(
 
 app.include_router(trees_router)
 app.include_router(export_router)
+app.include_router(search_router)
+app.include_router(import_router)
 
 
 @app.get("/api/health")

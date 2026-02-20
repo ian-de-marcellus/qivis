@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { CanvasView } from './components/CanvasView/CanvasView.tsx'
 import { GraphView } from './components/GraphView/GraphView.tsx'
 import { BookmarkList } from './components/Library/BookmarkList.tsx'
+import { SearchPanel } from './components/Library/SearchPanel.tsx'
 import { TreeList } from './components/Library/TreeList.tsx'
 import { getTreeDefaults } from './components/TreeView/contextDiffs.ts'
 import { DigressionSidePanel } from './components/TreeView/DigressionPanel.tsx'
@@ -40,6 +41,7 @@ function App() {
   const { currentTree, error } = useTreeData()
   const { branchSelections } = useNavigation()
   const { rightPaneMode, canvasOpen } = useRightPane()
+  const searchQuery = useTreeStore(s => s.searchQuery)
   const fetchTrees = useTreeStore(s => s.fetchTrees)
   const clearError = useTreeStore(s => s.clearError)
   const setCanvasOpen = useTreeStore(s => s.setCanvasOpen)
@@ -96,8 +98,9 @@ function App() {
   return (
     <div className="app">
       <aside className={`sidebar ${sidebarCollapsed ? 'collapsed' : ''}`}>
-        {!sidebarCollapsed && <TreeList />}
-        {!sidebarCollapsed && currentTree && <BookmarkList />}
+        {!sidebarCollapsed && <SearchPanel />}
+        {!sidebarCollapsed && !searchQuery && <TreeList />}
+        {!sidebarCollapsed && !searchQuery && currentTree && <BookmarkList />}
         <div className="sidebar-toggle-bar">
           <button
             className="theme-toggle"

@@ -14,6 +14,7 @@ import type {
   NodeResponse,
   PatchTreeRequest,
   ProviderInfo,
+  SearchResultItem,
   TaxonomyResponse,
   TreeDetail,
   TreeSummary,
@@ -65,6 +66,10 @@ interface TreeStore {
   comparisonNodeId: string | null
   comparisonPickingMode: boolean
   comparisonPickingSourceId: string | null
+  searchQuery: string
+  searchResults: SearchResultItem[]
+  searchLoading: boolean
+  scrollToNodeId: string | null
 
   // Actions
   fetchTrees: () => Promise<void>
@@ -127,6 +132,10 @@ interface TreeStore {
   enterComparisonPicking: () => void
   pickComparisonTarget: (nodeId: string) => void
   cancelComparisonPicking: () => void
+  setSearchQuery: (query: string) => void
+  clearSearch: () => void
+  navigateToSearchResult: (treeId: string, nodeId: string) => Promise<void>
+  clearScrollToNode: () => void
 }
 
 /**
@@ -208,6 +217,10 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
   comparisonNodeId: null,
   comparisonPickingMode: false,
   comparisonPickingSourceId: null,
+  searchQuery: '',
+  searchResults: [],
+  searchLoading: false,
+  scrollToNodeId: null,
 
   fetchTrees: async () => {
     set({ isLoading: true, error: null })
@@ -1370,6 +1383,33 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
       splitViewNodeId: comparisonPickingSourceId,
       comparisonPickingSourceId: null,
     })
+  },
+
+  setSearchQuery: (query: string) => {
+    set({ searchQuery: query })
+    // Clear results immediately if query is empty
+    if (!query.trim()) {
+      set({ searchResults: [], searchLoading: false })
+      return
+    }
+    // Debounced search is handled by the component
+  },
+
+  clearSearch: () => {
+    set({ searchQuery: '', searchResults: [], searchLoading: false })
+  },
+
+  navigateToSearchResult: async (treeId: string, nodeId: string) => {
+    const { selectedTreeId } = get()
+    if (selectedTreeId !== treeId) {
+      await get().selectTree(treeId)
+    }
+    get().navigateToNode(nodeId)
+    set({ scrollToNodeId: nodeId })
+  },
+
+  clearScrollToNode: () => {
+    set({ scrollToNodeId: null })
   },
 }))
 

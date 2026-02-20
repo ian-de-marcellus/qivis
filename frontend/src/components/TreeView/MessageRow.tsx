@@ -120,7 +120,7 @@ export const MessageRow = memo(function MessageRow({
       : undefined
 
   return (
-    <div className={rowClasses} onClick={handleRowClick}>
+    <div className={rowClasses} data-node-id={node.node_id} onClick={handleRowClick}>
       <div className="message-header">
         <span className="message-role">{roleLabel}</span>
         {node.role === 'assistant' && node.model && (

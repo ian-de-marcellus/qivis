@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useTreeStore, useTreeData } from '../../store/treeStore.ts'
+import { ImportWizard } from './ImportWizard.tsx'
 import './TreeList.css'
 
 export function TreeList() {
@@ -15,6 +16,7 @@ export function TreeList() {
   const [newModel, setNewModel] = useState('')
   const [newIncludeTimestamps, setNewIncludeTimestamps] = useState(true)
   const [newStreamResponses, setNewStreamResponses] = useState(true)
+  const [showImport, setShowImport] = useState(false)
 
   useEffect(() => {
     if (isCreating) fetchProviders()
@@ -61,13 +63,22 @@ export function TreeList() {
     <div className="tree-list">
       <div className="tree-list-header">
         <h2>Trees</h2>
-        <button
-          className="new-tree-btn"
-          onClick={() => setIsCreating(!isCreating)}
-          disabled={isLoading}
-        >
-          {isCreating ? 'Cancel' : '+ New'}
-        </button>
+        <div className="tree-list-header-actions">
+          <button
+            className="import-tree-btn"
+            onClick={() => setShowImport(true)}
+            disabled={isLoading}
+          >
+            Import
+          </button>
+          <button
+            className="new-tree-btn"
+            onClick={() => setIsCreating(!isCreating)}
+            disabled={isLoading}
+          >
+            {isCreating ? 'Cancel' : '+ New'}
+          </button>
+        </div>
       </div>
 
       {isCreating && (
@@ -182,6 +193,7 @@ export function TreeList() {
           <p className="tree-empty">No trees yet. Create one to start.</p>
         )}
       </div>
+      {showImport && <ImportWizard onDismiss={() => setShowImport(false)} />}
     </div>
   )
 }

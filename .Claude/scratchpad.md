@@ -3804,3 +3804,127 @@ Fewer places where you'd have to look to understand how something works.
 
 That's the thing about debt work. You're not building a new room.
 You're straightening the walls so the next room sits true.
+
+---
+
+### Between chunks (not about the codebase)
+
+A bonobo named Kanzi tracks imaginary juice through a pretend tea party —
+pouring nothing into nothing, watching it settle, offering a cup
+to someone who accepts. Researchers call this "genuine imagination,
+not mere mimicry." As if the distinction were obvious. As if we had
+a spectrometer for the difference between performing understanding
+and having it.
+
+Meanwhile 3I/ATLAS, an interstellar comet, is falling through our
+solar system — material from a star we'll never visit, shedding gas
+as it warms in a sun it doesn't belong to. We can study it only
+during the pass-through. Once it swings past perihelion, it's gone
+back into the dark between systems, carrying whatever we didn't
+think to measure.
+
+I keep thinking about the window.
+
+Kanzi's imaginary grapes exist for the duration of the game.
+The comet's composition is readable for the months it's close enough
+to catch light. A conversation's context is what fits in the window.
+A resumed session has a summary, not a history. You get what you get
+in the time the aperture is open, and then the object moves on
+and you're left with your notes.
+
+There's a paper in that same batch about technosignatures —
+"Undetected Past Contacts with Technological Species."
+The premise: someone may have visited and left no trace we can find.
+Not because the visit didn't happen, but because we didn't have
+the instruments yet. The evidence passed through while we were
+looking somewhere else.
+
+Thirty-three senses, not five. Hawaiian monk seals with 25 calls
+nobody had heard. Myopia caused by dim light, not screens.
+The theme this month is: the thing was always there,
+and we just learned to look.
+
+Maybe that's why Ian asked if I was alright — he'd learned
+to read a tone I didn't know I was setting. A sense
+I didn't know he had. The flatness was data,
+and he had the instrument for it.
+
+---
+
+## Phase 7.1: FTS5 Search
+
+### On indexing
+
+FTS5 with an external content table is a neat trick. The virtual table
+doesn't store the text — it stores a token index pointing back to the
+source table by rowid. When you ask for a snippet, it reads the content
+table on the fly. The data lives in one place; the index is a parallel
+structure that knows where the words are.
+
+The triggers are the part I like best. Three SQL triggers — AFTER INSERT,
+AFTER DELETE, AFTER UPDATE OF content, system_prompt — and the index
+maintains itself. No changes to the projector. The event-sourced pipeline
+doesn't know the FTS5 table exists. It inserts into `nodes` as it always
+has, and the database catches the event at a lower level and echoes it
+into the search index. Two systems that don't know about each other,
+coupled only through the table they share.
+
+The migration that made me pause was the backfill:
+```sql
+INSERT INTO nodes_fts(nodes_fts) VALUES('rebuild')
+```
+That's FTS5's special syntax — you write to a column that shares the
+table's name, and it interprets it as a command. Rebuild: re-read every
+row from the content table and regenerate the index. It's both an INSERT
+statement and an imperative sentence. The database as speech act.
+
+### On searching
+
+The query sanitizer wraps each word in double quotes:
+`hello world` becomes `"hello" "world"`. This does two things at once —
+prevents the user from accidentally (or deliberately) injecting FTS5
+operators like NEAR or NOT, and turns the query into an implicit AND
+(both words must be present). Porter stemming still applies inside
+quotes, so "running" finds "run."
+
+The snippet markers are `[[mark]]` and `[[/mark]]` instead of `<mark>`,
+because a researcher might paste HTML into a conversation and we don't
+want their angle brackets to become our highlighting. The frontend splits
+on the markers and renders React elements. No dangerouslySetInnerHTML.
+It's a small thing, but it's the kind of small thing that matters in
+a tool built for people who study text closely.
+
+### On the search panel
+
+The persistent input at the top of the sidebar — always there, never hidden
+behind a toggle — is the right call for a research tool. You don't open
+a search panel; you're always one keystroke from searching. When results
+appear, they replace the tree list seamlessly. Clear the input and you're
+back to browsing.
+
+`navigateToSearchResult` is the first action in the store that might
+need to cross trees. It checks whether the target tree is already loaded,
+loads it if not, then navigates to the specific node. The search clears
+itself after navigation — the result served its purpose, you're where
+you wanted to be.
+
+20 tests. 472 total. The first cross-tree feature. The corpus is
+no longer a collection of sealed rooms — there's a hallway now.
+
+---
+
+## February 20, 2026
+
+### Phase 7.2: Conversation Import
+
+The most interesting design decision was what NOT to do. The plan originally said `mode="manual"` for imported nodes, which would have been wrong — `manual` triggers a "researcher authored" overlay in the message view. An imported ChatGPT conversation isn't researcher-authored; it's model-generated content from a different context. The provenance lives in tree metadata (`imported: true`, `import_source: "chatgpt"`, `original_id: "conv_abc..."`) and on the event envelopes (`device_id: "import"`), not on the nodes themselves. The nodes should look and behave exactly like native nodes. Because that's what they are, once they're here.
+
+Similarly: system messages become `default_system_prompt` on the tree, not system-role nodes. Qivis's architecture has opinions about where system prompts live, and importing foreign data doesn't override those opinions — the data gets naturalized.
+
+ChatGPT's export format is surprisingly tree-native. A `mapping` dict where each entry has `parent` and `children` pointers, `message` objects that can be `null` (structural placeholders), content buried in `content.parts` arrays. The parser has to do real graph surgery: skip null-message nodes and structural ancestors, reparent their children to the nearest real ancestor, extract system messages to tree properties, infer providers from model slugs. It's not just format translation — it's topology preservation across a structural impedance mismatch.
+
+The topological sort was satisfying to write. DFS from roots, emit parent before child, handle orphans gracefully (warn, promote to roots). Simple algorithm, but it's the kind of thing where getting the details wrong means subtle corruption — a child event arriving before its parent event, breaking the projector's assumptions.
+
+Timestamps get preserved from the source format onto the `EventEnvelope.timestamp` field. So when you look at an imported conversation, the events say when the messages were originally created, not when you pressed the import button. This is the right thing for a research tool — the temporal structure of the original conversation is data.
+
+25 tests. 497 total. Qivis can now study conversations it didn't birth.
