@@ -381,7 +381,7 @@ class TestBookmarkSummaryGeneration:
         mock_client = MagicMock()
         mock_response = MagicMock()
         mock_response.content = [MagicMock(text="A summary of the conversation branch.")]
-        mock_response.model = "claude-haiku-4-5"
+        mock_response.model = "claude-haiku-4-5-20251001"
         mock_client.messages.create = AsyncMock(return_value=mock_response)
 
         service = TreeService(db, summary_client=mock_client)
@@ -397,15 +397,15 @@ class TestBookmarkSummaryGeneration:
         result = await service.generate_bookmark_summary(tree_id, bookmark.bookmark_id)
 
         assert result.summary == "A summary of the conversation branch."
-        assert result.summary_model == "claude-haiku-4-5"
+        assert result.summary_model == "claude-haiku-4-5-20251001"
         assert result.summarized_node_ids is not None
         assert len(result.summarized_node_ids) > 0
         assert node_id in result.summarized_node_ids
 
-        # Verify the mock was called with a message containing conversation content
+        # Verify the mock was called with the configurable summary model
         mock_client.messages.create.assert_called_once()
         call_kwargs = mock_client.messages.create.call_args
-        assert call_kwargs.kwargs["model"] == "claude-haiku-4-5"
+        assert call_kwargs.kwargs["model"] == "claude-haiku-4-5-20251001"
 
 
 # ---------------------------------------------------------------------------

@@ -1,6 +1,7 @@
 /** Zustand store for Qivis app state. */
 
 import { create } from 'zustand'
+import { useShallow } from 'zustand/react/shallow'
 import * as api from '../api/client.ts'
 import type {
   AnnotationResponse,
@@ -58,7 +59,7 @@ interface TreeStore {
   bookmarksLoading: boolean
   exclusions: NodeExclusionResponse[]
   digressionGroups: DigressionGroupResponse[]
-  digressionPanelOpen: boolean
+  rightPaneMode: 'graph' | 'digressions' | null
   groupSelectionMode: boolean
   selectedGroupNodeIds: string[]
   comparisonNodeId: string | null
@@ -117,7 +118,7 @@ interface TreeStore {
   createDigressionGroup: (req: CreateDigressionGroupRequest) => Promise<boolean>
   toggleDigressionGroup: (groupId: string, included: boolean) => Promise<void>
   deleteDigressionGroup: (groupId: string) => Promise<void>
-  setDigressionPanelOpen: (open: boolean) => void
+  setRightPaneMode: (mode: 'graph' | 'digressions' | null) => void
   setGroupSelectionMode: (active: boolean) => void
   toggleGroupNodeSelection: (nodeId: string) => void
   toggleAnchor: (nodeId: string) => Promise<void>
@@ -201,7 +202,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
   bookmarksLoading: false,
   exclusions: [],
   digressionGroups: [],
-  digressionPanelOpen: false,
+  rightPaneMode: null,
   groupSelectionMode: false,
   selectedGroupNodeIds: [],
   comparisonNodeId: null,
@@ -245,7 +246,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
       bookmarksLoading: false,
       exclusions: [],
       digressionGroups: [],
-      digressionPanelOpen: false,
+      rightPaneMode: null,
       groupSelectionMode: false,
       selectedGroupNodeIds: [],
       comparisonNodeId: null,
@@ -1271,7 +1272,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
     }
   },
 
-  setDigressionPanelOpen: (open: boolean) => set({ digressionPanelOpen: open }),
+  setRightPaneMode: (mode: 'graph' | 'digressions' | null) => set({ rightPaneMode: mode }),
 
   setGroupSelectionMode: (active: boolean) => set({
     groupSelectionMode: active,
@@ -1371,3 +1372,64 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
     })
   },
 }))
+
+// ---------------------------------------------------------------------------
+// Selector hooks — subscribe to focused state slices via useShallow
+// Actions are stable references and safe to select individually.
+// ---------------------------------------------------------------------------
+
+export const useTreeData = () => useTreeStore(useShallow(s => ({
+  trees: s.trees,
+  selectedTreeId: s.selectedTreeId,
+  currentTree: s.currentTree,
+  providers: s.providers,
+  isLoading: s.isLoading,
+  error: s.error,
+})))
+
+export const useStreamingState = () => useTreeStore(useShallow(s => ({
+  isGenerating: s.isGenerating,
+  streamingContent: s.streamingContent,
+  streamingThinkingContent: s.streamingThinkingContent,
+  streamingContents: s.streamingContents,
+  streamingThinkingContents: s.streamingThinkingContents,
+  streamingNodeIds: s.streamingNodeIds,
+  streamingTotal: s.streamingTotal,
+  activeStreamIndex: s.activeStreamIndex,
+  regeneratingParentId: s.regeneratingParentId,
+  generationError: s.generationError,
+})))
+
+export const useNavigation = () => useTreeStore(useShallow(s => ({
+  branchSelections: s.branchSelections,
+})))
+
+export const useComparison = () => useTreeStore(useShallow(s => ({
+  splitViewNodeId: s.splitViewNodeId,
+  comparisonNodeId: s.comparisonNodeId,
+  comparisonHoveredNodeId: s.comparisonHoveredNodeId,
+  comparisonPickingMode: s.comparisonPickingMode,
+  comparisonPickingSourceId: s.comparisonPickingSourceId,
+  inspectedNodeId: s.inspectedNodeId,
+})))
+
+export const useDigressionState = () => useTreeStore(useShallow(s => ({
+  digressionGroups: s.digressionGroups,
+  groupSelectionMode: s.groupSelectionMode,
+  selectedGroupNodeIds: s.selectedGroupNodeIds,
+})))
+
+export const useResearchMetadata = () => useTreeStore(useShallow(s => ({
+  bookmarks: s.bookmarks,
+  bookmarksLoading: s.bookmarksLoading,
+  exclusions: s.exclusions,
+  editHistoryCache: s.editHistoryCache,
+  selectedEditVersion: s.selectedEditVersion,
+  nodeAnnotations: s.nodeAnnotations,
+  taxonomy: s.taxonomy,
+})))
+
+export const useRightPane = () => useTreeStore(useShallow(s => ({
+  rightPaneMode: s.rightPaneMode,
+  canvasOpen: s.canvasOpen,
+})))

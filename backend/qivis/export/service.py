@@ -2,12 +2,12 @@
 
 import csv
 import io
-import json
 from datetime import UTC, datetime
 
 from qivis.db.connection import Database
 from qivis.events.projector import StateProjector
 from qivis.events.store import EventStore
+from qivis.utils.json import json_str, parse_json_or_none
 
 
 class ExportService:
@@ -50,7 +50,7 @@ class ExportService:
             annotations_by_node.setdefault(nid, []).append({
                 "annotation_id": r["annotation_id"],
                 "tag": r["tag"],
-                "value": _parse_json_or_raw(r.get("value")),
+                "value": parse_json_or_none(r.get("value")),
                 "notes": r.get("notes"),
             })
 
@@ -117,12 +117,12 @@ class ExportService:
                 "model": n.get("model"),
                 "provider": n.get("provider"),
                 "system_prompt": n.get("system_prompt"),
-                "sampling_params": _parse_json_or_raw(n.get("sampling_params")),
-                "usage": _parse_json_or_raw(n.get("usage")),
+                "sampling_params": parse_json_or_none(n.get("sampling_params")),
+                "usage": parse_json_or_none(n.get("usage")),
                 "latency_ms": n.get("latency_ms"),
                 "finish_reason": n.get("finish_reason"),
-                "logprobs": _parse_json_or_raw(n.get("logprobs")),
-                "context_usage": _parse_json_or_raw(n.get("context_usage")),
+                "logprobs": parse_json_or_none(n.get("logprobs")),
+                "context_usage": parse_json_or_none(n.get("context_usage")),
                 "thinking_content": n.get("thinking_content"),
                 "created_at": n.get("created_at"),
                 "annotations": annotations_by_node.get(n["node_id"], []),
@@ -131,7 +131,7 @@ class ExportService:
                 "is_excluded": n["node_id"] in excluded_ids,
             })
 
-        metadata = _parse_json_or_raw(tree.get("metadata")) or {}
+        metadata = parse_json_or_none(tree.get("metadata")) or {}
 
         result: dict = {
             "source": "qivis",
@@ -145,7 +145,7 @@ class ExportService:
                 "default_model": tree.get("default_model"),
                 "default_provider": tree.get("default_provider"),
                 "default_system_prompt": tree.get("default_system_prompt"),
-                "default_sampling_params": _parse_json_or_raw(
+                "default_sampling_params": parse_json_or_none(
                     tree.get("default_sampling_params")
                 ),
                 "metadata": metadata,
@@ -249,10 +249,10 @@ class ExportService:
                 "is_anchored": str(nid in anchored_ids).lower(),
                 "is_excluded": str(nid in excluded_ids).lower(),
                 "path_depth": depths.get(nid, 0),
-                "sampling_params": _json_str(n.get("sampling_params")),
-                "usage": _json_str(n.get("usage")),
-                "logprobs": _json_str(n.get("logprobs")),
-                "context_usage": _json_str(n.get("context_usage")),
+                "sampling_params": json_str(n.get("sampling_params")),
+                "usage": json_str(n.get("usage")),
+                "logprobs": json_str(n.get("logprobs")),
+                "context_usage": json_str(n.get("context_usage")),
             })
 
         return output.getvalue()
@@ -307,28 +307,3 @@ def _row_to_dict(row) -> dict:
     return dict(row)
 
 
-def _parse_json_or_raw(value: str | dict | list | None):
-    """Parse a JSON string or return the value as-is."""
-    if value is None:
-        return None
-    if isinstance(value, (dict, list)):
-        return value
-    if isinstance(value, str):
-        try:
-            return json.loads(value)
-        except (ValueError, TypeError):
-            return value
-    return value
-
-
-def _json_str(value: str | dict | list | None) -> str:
-    """Serialize a value to a JSON string for CSV cells."""
-    if value is None:
-        return ""
-    if isinstance(value, str):
-        try:
-            parsed = json.loads(value)
-            return json.dumps(parsed)
-        except (ValueError, TypeError):
-            return value
-    return json.dumps(value)

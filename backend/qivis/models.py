@@ -78,6 +78,8 @@ class EvictionReport(BaseModel):
     evicted_content: list[str] = Field(default_factory=list)
     final_token_count: int = 0
     warning: str | None = None
+    keep_first_turns: int = 0
+    summary_model: str = "claude-haiku-4-5-20251001"
 
 
 class Participant(BaseModel):

@@ -11,9 +11,11 @@
 
 .sidebar.collapsed .sidebar-toggle-bar {
   flex-direction: column;
-  justify-content: center;
+  align-items: center;
+  justify-content: flex-start;
   border-top: none;
   margin-top: auto;
+  padding: var(--space-sm) 0;
 }
 
 /* ---- Theme toggle ---- */
@@ -87,11 +89,13 @@
 .sidebar-toggle-icon.collapsed::before {
   transform: rotate(30deg) translateY(2px);
   width: 60%;
+  left: 20%;
 }
 
 .sidebar-toggle-icon.collapsed::after {
   transform: rotate(-30deg) translateY(-2px);
   width: 60%;
+  left: 20%;
 }
 
 /* ---- Split layout: linear + graph panes ---- */

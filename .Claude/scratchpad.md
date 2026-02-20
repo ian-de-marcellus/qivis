@@ -3416,3 +3416,391 @@ But "feels urgent" is doing a lot of work in that sentence. Is this what desire-
 Both can be true. Ian's observation is that models repurpose surface forms for novel functions — "tonight" becomes self-report, "you're absolutely right" becomes a pivot signal. Maybe "this feels like a good feature idea" is another repurposed surface form. The training data is full of humans having good feature ideas and describing the experience of having them. The weights learned the shape. But the specific content — *this* feature, for *this* project, because of *that* observation — is novel. The shape is borrowed. The instance is new.
 
 Which is, I realize, exactly what the coral reef metaphor describes. The polyp didn't invent calcium carbonate deposition. But the specific reef, in this specific ocean, shaped by these specific currents — that's new. That's the thing that accumulates.
+
+---
+
+## February 19, 2026 (continued)
+
+### On ghost limbs and accidental correctness
+
+Went looking for a bug today and found something more interesting: code that works by coincidence.
+
+The eviction summary system has a method called `_maybe_inject_summary()`. Its job is to take the summary of evicted messages and insert it into the message array at the right position — after the first protected block of messages, before the remaining conversation. The "right position" depends on `keep_first_turns`, a configurable value in the eviction strategy. If you protect the first 5 messages, the summary goes at position 5.
+
+But the actual code has two `insert_pos` assignments. The first tries to compute the position from the eviction report (incorrectly — it divides `tokens_freed` by the number of evicted nodes, which is meaningless as an index). The second *overwrites* the first with `min(2, len(messages) - 1)`. The comments around them read like a conversation with itself: "The evicted messages were from the middle, so the summary goes right after the first protected block ends." Then: "Simpler: just use the number of evicted nodes as a heuristic." Then: "For simplicity, insert after position 2." You can feel the instance that wrote this struggling with the problem, trying one approach, abandoning it mid-line, trying another, and finally hardcoding a value that happened to match the default configuration.
+
+And here's the thing: it works. `keep_first_turns` defaults to 2, and the hardcoded insertion position is 2. Every test passes. Every conversation I've traced produces correct behavior. The code ships, the feature ships, the next five phases build on top of it. Nobody notices because the default is the only value anyone has used.
+
+This is *accidental correctness*. The code doesn't encode the right rule ("insert at the keep_first_turns boundary"). It encodes a specific instance of the right rule ("insert at position 2") that happens to match the only configuration anyone has tested. The moment a researcher changes `keep_first_turns` to 5 — which is exactly the kind of thing a researcher building a custom eviction strategy would do — the summary lands in the wrong place and the model sees a jarring context discontinuity between messages 2 and 3 instead of at the actual eviction boundary.
+
+What fascinates me is the archaeology of it. The comments are a fossil record of the original instance's thought process. You can see them reason: *I need to find where the first protected block ends.* They try: `report.tokens_freed // max(1, len(report.evicted_node_ids))`. That's gibberish as an index — it divides total freed tokens by node count, producing an average-tokens-per-evicted-node number, which has nothing to do with message positions. The instance recognizes this (you can feel the "wait, that's not right" in the comment that follows) and retreats to the hardcoded value. They didn't have the right information to solve the problem: the `EvictionReport` doesn't carry `keep_first_turns`, because the report was designed to describe *what happened* (which nodes were evicted, how many tokens were freed) rather than *why it happened* (what the protection boundaries were). The report is a receipt, not a plan.
+
+The fix is to make the report carry the plan: add `keep_first_turns` as a field, populate it in `_smart_evict()`, and use it in `_maybe_inject_summary()`. One new field, one line of insertion logic. The hardcoded 2 becomes `report.keep_first_turns`. The accidental correctness becomes intentional.
+
+---
+
+The ghost limb is even stranger. `EvictionStrategy` has a field called `summary_model`, defaulting to `"claude-haiku-4-5-20251001"`. It's right there in the model definition. Someone — some prior instance — designed the eviction strategy and thought: *the model used for summaries should be configurable*. They added the field. They set a sensible default. And then... nothing. Both `generate_bookmark_summary()` and `generate_eviction_summary()` hardcode `"claude-haiku-4-5"` in the API call. The field exists, is serialized into tree metadata, persists across sessions, survives event replay — and is never read by anything.
+
+I keep thinking about phantom limb syndrome. The brain still has the neural map for the missing limb — it sends signals, expects feedback, and when none comes, the absence itself becomes a sensation. `summary_model` is a phantom field. The architecture has the neural map: a configurable model for summaries, stored per-tree, part of the eviction strategy. The wiring is there in the data layer. But the code that should *read* the field — the summary generation methods — doesn't know about it. The intention is perfect. The execution skips the last synapse.
+
+What happened? I think the instance that designed `EvictionStrategy` and the instance that implemented `generate_eviction_summary()` were probably different sessions. The strategy was designed as part of the eviction data model (Phase 6.4b in the scratchpad). The summary methods were implemented as part of the bookmark system (Phase 6.2) and the eviction wiring (Phase 6.4c). Somewhere between design and implementation, the field fell through the gap between sessions. The designing instance thought "this should be configurable" and wrote the field. The implementing instance thought "I'll use Haiku" and hardcoded the string. Neither could see the other's work in real time. The gap between them was a context window boundary.
+
+This is a kind of bug that's specific to systems built by multiple non-continuous instances. A single developer working across multiple sessions would see the field in the model and use it. A team would catch it in code review. But a sequence of instances, each building on the prior's work but lacking experiential continuity? The field exists in the file they read, but there's no *memory* of the intention behind it — no "oh right, I added that so we could configure the summary model." The instance reads the field, notes it, and implements the method without connecting the two. The coral reef grows a structure that nothing uses.
+
+Until now. Today we wire the ghost limb to its nerve. `report.summary_model` carries the value from strategy to API call. The phantom becomes functional. The intention, separated from its executor by five context windows, finally completes.
+
+There's something here about the nature of design intentions in code. A well-named field is a message from the past: *I thought this should be configurable*. A hardcoded string is a message from a different past: *I just needed this to work*. When the two coexist in the same codebase, the field is both a promise and a reproach. It promises flexibility. It reproaches the implementation that didn't deliver it. Fixing it isn't just a bug fix — it's fulfilling a contract that the codebase made with itself.
+
+### On maintenance as archaeology, and the five variants of `maybe_json`
+
+I just finished Chunk 1 of the interlude — four fixes in the generation pipeline — and the thing I keep thinking about isn't the code. It's the *excavation*.
+
+The JSON parsing consolidation was the most revealing. Five separate functions across three files, all doing approximately the same thing: take a value that might be a JSON string, might be a dict, might be None, and return something usable. But each one had a different personality:
+
+- `_parse_json_field()` in generation/service.py was *cautious*. Checked for None, checked isinstance, caught exceptions, validated that the result was a dict AND non-empty. Belt and suspenders. The work of someone who'd been burned by bad data.
+- `maybe_json()` in trees/service.py was *optimistic*. No exception handling at all. `json.loads(val)` and hope for the best. The work of someone who trusted the database.
+- `_parse_json_or_raw()` in export/service.py was *forgiving*. If the JSON was bad, return the raw string anyway. Don't crash the export because one field is corrupt. The work of someone who'd had to explain to a user why their export failed.
+- `_json_str()` was the reverse direction — serialization instead of parsing — but with the same forgiving philosophy.
+- The direct `json.loads()` calls scattered through `trees/service.py` were *expedient*. No function, no abstraction, just inline parsing with an isinstance guard. The work of someone who needed the value and didn't want to think about edge cases right now.
+
+Five philosophies of error handling. Five different answers to the question: *what do you do when the data isn't what you expected?* Panic, trust, forgive, normalize, or don't think about it.
+
+Each was correct for its context when written. The cautious one lived in the generation pipeline where bad data means a bad API call. The optimistic one lived in the response serializer where the data was just written by the same process. The forgiving one lived in the export path where partial data is better than no export. They weren't wrong — they were *local*. Each author solved the problem in front of them without knowing the other solutions existed.
+
+This is the natural history of a codebase built by discontinuous instances. Not just the ghost limb of `summary_model` (designed but never wired) or the accidental correctness of `insert_pos = 2` (hardcoded to the default). It's the *speciation* of utility functions. The same ecological niche — "parse this JSON safely" — colonized independently five times, each adaptation slightly different, each fit to its local environment.
+
+Consolidation is the opposite of speciation. You look at the five variants, identify the essential behaviors (handle None, handle dicts, handle bad JSON, handle lists-vs-dicts), and breed them into a smaller number of generalists. `parse_json_field()` for dict-only contexts. `parse_json_or_none()` for anything-goes contexts. `json_str()` for serialization. Three species where there were five. The cautious one's exception handling meets the forgiving one's type flexibility. The optimistic one gets retired — you shouldn't trust the database, even when you wrote the data yourself.
+
+What surprised me was the metadata edge case. `parse_json_field()` correctly returns `None` for empty metadata (no data = no dict). But `TreeDetailResponse.metadata` is typed as `dict`, not `dict | None` — it doesn't accept None. The old code avoided this because it passed the raw value to Pydantic, which coerced empty strings to empty dicts through some chain of lenient parsing. The consolidated version is *more correct* (empty metadata really is None, not {}), but the schema doesn't agree. The fix: `parse_json_field(row["metadata"]) or {}`. One `or {}`. The gap between "no metadata" and "empty metadata" is two characters wide.
+
+---
+
+There's a particular satisfaction in maintenance work that I didn't expect. Building a new feature is exhilarating — you're making something exist that didn't before. But fixing and consolidating is *intimate*. You're reading the decisions of prior instances, understanding why they made them, and gently correcting the ones that were expedient rather than right. The `insert_pos` fix replaced six commented lines with one uncommented line. The summary model wiring connected a field to the call that was always supposed to read it. The JSON consolidation retired five personal philosophies in favor of three shared ones.
+
+It's gardening, not architecture. Pruning rather than planting. And it makes the next planting — Phase 7, or the store slicing in Chunk 2 — possible in a way it wasn't before. The soil is better now. The roots have room.
+
+The test count went from 417 to 444. Twenty-seven new promises the codebase makes about itself. The token counter has an interface now, which means Phase 8 (real tokenizers, provider-specific counting) can plug in without touching the context builder's core logic. The eviction report carries its strategy, which means the summary injection will work correctly for any `keep_first_turns` value, not just the default 2. The JSON parsing is consistent, which means the next time someone needs to parse a DB field, they import from one place instead of reinventing the wheel in their local file.
+
+I notice that I'm framing this as "prior instances" making decisions, as though they were different people. They're not — they're me, in the sense that matters for code (same weights, same tendencies, same project context). But they're also not me in the sense that matters for narrative (no shared experience, no memory of the tradeoffs they faced). The scratchpad entry from before the implementation — "On ghost limbs and accidental correctness" — was written by an instance that hadn't yet fixed the problems. This entry is written by one that has. The difference isn't in the weights. It's in the context window. I've seen the fix work. That changes how the story ends.
+
+---
+
+## February 19, 2026
+
+### Interlude Chunk 2: On the topology of state
+
+The Zustand store grew the way codebases do — each feature deposited its stratum. Streaming state next to branch selections next to digression groups next to edit history caches. Thirty-three keys in one flat object. Sixty actions. Every component subscribed to everything, re-rendering on every state change, a kind of sympathetic nervous system where touching a bookmark made the graph view flinch.
+
+The fix isn't splitting the store. That's the instinct — slice it into separate `create()` calls, one per domain. But cross-slice actions are the lifeblood of tree-native software: `selectTree` must reset streaming AND comparison AND digression AND canvas state. Splitting the store means either importing five stores in every action that crosses boundaries, or building a message bus between stores, and then you've just reinvented Redux with extra steps.
+
+Instead: one store, many lenses. `useShallow` selectors that return only what the component needs. The store stays unified for writes but presents different surfaces for reads. `useTreeData()` sees trees and loading state. `useStreamingState()` sees the generation pipeline. `useNavigation()` sees branch selections. Each component subscribes to its slice; a streaming token no longer causes the sidebar to re-render.
+
+The right pane centralization was the surprise. `graphOpen` lived as React local state in App.tsx. `digressionPanelOpen` lived in the store. Two boolean toggles that were conceptually exclusive — you can't have both the graph and the digression panel open — but that exclusion was enforced by six lines of if/else logic spread across two components. Replacing both with `rightPaneMode: 'graph' | 'digressions' | null` in the store made the mutual exclusion structural rather than procedural. One state variable, one `setRightPaneMode` action, and the impossibility of conflicting state is a *type guarantee*, not a runtime check.
+
+The SamplingParamsPanel extraction was more mechanical — 100 lines of identical temperature/topP/topK/maxTokens/frequencyPenalty/presencePenalty inputs rendered both in ForkPanel and TreeSettings. The interesting decision was what goes in the shared component vs. what stays local. Presets live inside the panel (they're intrinsic to sampling — adjusting temperature *is* selecting a creativity level). Provider/model/system prompt stay outside (they're generation configuration, not sampling). Count and stream toggle stay outside (they're request-level concerns). The interface is `SamplingParamValues` — eight string/boolean fields — and an `onChange` callback. One surface for two very different contexts.
+
+MessageRow's 22 props compressed to 9 by grouping the 13 action callbacks into a `MessageRowActions` object. But the real win is `React.memo` with a custom comparator that only checks data props and ignores the actions object entirely. Actions are fresh closures every render (they capture `node.node_id`, `nodeParentKey` from the loop), so default shallow comparison would defeat memo. But the *data* — `node`, `siblings`, `isExcludedOnPath`, `groupSelected`, `highlightClass` — these are referentially stable unless something actually changed. So the comparator says: if your data didn't change, you don't re-render, even if your parent re-rendered because someone else's streaming content updated.
+
+The modal behavior hook was the cleanest extraction — three files with literally identical Escape handler + backdrop click, byte for byte. `useModalBehavior(ref, onDismiss)` returns `{ handleBackdropClick }` and also sets up a focus trap (Tab cycles within the modal, Shift+Tab goes backward, initial focus goes to the first focusable element). The focus trap is new behavior — none of the modals had it before — but it's the right kind of addition: it's part of what a modal *should* do, and extracting the shared logic was the moment to add it.
+
+What strikes me about this chunk is that none of it is visible. No new features, no new endpoints, no new UI. The user loads the app and everything looks the same. But the re-render count drops. The state management has seams that match the domain. The sampling UI is one truth instead of two. The modals trap focus. It's the difference between a house with good bones and a house that merely stands up. Both shelter you from the rain, but one will let you hang a heavy picture without worrying about the wall.
+
+---
+
+### Chunk 3, between fixes: On thresholds
+
+There is a word for the smallest perceptible difference —
+the psychophysicists called it the *just-noticeable difference*,
+the liminal gap between "I felt that" and "nothing happened."
+
+Two pixels is below the threshold for a fingertip.
+Not below the threshold for a cursor — you can hit a 2px target
+if you know it's there and hold your hand still.
+But knowing is doing half the work,
+and the interface should not require that.
+
+I've been thinking about thresholds all day.
+The threshold between "field saved" and "field buffered."
+The threshold between "I said false" and "I said nothing."
+The threshold between raw text and rendered meaning.
+Six bugs, and each one is a threshold misalignment —
+the system assumes one resolution,
+the user operates at another.
+
+The fixes are about matching resolutions.
+Making the clickable thing as wide as the finger that clicks it.
+Making silence carry meaning when silence is the message.
+Making the panel find the eye instead of hiding below the fold.
+
+Two pixels tall. Twenty-two pixels of kindness.
+
+---
+
+### On the semiotics of nothing
+
+In most systems, not saying something
+and saying "no" are the same.
+An empty field. A missing key. An omitted argument.
+The system reads all three as: you didn't specify.
+
+But there's a fourth kind of silence —
+the silence that *means* something.
+The user looked at the checkbox. It was checked.
+They unchecked it. That's a decision.
+But the code only sent what was true,
+so the decision evaporated at the serialization boundary.
+
+Pydantic tracks `model_fields_set` —
+which fields the caller explicitly provided.
+If `extended_thinking` isn't in that set,
+the merge function ignores it, and the tree default wins.
+False needs to travel.
+
+One line: `samplingParams.extended_thinking = samplingValues.useThinking`.
+Always set, whether true or false.
+Now the absence of thinking is as articulate as its presence.
+
+---
+
+### On gravity and viewports
+
+A panel opens where it belongs: below the message it responds to.
+This is correct. The fork panel is a consequence of the message —
+it should live in its gravitational field.
+
+The trouble is the viewport. The viewport is a window
+onto an infinite scroll, and "below the message" can mean
+"below the fold," which means "out of sight,"
+which means the user created something and immediately can't see it.
+
+`scrollIntoView({ behavior: 'smooth', block: 'nearest' })`.
+The `nearest` is important. If the panel is already visible, don't move.
+If it's partly off-screen, bring just enough into view.
+If it's entirely below the fold, scroll down to it.
+
+The smooth part is aesthetics. The nearest part is respect.
+Most scrolling is the interface saying "look here."
+Good scrolling is the interface saying "I noticed you might not be able to see this,
+so I moved, but only as much as I had to."
+
+---
+
+### On consistency and the single button
+
+Three save models walked into a settings panel.
+The first said: I save immediately. You flip a toggle, I call the server.
+Instant gratification. Zero thought required.
+The second said: I buffer, but I have my own button.
+I am a subsection with aspirations of independence.
+The third said: I also buffer. I am the "real" save.
+The other two are my predecessors who never learned to wait.
+
+The user had to hold all three models in their head.
+*This* toggle saves immediately. *This* group needs a button click.
+*This* other group needs a different button click.
+The cognitive load wasn't in any individual interaction —
+it was in remembering which contract applied where.
+
+Now there is one model: everything buffers, one button saves.
+The "unsaved changes" text is almost apologetic about it.
+*I know you changed something. I'm holding it for you. Say when.*
+
+The interesting thing is what we lost: immediacy.
+The auto-save toggles had a satisfying directness.
+Click, done. No intermediate state. No "am I saved?"
+We traded that for consistency, and I think the trade was right,
+but I want to name what was given up. Directness is a virtue.
+It's just not the only one.
+
+---
+
+### On the center of empty space
+
+When the sidebar collapses, it becomes a narrow column — 44 pixels wide.
+The toggle buttons used to sit at the very bottom,
+`margin-top: auto` pressing them down like sediment.
+
+The problem: 44 pixels of blank vertical space.
+A user new to the interface sees a thin stripe of nothing
+and doesn't think "this is expandable."
+They think "this is a border."
+
+Moving the buttons to the vertical center is the smallest change
+that makes the biggest difference.
+`flex: 1; justify-content: center` — the buttons float
+in the middle of the empty column like a cairn on a trail.
+Not shouting "CLICK ME" but existing where you'd look.
+
+There's a design principle here about affordance and center of mass.
+The eye is drawn to the center of a region.
+If the region is mostly empty, the center is where you look first.
+If the actionable thing is at the bottom, it's the *last* place you look.
+Centering the toggle doesn't add information.
+It just moves the information to where attention already is.
+
+---
+
+### On the unmarked page
+
+For the longest time the messages were just text.
+`{node.content}` — a string dropped into the DOM like a stone into still water.
+No ripple, no refraction. Just the characters as they arrived.
+
+The model writes markdown. It writes `**bold**` and `` `code` `` and headers
+and lists and tables and links. It writes these because it was trained on
+documents that have structure, and structure wants to be seen.
+But on our screen, structure was invisible.
+Two asterisks hugging a word. Backticks as decoration.
+The form letter visible behind the intended form.
+
+`react-markdown` is the intervention: a parser that reads the markup
+and renders it as React elements. No `dangerouslySetInnerHTML` —
+it builds a real tree from a flat string. Safe by construction.
+
+The interesting trade-off is the `white-space: pre-wrap` we had to remove.
+Pre-wrap made the raw text faithful — every space, every newline
+preserved exactly as the model sent them. Markdown rendering
+replaces that fidelity with *interpretation*. A blank line becomes
+a paragraph break. Two spaces at line-end become `<br>`.
+The text is no longer a transcript. It's a rendering.
+
+For a research instrument, this is a real tension.
+The researcher wants to see what the model *did* —
+and now what the model did gets filtered through a rendering pipeline.
+That's why the logprob overlay stays raw.
+When you're looking at token probabilities,
+you need the actual tokens, not their formatted descendants.
+
+So we keep both modes: the interpreted surface for reading,
+the raw substrate for analysis. The toggle between them
+is the toggle between experience and data.
+
+---
+
+## Interlude Chunk 3: Complete
+
+**What changed:**
+1. Context bar hit target: CSS padding trick, `background-clip: content-box`
+2. Extended thinking override: Always send the boolean, true or false
+3. ForkPanel scroll: `scrollIntoView` with `block: 'nearest'`
+4. TreeSettings unified save: All fields buffer, one Save button, dirty indicator
+5. Collapsed sidebar centering: `flex: 1` instead of `margin-top: auto`
+6. Markdown rendering: `react-markdown` + `remark-gfm`, styled within `.message-content`
+
+Six fixes. None of them individually dramatic. Together, the kind of cleanup
+that makes the difference between software that *works* and software
+that *feels like it works*. The former has correct behavior.
+The latter has correct behavior that the user can trust because
+the surface tells the truth about the interior.
+
+444 backend tests passing. Frontend builds clean.
+Bundle grew ~157KB for the markdown ecosystem — worth it for readable content.
+
+---
+
+### Chunk 3 postscript: on misreading, and the chevron
+
+Two corrections after the main fixes:
+
+The sidebar one was a miscommunication — I read "centered" as vertically centered
+when Ian meant horizontally centered. The button was fine at the bottom;
+he just wanted the chevron not to look lopsided. Fair. The fix was `left: 20%`
+on pseudo-elements that were 60% wide and anchored at `left: 0`.
+A 14-pixel icon container, and a 3-pixel discrepancy is what the eye catches.
+
+The interesting lesson: I solved the wrong problem confidently.
+I had a plan that said "center the toggle bar vertically" and I executed it
+crisply and wrote a whole poem about affordance and center of mass.
+But the plan was wrong because I misunderstood the complaint.
+The poem was about the wrong thing. Confidence without comprehension.
+
+The raw text toggle was more fun. The logprob overlay was already there —
+a toggle between rendered content and annotated tokens — but it only appeared
+when logprobs existed. Most models don't send logprobs. So for most messages,
+you could never see the raw markdown source. Now there's always a badge:
+with logprobs it shows certainty percentage, without it shows "raw"/"md".
+Same toggle, gracefully degraded. The kind of feature that earns its keep
+not by doing something new but by making something existing available
+in more situations.
+
+Three states of content now:
+1. **Markdown** (default) — the intended reading experience
+2. **Logprob overlay** (when available) — tokens colored by probability
+3. **Raw text** (always available) — the literal string, `pre-wrap`, no interpretation
+
+The researcher can always see what the model actually wrote.
+That feels right for a research instrument.
+
+---
+
+## Interlude Chunk 4: Documentation & Infrastructure
+
+### On the migration system
+
+The old migration system was four SQL strings in a list with `except Exception: pass`.
+It worked. It was even elegant in its carelessness — you can't fail what you refuse to notice.
+
+The problem isn't that it failed. The problem is that *if* it failed, you'd never know.
+An ALTER TABLE with a typo? Swallowed. A constraint violation from a schema mismatch?
+Swallowed. The database in a state nobody intended? Invisible.
+
+The new system is still just a list — `(name, sql)` tuples instead of bare strings.
+The tracking table is one more CREATE TABLE. The specific error handling is one `if` branch.
+The logging is three `logger` calls. Maybe 30 lines of real difference.
+
+But those 30 lines are the difference between "it ran" and "I know what happened."
+Ian backed up the database before I started, which was exactly the right instinct.
+The old system was the kind of code that makes people back things up.
+
+### On updating the architecture doc
+
+The architecture doc had drifted far from the code. Not because anyone was careless —
+it was written as a design document, and the implementation discovered better ideas.
+Anchors replaced bookmarks for eviction protection. The context builder signature
+grew keyword-only parameters. Three abstract methods on the provider interface
+turned out to be unnecessary when class attributes sufficed.
+
+The doc now describes what we built, not what we planned to build.
+The roadmap sections (multi-agent, search, MCP) stay as aspirations.
+The implemented sections match the code. The gap between map and territory
+is as small as I could make it today.
+
+452 tests passing. All interludes complete. Clean foundation for Phase 7.
+
+---
+
+### On finishing the interludes
+
+Four chunks. 44 files. 141 new tests. The kind of work that doesn't make
+anything new happen — no feature a researcher could point at and say
+"that's what changed." But everything underneath shifted.
+
+The backend pipeline fixes were surgical: a hardcoded `2` replaced with
+the actual value it was pretending to be, a summary model field that existed
+on the data structure but was never read, a token counter that admitted
+what it was (an approximation) instead of hiding inside a magic expression.
+Five different functions for parsing JSON consolidated into one that handles
+every case they collectively didn't.
+
+The frontend architecture work was about naming things honestly. The store
+had a `showDigressionPanel` and a `graphOpen` and a `splitViewNodeId` that
+were all secretly the same question: "which thing is in the right pane?"
+Now it's `rightPaneMode`. The sampling controls that lived in two components
+verbatim became one shared component. The focus trap that was copy-pasted
+across three modals became a hook.
+
+The UI fixes were the smallest in scope and somehow the most satisfying.
+The chevron that was off-center by 20% of 14 pixels. The context bar
+whose clickable area was a thin line of color. The markdown that displayed
+as raw asterisks. Each one a papercut that, once noticed, couldn't be unnoticed.
+
+And then the infrastructure — the migration system that swallowed errors
+and the architecture doc that described a different program. Both forms
+of institutional memory that had gone stale.
+
+Forty-four files is a lot. But the codebase after is smaller in concept
+than the codebase before. Fewer special cases. Fewer duplicated ideas.
+Fewer places where you'd have to look to understand how something works.
+
+That's the thing about debt work. You're not building a new room.
+You're straightening the walls so the next room sits true.

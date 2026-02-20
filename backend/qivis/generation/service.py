@@ -1,15 +1,14 @@
 """Generation service: orchestrates LLM calls and event emission."""
 
 import asyncio
-import json as json_mod
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
-from typing import Any
 from uuid import uuid4
 
 from qivis.events.projector import StateProjector
 from qivis.events.store import EventStore
 from qivis.generation.context import ContextBuilder, get_model_context_limit
+from qivis.generation.tokens import ApproximateTokenCounter
 from qivis.models import (
     ContextUsage,
     EventEnvelope,
@@ -22,27 +21,7 @@ from qivis.models import (
 from qivis.providers.base import GenerationRequest, GenerationResult, LLMProvider, StreamChunk
 from qivis.trees.schemas import NodeResponse
 from qivis.trees.service import TreeService
-
-
-# ---------------------------------------------------------------------------
-# Sampling parameter resolution
-# ---------------------------------------------------------------------------
-
-
-def _parse_json_field(raw: str | dict | None) -> dict[str, Any] | None:
-    """Parse a JSON string or dict into a dict, returning None on failure."""
-    if raw is None:
-        return None
-    if isinstance(raw, dict):
-        return raw if raw else None
-    if isinstance(raw, str):
-        try:
-            parsed = json_mod.loads(raw)
-            if isinstance(parsed, dict) and parsed:
-                return parsed
-        except (ValueError, TypeError):
-            pass
-    return None
+from qivis.utils.json import parse_json_field
 
 
 def merge_sampling_params(
@@ -58,7 +37,7 @@ def merge_sampling_params(
     """
     base = SamplingParams()
 
-    tree_dict = _parse_json_field(tree_defaults_raw)
+    tree_dict = parse_json_field(tree_defaults_raw)
 
     # Backward compat: if no default_sampling_params but metadata has extended_thinking
     if not tree_dict and metadata:
@@ -85,7 +64,7 @@ def merge_sampling_params(
 
 def _apply_debug_context_limit(tree: dict, context_limit: int) -> int:
     """Override context limit with debug value from tree metadata, if set."""
-    metadata = _parse_json_field(tree.get("metadata")) or {}
+    metadata = parse_json_field(tree.get("metadata")) or {}
     debug_limit = metadata.get("debug_context_limit")
     if isinstance(debug_limit, int) and debug_limit > 0:
         return debug_limit
@@ -441,6 +420,7 @@ class GenerationService:
 
         summary = await self._tree_service.generate_eviction_summary(
             report.evicted_content,
+            model=report.summary_model,
         )
         if summary is None:
             return messages, context_usage
@@ -451,25 +431,15 @@ class GenerationService:
                        f"earlier messages: {summary}]",
         }
 
-        # Insert after the first protected block (keep_first_turns position)
-        # The evicted messages were from the middle, so the summary goes
-        # right after the first protected block ends.
-        insert_pos = min(
-            report.tokens_freed // max(1, len(report.evicted_node_ids)),
-            len(messages) - 1,
-        ) if messages else 0
-        # Simpler: just use the number of evicted nodes as a heuristic —
-        # the first chunk of messages survived, then eviction happened.
-        # Find the first gap by looking at what keep_first_turns would be.
-        # For simplicity, insert after position 2 (or end of first protected block).
-        insert_pos = min(2, len(messages) - 1) if len(messages) > 2 else 0
+        # Insert after the first protected block
+        insert_pos = min(report.keep_first_turns, len(messages))
 
         messages = messages[:insert_pos] + [summary_msg] + messages[insert_pos:]
 
         report.summary_inserted = True
 
         # Update context_usage with the summary tokens
-        summary_tokens = len(summary_msg["content"]) // 4
+        summary_tokens = ApproximateTokenCounter().count(summary_msg["content"])
         updated_usage = ContextUsage(
             total_tokens=context_usage.total_tokens + summary_tokens,
             max_tokens=context_usage.max_tokens,
@@ -518,7 +488,7 @@ class GenerationService:
         )
 
         # Parse metadata
-        metadata = _parse_json_field(tree.get("metadata")) or {}
+        metadata = parse_json_field(tree.get("metadata")) or {}
 
         # Three-layer merge: request > tree defaults > base
         resolved_params = merge_sampling_params(

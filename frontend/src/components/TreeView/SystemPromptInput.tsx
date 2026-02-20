@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
-import { useTreeStore } from '../../store/treeStore.ts'
+import { useTreeStore, useTreeData } from '../../store/treeStore.ts'
 import './SystemPromptInput.css'
 
 export function SystemPromptInput() {
-  const { currentTree, systemPromptOverride, setSystemPromptOverride } = useTreeStore()
+  const { currentTree } = useTreeData()
+  const systemPromptOverride = useTreeStore(s => s.systemPromptOverride)
+  const setSystemPromptOverride = useTreeStore(s => s.setSystemPromptOverride)
   const [isExpanded, setIsExpanded] = useState(false)
 
   const defaultPrompt = currentTree?.default_system_prompt ?? ''

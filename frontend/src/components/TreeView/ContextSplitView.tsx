@@ -1,8 +1,9 @@
-import { useEffect, useRef } from 'react'
+import { useRef } from 'react'
 import type { ReconstructedContext } from './contextReconstruction.ts'
 import { formatSamplingParams } from './contextReconstruction.ts'
 import type { ComparisonRow, ComparisonRowType } from './contextDiffs.ts'
 import type { DiffSummary } from './contextDiffs.ts'
+import { useModalBehavior } from '../../hooks/useModalBehavior.ts'
 import './ContextSplitView.css'
 
 interface ContextSplitViewProps {
@@ -49,23 +50,7 @@ export function ContextSplitView({
   onCompareToOriginal,
 }: ContextSplitViewProps) {
   const modalRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault()
-        onDismiss()
-      }
-    }
-    document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [onDismiss])
-
-  const handleBackdropClick = (e: React.MouseEvent) => {
-    if (e.target === e.currentTarget) {
-      onDismiss()
-    }
-  }
+  const { handleBackdropClick } = useModalBehavior(modalRef, onDismiss)
 
   // Build summary chips (only in original mode)
   const chips: string[] = []

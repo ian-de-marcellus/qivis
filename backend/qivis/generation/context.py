@@ -8,6 +8,7 @@ summarization, digression groups) comes in Phase 3.
 
 from datetime import datetime
 
+from qivis.generation.tokens import ApproximateTokenCounter, TokenCounter
 from qivis.models import ContextUsage, EvictionReport, EvictionStrategy
 
 # Known model context limits (tokens). Falls back to DEFAULT for unknown models.
@@ -69,6 +70,7 @@ class ContextBuilder:
         eviction: EvictionStrategy | None = None,
         participant: object | None = None,
         mode: str = "chat",
+        token_counter: TokenCounter | None = None,
     ) -> tuple[list[dict[str, str]], ContextUsage, EvictionReport]:
         """Build messages array with boundary-safe truncation.
 
@@ -77,6 +79,7 @@ class ContextBuilder:
         Raises:
             ValueError: If target_node_id is not found or parent chain is broken.
         """
+        counter = token_counter or ApproximateTokenCounter()
         # 1. Walk the parent chain to get messages in chronological order
         path = self._walk_path(nodes, target_node_id)
         path_node_ids = {n["node_id"] for n in path}
@@ -98,7 +101,7 @@ class ContextBuilder:
             if n["role"] not in ("user", "assistant", "tool"):
                 continue
             if n["node_id"] in effective_excluded:
-                excluded_token_total += self._count_tokens(
+                excluded_token_total += counter.count(
                     self._maybe_prepend_timestamp(n, include_timestamps)
                 )
                 excluded_node_count += 1
@@ -119,8 +122,8 @@ class ContextBuilder:
         ]
 
         # 3. Count tokens
-        system_tokens = self._count_tokens(system_prompt) if system_prompt else 0
-        message_tokens = [self._count_tokens(m["content"]) for m in messages]
+        system_tokens = counter.count(system_prompt) if system_prompt else 0
+        message_tokens = [counter.count(m["content"]) for m in messages]
         total = system_tokens + sum(message_tokens)
 
         # 4. Evict if over limit (mode dispatch)
@@ -222,14 +225,7 @@ class ContextBuilder:
         except (ValueError, TypeError):
             return content
 
-    @staticmethod
-    def _count_tokens(text: str) -> int:
-        """Approximate token count. len(text) // 4 for Phase 0.5.
 
-        Good enough for boundary-safe truncation. Structure allows swapping
-        in provider-specific tokenizers later.
-        """
-        return len(text) // 4
 
     @staticmethod
     def _truncate_to_fit(
@@ -333,4 +329,6 @@ class ContextBuilder:
             summary_needed=bool(strategy.summarize_evicted and evicted_content),
             evicted_content=evicted_content,
             final_token_count=total,
+            keep_first_turns=strategy.keep_first_turns,
+            summary_model=strategy.summary_model,
         )

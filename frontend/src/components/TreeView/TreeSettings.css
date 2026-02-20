@@ -260,8 +260,17 @@
 .tree-settings-actions {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
   gap: var(--space-sm);
   margin-top: var(--space-xs);
+}
+
+.tree-settings-dirty {
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  font-style: italic;
+  color: var(--text-tertiary);
+  margin-right: auto;
 }
 
 .tree-settings-save {

@@ -1,6 +1,5 @@
 """Tree service: coordinates EventStore and StateProjector for tree/node operations."""
 
-import json
 from collections import defaultdict
 from datetime import UTC, datetime
 from pathlib import Path
@@ -51,6 +50,7 @@ from qivis.trees.schemas import (
     TreeDetailResponse,
     TreeSummary,
 )
+from qivis.utils.json import parse_json_field, parse_json_or_none
 
 _TAXONOMY_PATH = Path(__file__).parent.parent / "annotation_taxonomy.yml"
 
@@ -104,20 +104,11 @@ class TreeService:
         # Map PatchTreeRequest fields to their current projected values
         field_to_current = {
             "title": tree["title"],
-            "metadata": (
-                json.loads(tree["metadata"])
-                if isinstance(tree["metadata"], str) and tree["metadata"]
-                else tree["metadata"] or {}
-            ),
+            "metadata": parse_json_field(tree["metadata"]) or {},
             "default_model": tree["default_model"],
             "default_provider": tree["default_provider"],
             "default_system_prompt": tree["default_system_prompt"],
-            "default_sampling_params": (
-                json.loads(tree["default_sampling_params"])
-                if isinstance(tree["default_sampling_params"], str)
-                and tree["default_sampling_params"]
-                else None
-            ),
+            "default_sampling_params": parse_json_field(tree["default_sampling_params"]),
         }
 
         now = datetime.now(UTC)
@@ -595,13 +586,20 @@ class TreeService:
     async def generate_bookmark_summary(
         self, tree_id: str, bookmark_id: str,
     ) -> BookmarkResponse:
-        """Generate a Haiku summary for a bookmark's branch (root -> bookmarked node)."""
+        """Generate a summary for a bookmark's branch (root -> bookmarked node)."""
         if self._summary_client is None:
             raise SummaryClientNotConfiguredError()
 
         tree = await self._projector.get_tree(tree_id)
         if tree is None:
             raise TreeNotFoundError(tree_id)
+
+        # Resolve summary model from tree's eviction strategy
+        metadata = parse_json_field(tree.get("metadata")) or {}
+        eviction_raw = metadata.get("eviction_strategy")
+        summary_model = "claude-haiku-4-5-20251001"
+        if isinstance(eviction_raw, dict) and "summary_model" in eviction_raw:
+            summary_model = eviction_raw["summary_model"]
 
         bm_row = await self._db.fetchone(
             "SELECT * FROM bookmarks WHERE bookmark_id = ? AND tree_id = ?",
@@ -633,7 +631,7 @@ class TreeService:
 
         # Call the dedicated summary client
         response = await self._summary_client.messages.create(
-            model="claude-haiku-4-5",
+            model=summary_model,
             max_tokens=100,
             system=(
                 "You write terse research bookmark notes — like a post-it flag "
@@ -686,7 +684,10 @@ class TreeService:
         return self._bookmark_from_row(updated_row)
 
     async def generate_eviction_summary(
-        self, evicted_content: list[str],
+        self,
+        evicted_content: list[str],
+        *,
+        model: str = "claude-haiku-4-5-20251001",
     ) -> str | None:
         """Generate a concise recap of evicted messages for context continuity.
 
@@ -700,7 +701,7 @@ class TreeService:
         transcript = "\n".join(evicted_content)
 
         response = await self._summary_client.messages.create(
-            model="claude-haiku-4-5",
+            model=model,
             max_tokens=200,
             system=(
                 "You write concise conversation recaps for context continuity. "
@@ -1046,9 +1047,7 @@ class TreeService:
     @staticmethod
     def _bookmark_from_row(row: dict) -> BookmarkResponse:
         """Convert a projected bookmark row to a response."""
-        summarized = row["summarized_node_ids"]
-        if summarized and isinstance(summarized, str):
-            summarized = json.loads(summarized)
+        summarized = parse_json_or_none(row["summarized_node_ids"])
         return BookmarkResponse(
             bookmark_id=row["bookmark_id"],
             tree_id=row["tree_id"],
@@ -1064,9 +1063,7 @@ class TreeService:
     @staticmethod
     def _annotation_from_row(row: dict) -> AnnotationResponse:
         """Convert a projected annotation row to a response."""
-        value = row["value"]
-        if value is not None:
-            value = json.loads(value)
+        value = parse_json_or_none(row["value"])
         return AnnotationResponse(
             annotation_id=row["annotation_id"],
             tree_id=row["tree_id"],
@@ -1113,20 +1110,11 @@ class TreeService:
         return TreeDetailResponse(
             tree_id=row["tree_id"],
             title=row["title"],
-            metadata=(
-                json.loads(row["metadata"])
-                if isinstance(row["metadata"], str)
-                else row["metadata"]
-            ),
+            metadata=parse_json_field(row["metadata"]) or {},
             default_model=row["default_model"],
             default_provider=row["default_provider"],
             default_system_prompt=row["default_system_prompt"],
-            default_sampling_params=(
-                json.loads(row["default_sampling_params"])
-                if isinstance(row["default_sampling_params"], str)
-                and row["default_sampling_params"]
-                else None
-            ),
+            default_sampling_params=parse_json_field(row["default_sampling_params"]),
             conversation_mode=row["conversation_mode"],
             created_at=row["created_at"],
             updated_at=row["updated_at"],
@@ -1157,14 +1145,6 @@ class TreeService:
         edit_counts: dict[str, int] | None = None,
     ) -> NodeResponse:
         """Convert a projected node row to a response."""
-
-        def maybe_json(val: object) -> dict | None:
-            if val is None:
-                return None
-            if isinstance(val, str):
-                return json.loads(val)
-            return val  # type: ignore[return-value]
-
         si, sc = (0, 1)
         if sibling_info is not None and row["node_id"] in sibling_info:
             si, sc = sibling_info[row["node_id"]]
@@ -1198,13 +1178,13 @@ class TreeService:
             model=row["model"],
             provider=row["provider"],
             system_prompt=row["system_prompt"],
-            sampling_params=maybe_json(row["sampling_params"]),
+            sampling_params=parse_json_or_none(row["sampling_params"]),
             mode=row["mode"],
-            usage=maybe_json(row["usage"]),
+            usage=parse_json_or_none(row["usage"]),
             latency_ms=row["latency_ms"],
             finish_reason=row["finish_reason"],
-            logprobs=maybe_json(row["logprobs"]),
-            context_usage=maybe_json(row["context_usage"]),
+            logprobs=parse_json_or_none(row["logprobs"]),
+            context_usage=parse_json_or_none(row["context_usage"]),
             participant_id=row["participant_id"],
             participant_name=row["participant_name"],
             thinking_content=row.get("thinking_content"),

@@ -123,21 +123,74 @@ CREATE TABLE IF NOT EXISTS node_anchors (
 );
 
 CREATE INDEX IF NOT EXISTS idx_node_anchors_tree_id ON node_anchors(tree_id);
+
+CREATE TABLE IF NOT EXISTS schema_migrations (
+    name TEXT PRIMARY KEY,
+    applied_at TEXT NOT NULL
+);
 """
 
-# Migrations for existing databases that already have the nodes table.
-_MIGRATIONS = [
-    "ALTER TABLE nodes ADD COLUMN thinking_content TEXT",
-    "ALTER TABLE nodes ADD COLUMN edited_content TEXT",
-    "ALTER TABLE nodes ADD COLUMN include_thinking_in_context INTEGER NOT NULL DEFAULT 0",
-    "ALTER TABLE nodes ADD COLUMN include_timestamps INTEGER NOT NULL DEFAULT 0",
+import logging
+from datetime import UTC, datetime
+
+import aiosqlite
+
+logger = logging.getLogger(__name__)
+
+# Named migrations: (name, sql). Applied in order, tracked by name.
+_MIGRATIONS: list[tuple[str, str]] = [
+    ("001_add_thinking_content",
+     "ALTER TABLE nodes ADD COLUMN thinking_content TEXT"),
+    ("002_add_edited_content",
+     "ALTER TABLE nodes ADD COLUMN edited_content TEXT"),
+    ("003_add_include_thinking_in_context",
+     "ALTER TABLE nodes ADD COLUMN include_thinking_in_context INTEGER NOT NULL DEFAULT 0"),
+    ("004_add_include_timestamps",
+     "ALTER TABLE nodes ADD COLUMN include_timestamps INTEGER NOT NULL DEFAULT 0"),
 ]
 
 
 async def run_migrations(db: object) -> None:
-    """Run schema migrations safely. Ignores errors for already-applied migrations."""
-    for sql in _MIGRATIONS:
+    """Run schema migrations with version tracking.
+
+    Each migration is identified by name. Applied migrations are recorded in
+    the schema_migrations table and skipped on subsequent runs. Handles the
+    transition from the old bare-except system by detecting already-existing
+    columns.
+    """
+    # Ensure tracking table exists (for databases created before it was added to SCHEMA_SQL)
+    await db.execute(
+        "CREATE TABLE IF NOT EXISTS schema_migrations "
+        "(name TEXT PRIMARY KEY, applied_at TEXT NOT NULL)"
+    )
+
+    # Load already-applied migration names
+    rows = await db.fetchall("SELECT name FROM schema_migrations")
+    applied = {row["name"] for row in rows}
+
+    for name, sql in _MIGRATIONS:
+        if name in applied:
+            logger.debug("Migration already applied, skipping: %s", name)
+            continue
+
+        now = datetime.now(UTC).isoformat()
         try:
             await db.execute(sql)
-        except Exception:
-            pass  # Column already exists or other expected error
+            await db.execute(
+                "INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)",
+                (name, now),
+            )
+            logger.info("Applied migration: %s", name)
+        except aiosqlite.OperationalError as e:
+            if "duplicate column name" in str(e).lower():
+                # Column already exists from pre-tracking era
+                await db.execute(
+                    "INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)",
+                    (name, now),
+                )
+                logger.debug(
+                    "Migration %s: column already exists, recording as applied", name
+                )
+            else:
+                logger.warning("Migration %s failed: %s", name, e)
+                raise

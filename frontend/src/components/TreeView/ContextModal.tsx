@@ -1,6 +1,7 @@
-import { Fragment, useEffect, useRef, useState } from 'react'
+import { Fragment, useRef, useState } from 'react'
 import type { ReconstructedContext, ReconstructedMessage } from './contextReconstruction.ts'
 import { formatSamplingParams } from './contextReconstruction.ts'
+import { useModalBehavior } from '../../hooks/useModalBehavior.ts'
 import './ContextModal.css'
 
 interface ContextModalProps {
@@ -52,25 +53,7 @@ function ExcludedMessageRow({ msg }: { msg: ReconstructedMessage }) {
 
 export function ContextModal({ context, onDismiss }: ContextModalProps) {
   const modalRef = useRef<HTMLDivElement>(null)
-
-  // Esc to dismiss + focus trap
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault()
-        onDismiss()
-      }
-    }
-    document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [onDismiss])
-
-  // Click outside to dismiss
-  const handleBackdropClick = (e: React.MouseEvent) => {
-    if (e.target === e.currentTarget) {
-      onDismiss()
-    }
-  }
+  const { handleBackdropClick } = useModalBehavior(modalRef, onDismiss)
 
   const samplingItems = formatSamplingParams(context.samplingParams)
   const inContextCount = context.messages.filter((m) => !m.isExcluded && !m.isEvicted).length

@@ -1,4 +1,6 @@
-import { useState } from 'react'
+import { memo, useState } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import type { LogprobData, NodeResponse, SamplingParams } from '../../api/types.ts'
 import { useTreeStore } from '../../store/treeStore.ts'
 import { AnnotationPanel } from './AnnotationPanel.tsx'
@@ -46,9 +48,7 @@ function formatTimestamp(isoString: string): string {
   })
 }
 
-interface MessageRowProps {
-  node: NodeResponse
-  siblings: NodeResponse[]
+export interface MessageRowActions {
   onSelectSibling: (siblingId: string) => void
   onFork: () => void
   onPrefill?: () => void
@@ -59,18 +59,33 @@ interface MessageRowProps {
   onBookmarkToggle?: () => void
   onExcludeToggle?: () => void
   onAnchorToggle?: () => void
-  isExcludedOnPath?: boolean
-  groupSelectable?: boolean
-  groupSelected?: boolean
   onGroupToggle?: () => void
-  diffSummary?: DiffSummary
   onSplitView?: () => void
-  highlightClass?: 'highlight-used' | 'highlight-other'
-  comparisonPickable?: boolean
   onComparisonPick?: () => void
 }
 
-export function MessageRow({ node, siblings, onSelectSibling, onFork, onPrefill, onGenerate, onCompare, onEdit, onInspect, onBookmarkToggle, onExcludeToggle, onAnchorToggle, isExcludedOnPath, groupSelectable, groupSelected, onGroupToggle, diffSummary, onSplitView, highlightClass, comparisonPickable, onComparisonPick }: MessageRowProps) {
+interface MessageRowProps {
+  node: NodeResponse
+  siblings: NodeResponse[]
+  actions: MessageRowActions
+  isExcludedOnPath?: boolean
+  groupSelectable?: boolean
+  groupSelected?: boolean
+  diffSummary?: DiffSummary
+  highlightClass?: 'highlight-used' | 'highlight-other'
+  comparisonPickable?: boolean
+}
+
+export const MessageRow = memo(function MessageRow({
+  node, siblings, actions, isExcludedOnPath, groupSelectable,
+  groupSelected, diffSummary, highlightClass, comparisonPickable,
+}: MessageRowProps) {
+  const {
+    onSelectSibling, onFork, onPrefill, onGenerate, onCompare,
+    onEdit, onInspect, onBookmarkToggle, onExcludeToggle,
+    onAnchorToggle, onGroupToggle, onSplitView, onComparisonPick,
+  } = actions
+
   const [showLogprobs, setShowLogprobs] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
   const [editValue, setEditValue] = useState('')
@@ -238,7 +253,11 @@ export function MessageRow({ node, siblings, onSelectSibling, onFork, onPrefill,
             /* Manual node — the whole content is fabricated, so it lives inside the slip */
             <div className="edit-overlay">
               <div className="edit-overlay-label">researcher authored</div>
-              <div className="edit-overlay-content">{node.content}</div>
+              <div className="edit-overlay-content">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    {node.content}
+                  </ReactMarkdown>
+                </div>
             </div>
           ) : (
             <>
@@ -246,8 +265,12 @@ export function MessageRow({ node, siblings, onSelectSibling, onFork, onPrefill,
               <div className="message-content">
                 {showLogprobs && logprobs ? (
                   <LogprobOverlay logprobs={logprobs} />
+                ) : showLogprobs ? (
+                  <span className="raw-text">{node.content}</span>
                 ) : (
-                  node.content
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    {node.content}
+                  </ReactMarkdown>
                 )}
               </div>
 
@@ -255,7 +278,11 @@ export function MessageRow({ node, siblings, onSelectSibling, onFork, onPrefill,
               {hasEdit && (
                 <div className="edit-overlay">
                   <div className="edit-overlay-label">model sees</div>
-                  <div className="edit-overlay-content">{node.edited_content}</div>
+                  <div className="edit-overlay-content">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                      {node.edited_content ?? ''}
+                    </ReactMarkdown>
+                  </div>
                 </div>
               )}
             </>
@@ -289,26 +316,43 @@ export function MessageRow({ node, siblings, onSelectSibling, onFork, onPrefill,
             <ContextDiffBadge summary={diffSummary} onClick={onSplitView} />
           </>
         )}
-        {avgCertainty != null && (
+        {node.role === 'assistant' && !isManual && (
           <>
             {' \u00b7 '}
             <span
               className={`certainty-badge${showLogprobs ? ' active' : ''}`}
               onClick={() => setShowLogprobs(!showLogprobs)}
-              title={showLogprobs ? 'Hide token probabilities' : 'Show token probabilities'}
+              title={showLogprobs
+                ? (logprobs ? 'Hide token probabilities' : 'Show rendered markdown')
+                : (logprobs ? 'Show token probabilities' : 'Show raw text')}
             >
-              <span
-                className="certainty-dot"
-                style={{ backgroundColor: uncertaintyColor(avgCertainty) === 'transparent'
-                  ? 'var(--ctx-green)'
-                  : uncertaintyColor(avgCertainty)
-                }}
-              />
-              {(avgCertainty * 100).toFixed(0)}%
+              {avgCertainty != null ? (
+                <>
+                  <span
+                    className="certainty-dot"
+                    style={{ backgroundColor: uncertaintyColor(avgCertainty) === 'transparent'
+                      ? 'var(--ctx-green)'
+                      : uncertaintyColor(avgCertainty)
+                    }}
+                  />
+                  {(avgCertainty * 100).toFixed(0)}%
+                </>
+              ) : (
+                <span className="raw-badge-label">{showLogprobs ? 'md' : 'raw'}</span>
+              )}
             </span>
           </>
         )}
       </div>
     </div>
   )
-}
+}, (prev, next) =>
+  prev.node === next.node &&
+  prev.siblings === next.siblings &&
+  prev.isExcludedOnPath === next.isExcludedOnPath &&
+  prev.groupSelectable === next.groupSelectable &&
+  prev.groupSelected === next.groupSelected &&
+  prev.diffSummary === next.diffSummary &&
+  prev.highlightClass === next.highlightClass &&
+  prev.comparisonPickable === next.comparisonPickable
+)

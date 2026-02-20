@@ -2,11 +2,13 @@
 
 Tests ContextBuilder's smart eviction mode: protected ranges (first N, last N,
 anchored nodes), warning threshold, mode dispatch, and combined exclusion + eviction.
+Also tests token counter interface and eviction report metadata (Interlude).
 """
 
 import pytest
 
 from qivis.generation.context import ContextBuilder
+from qivis.generation.tokens import ApproximateTokenCounter, TokenCounter
 from qivis.models import EvictionReport, EvictionStrategy
 
 
@@ -406,3 +408,138 @@ class TestContextUsageEvictedTokens:
         assert report.eviction_applied is True
         assert len(usage.evicted_node_ids) > 0
         assert usage.evicted_node_ids == report.evicted_node_ids
+
+
+# ---- Token counter interface (Interlude) ----
+
+
+class FixedTokenCounter(TokenCounter):
+    """Test counter that returns a fixed value per call."""
+
+    def __init__(self, tokens_per_call: int) -> None:
+        self._tpc = tokens_per_call
+
+    def count(self, text: str) -> int:
+        return self._tpc
+
+
+class TestTokenCounterInterface:
+    """TokenCounter ABC and implementations."""
+
+    def test_approximate_counter_matches_len_div_4(self):
+        """ApproximateTokenCounter reproduces the len // 4 heuristic."""
+        counter = ApproximateTokenCounter()
+        assert counter.count("hello world") == len("hello world") // 4
+        assert counter.count("") == 0
+        assert counter.count("abc") == 0  # 3 // 4 = 0
+        assert counter.count("abcd") == 1  # 4 // 4 = 1
+
+    def test_custom_counter_changes_eviction_threshold(self, builder: ContextBuilder):
+        """A custom counter that inflates token counts triggers eviction sooner."""
+        nodes = _make_long_conversation(4, content_len=20)
+        target = nodes[-1]["node_id"]
+        strategy = EvictionStrategy(mode="smart", keep_first_turns=2, recent_turns_to_keep=2)
+
+        # With approximate counter (small tokens), no eviction needed
+        _, _, report_approx = builder.build(
+            nodes=nodes,
+            target_node_id=target,
+            system_prompt=None,
+            model_context_limit=1000,
+            eviction=strategy,
+        )
+        assert report_approx.eviction_applied is False
+
+        # With inflated counter (100 tokens per message), eviction triggers
+        fat_counter = FixedTokenCounter(500)
+        _, _, report_fat = builder.build(
+            nodes=nodes,
+            target_node_id=target,
+            system_prompt=None,
+            model_context_limit=1000,
+            eviction=strategy,
+            token_counter=fat_counter,
+        )
+        assert report_fat.eviction_applied is True
+
+    def test_default_counter_when_none(self, builder: ContextBuilder):
+        """When no token_counter is passed, build() uses ApproximateTokenCounter."""
+        nodes = _make_long_conversation(3, content_len=40)
+        target = nodes[-1]["node_id"]
+        # Both calls should produce identical results
+        _, usage_default, _ = builder.build(
+            nodes=nodes,
+            target_node_id=target,
+            system_prompt="Be helpful.",
+            model_context_limit=200_000,
+        )
+        _, usage_explicit, _ = builder.build(
+            nodes=nodes,
+            target_node_id=target,
+            system_prompt="Be helpful.",
+            model_context_limit=200_000,
+            token_counter=ApproximateTokenCounter(),
+        )
+        assert usage_default.total_tokens == usage_explicit.total_tokens
+
+
+# ---- EvictionReport metadata (Interlude) ----
+
+
+class TestEvictionReportMetadata:
+    """EvictionReport carries strategy metadata for downstream use."""
+
+    def test_report_carries_keep_first_turns(self, builder: ContextBuilder):
+        """After smart eviction, report.keep_first_turns reflects the strategy."""
+        nodes = _make_long_conversation(8, content_len=100)
+        target = nodes[-1]["node_id"]
+        strategy = EvictionStrategy(mode="smart", keep_first_turns=5, recent_turns_to_keep=2)
+        _, _, report = builder.build(
+            nodes=nodes,
+            target_node_id=target,
+            system_prompt=None,
+            model_context_limit=300,
+            eviction=strategy,
+        )
+        assert report.eviction_applied is True
+        assert report.keep_first_turns == 5
+
+    def test_report_carries_summary_model(self, builder: ContextBuilder):
+        """After smart eviction, report.summary_model reflects the strategy."""
+        nodes = _make_long_conversation(8, content_len=100)
+        target = nodes[-1]["node_id"]
+        strategy = EvictionStrategy(
+            mode="smart",
+            keep_first_turns=2,
+            recent_turns_to_keep=2,
+            summary_model="gpt-4o-mini",
+        )
+        _, _, report = builder.build(
+            nodes=nodes,
+            target_node_id=target,
+            system_prompt=None,
+            model_context_limit=300,
+            eviction=strategy,
+        )
+        assert report.eviction_applied is True
+        assert report.summary_model == "gpt-4o-mini"
+
+    def test_default_report_has_sensible_defaults(self):
+        """Un-evicted report has default keep_first_turns=0 and default summary_model."""
+        report = EvictionReport()
+        assert report.keep_first_turns == 0
+        assert report.summary_model == "claude-haiku-4-5-20251001"
+
+    def test_report_defaults_when_no_eviction(self, builder: ContextBuilder):
+        """When no eviction is needed, report still has field defaults."""
+        nodes = _make_long_conversation(2, content_len=20)
+        target = nodes[-1]["node_id"]
+        _, _, report = builder.build(
+            nodes=nodes,
+            target_node_id=target,
+            system_prompt=None,
+            model_context_limit=200_000,
+        )
+        assert report.eviction_applied is False
+        assert report.keep_first_turns == 0
+        assert report.summary_model == "claude-haiku-4-5-20251001"

@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { GenerateRequest, ProviderInfo, SamplingParams } from '../../api/types.ts'
-import { SAMPLING_PRESETS, detectPreset, type PresetName } from './samplingPresets.ts'
+import { SamplingParamsPanel, type SamplingParamValues } from '../shared/SamplingParamsPanel.tsx'
 import './ForkPanel.css'
 
 interface ForkPanelProps {
@@ -46,28 +46,31 @@ export function ForkPanel({
   const selectedProvider = providers.find((p) => p.name === provider)
   const suggestedModels = selectedProvider?.models ?? []
   const supportedParams = selectedProvider?.supported_params ?? []
-  const isSupported = (param: string) => supportedParams.length === 0 || supportedParams.includes(param)
   const [systemPrompt, setSystemPrompt] = useState(defaults.systemPrompt ?? '')
 
   // Sampling state — initialize from tree defaults
   const sp = samplingDefaults ?? {}
-  const [temperature, setTemperature] = useState(sp.temperature != null ? String(sp.temperature) : '')
-  const [topP, setTopP] = useState(sp.top_p != null ? String(sp.top_p) : '')
-  const [topK, setTopK] = useState(sp.top_k != null ? String(sp.top_k) : '')
-  const [maxTokens, setMaxTokens] = useState(sp.max_tokens != null ? String(sp.max_tokens) : '')
-  const [frequencyPenalty, setFrequencyPenalty] = useState(
-    sp.frequency_penalty != null ? String(sp.frequency_penalty) : '',
-  )
-  const [presencePenalty, setPresencePenalty] = useState(
-    sp.presence_penalty != null ? String(sp.presence_penalty) : '',
-  )
-  const [extendedThinking, setExtendedThinking] = useState(sp.extended_thinking ?? false)
-  const [thinkingBudget, setThinkingBudget] = useState(
-    String(sp.thinking_budget ?? 10000),
-  )
+  const [samplingValues, setSamplingValues] = useState<SamplingParamValues>({
+    temperature: sp.temperature != null ? String(sp.temperature) : '',
+    topP: sp.top_p != null ? String(sp.top_p) : '',
+    topK: sp.top_k != null ? String(sp.top_k) : '',
+    maxTokens: sp.max_tokens != null ? String(sp.max_tokens) : '',
+    frequencyPenalty: sp.frequency_penalty != null ? String(sp.frequency_penalty) : '',
+    presencePenalty: sp.presence_penalty != null ? String(sp.presence_penalty) : '',
+    useThinking: sp.extended_thinking ?? false,
+    thinkingBudget: String(sp.thinking_budget ?? 10000),
+  })
+  const handleSamplingChange = (field: keyof SamplingParamValues, value: string | boolean) => {
+    setSamplingValues(prev => ({ ...prev, [field]: value }))
+  }
 
   const [count, setCount] = useState('1')
   const [stream, setStream] = useState(streamDefault)
+
+  const panelRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    panelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  }, [])
 
   const canSubmit =
     mode === 'regenerate' || mode === 'generate'
@@ -86,7 +89,7 @@ export function ForkPanel({
     }
 
     return (
-      <div className="fork-panel">
+      <div className="fork-panel" ref={panelRef}>
         <div className="fork-panel-header">
           <span className="fork-panel-title">Prefill assistant response</span>
           <button className="fork-panel-close" onClick={onCancel}>
@@ -117,20 +120,6 @@ export function ForkPanel({
     )
   }
 
-  const handlePresetChange = (presetName: PresetName) => {
-    if (presetName === 'custom') return
-    const preset = SAMPLING_PRESETS[presetName]
-    if (!preset) return
-    setTemperature(preset.temperature != null ? String(preset.temperature) : '')
-    setTopP(preset.top_p != null ? String(preset.top_p) : '')
-    if (preset.top_k != null) setTopK(String(preset.top_k))
-    if (preset.max_tokens != null) setMaxTokens(String(preset.max_tokens))
-    if (preset.frequency_penalty != null) setFrequencyPenalty(String(preset.frequency_penalty))
-    if (preset.presence_penalty != null) setPresencePenalty(String(preset.presence_penalty))
-  }
-
-  const currentPreset = detectPreset(temperature, topP)
-
   const handleSubmit = () => {
     if (!canSubmit) return
 
@@ -139,15 +128,15 @@ export function ForkPanel({
 
     // Build sampling_params from all fields — only include explicitly set values
     const samplingParams: SamplingParams = {}
-    if (temperature) samplingParams.temperature = parseFloat(temperature)
-    if (topP) samplingParams.top_p = parseFloat(topP)
-    if (topK) samplingParams.top_k = parseInt(topK, 10)
-    if (maxTokens) samplingParams.max_tokens = parseInt(maxTokens, 10)
-    if (frequencyPenalty) samplingParams.frequency_penalty = parseFloat(frequencyPenalty)
-    if (presencePenalty) samplingParams.presence_penalty = parseFloat(presencePenalty)
-    if (extendedThinking) {
-      samplingParams.extended_thinking = true
-      samplingParams.thinking_budget = parseInt(thinkingBudget, 10) || 10000
+    if (samplingValues.temperature) samplingParams.temperature = parseFloat(samplingValues.temperature)
+    if (samplingValues.topP) samplingParams.top_p = parseFloat(samplingValues.topP)
+    if (samplingValues.topK) samplingParams.top_k = parseInt(samplingValues.topK, 10)
+    if (samplingValues.maxTokens) samplingParams.max_tokens = parseInt(samplingValues.maxTokens, 10)
+    if (samplingValues.frequencyPenalty) samplingParams.frequency_penalty = parseFloat(samplingValues.frequencyPenalty)
+    if (samplingValues.presencePenalty) samplingParams.presence_penalty = parseFloat(samplingValues.presencePenalty)
+    samplingParams.extended_thinking = samplingValues.useThinking
+    if (samplingValues.useThinking) {
+      samplingParams.thinking_budget = parseInt(samplingValues.thinkingBudget, 10) || 10000
     }
 
     const overrides: GenerateRequest = {
@@ -183,7 +172,7 @@ export function ForkPanel({
     : 'Fork & Generate'
 
   return (
-    <div className="fork-panel">
+    <div className="fork-panel" ref={panelRef}>
       <div className="fork-panel-header">
         <span className="fork-panel-title">{title}</span>
         <button className="fork-panel-close" onClick={onCancel}>
@@ -265,109 +254,12 @@ export function ForkPanel({
 
             <div className="fork-settings-divider" />
 
-            <div className="fork-setting-row">
-              <label>Preset</label>
-              <select
-                value={currentPreset}
-                onChange={(e) => handlePresetChange(e.target.value as PresetName)}
-              >
-                {Object.entries(SAMPLING_PRESETS).map(([key, p]) => (
-                  <option key={key} value={key}>{p.label}</option>
-                ))}
-                <option value="custom">Custom</option>
-              </select>
-            </div>
-
-            <div className="fork-setting-row-pair">
-              <div className={`fork-setting-row${isSupported('temperature') ? '' : ' unsupported-param'}`}>
-                <label>Temperature</label>
-                <input
-                  type="number"
-                  step="0.05"
-                  min="0"
-                  max="2"
-                  value={temperature}
-                  onChange={(e) => setTemperature(e.target.value)}
-                  placeholder="default"
-                  disabled={!isSupported('temperature')}
-                  title={isSupported('temperature') ? undefined : `Not supported by ${provider}`}
-                />
-              </div>
-              <div className={`fork-setting-row${isSupported('top_p') ? '' : ' unsupported-param'}`}>
-                <label>Top P</label>
-                <input
-                  type="number"
-                  step="0.05"
-                  min="0"
-                  max="1"
-                  value={topP}
-                  onChange={(e) => setTopP(e.target.value)}
-                  placeholder="default"
-                  disabled={!isSupported('top_p')}
-                  title={isSupported('top_p') ? undefined : `Not supported by ${provider}`}
-                />
-              </div>
-            </div>
-
-            <div className="fork-setting-row-pair">
-              <div className={`fork-setting-row${isSupported('top_k') ? '' : ' unsupported-param'}`}>
-                <label>Top K</label>
-                <input
-                  type="number"
-                  step="1"
-                  min="0"
-                  value={topK}
-                  onChange={(e) => setTopK(e.target.value)}
-                  placeholder="default"
-                  disabled={!isSupported('top_k')}
-                  title={isSupported('top_k') ? undefined : `Not supported by ${provider}`}
-                />
-              </div>
-              <div className={`fork-setting-row${isSupported('max_tokens') ? '' : ' unsupported-param'}`}>
-                <label>Max tokens</label>
-                <input
-                  type="number"
-                  step="256"
-                  min="1"
-                  value={maxTokens}
-                  onChange={(e) => setMaxTokens(e.target.value)}
-                  placeholder="2048"
-                  disabled={!isSupported('max_tokens')}
-                  title={isSupported('max_tokens') ? undefined : `Not supported by ${provider}`}
-                />
-              </div>
-            </div>
-
-            <div className="fork-setting-row-pair">
-              <div className={`fork-setting-row${isSupported('frequency_penalty') ? '' : ' unsupported-param'}`}>
-                <label>Freq penalty</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  min="-2"
-                  max="2"
-                  value={frequencyPenalty}
-                  onChange={(e) => setFrequencyPenalty(e.target.value)}
-                  placeholder="default"
-                  disabled={!isSupported('frequency_penalty')}
-                  title={isSupported('frequency_penalty') ? undefined : `Not supported by ${provider}`}
-                />
-              </div>
-              <div className={`fork-setting-row${isSupported('presence_penalty') ? '' : ' unsupported-param'}`}>
-                <label>Pres penalty</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  min="-2"
-                  max="2"
-                  value={presencePenalty}
-                  onChange={(e) => setPresencePenalty(e.target.value)}
-                  placeholder="default"
-                  disabled={!isSupported('presence_penalty')}
-                  title={isSupported('presence_penalty') ? undefined : `Not supported by ${provider}`}
-                />
-              </div>
-            </div>
+            <SamplingParamsPanel
+              values={samplingValues}
+              onChange={handleSamplingChange}
+              supportedParams={supportedParams}
+              providerName={provider}
+            />
 
             <div className="fork-settings-divider" />
 
@@ -392,33 +284,6 @@ export function ForkPanel({
                 Stream
               </label>
             </div>
-            <div className={`fork-setting-row fork-setting-toggle${isSupported('extended_thinking') ? '' : ' unsupported-param'}`}>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={extendedThinking}
-                  onChange={(e) => setExtendedThinking(e.target.checked)}
-                  disabled={!isSupported('extended_thinking')}
-                />
-                Extended thinking
-              </label>
-              {!isSupported('extended_thinking') && (
-                <span className="unsupported-hint" title={`Not supported by ${provider}`}>unsupported</span>
-              )}
-            </div>
-            {extendedThinking && isSupported('extended_thinking') && (
-              <div className="fork-setting-row">
-                <label>Thinking budget</label>
-                <input
-                  type="number"
-                  min="1024"
-                  step="1024"
-                  value={thinkingBudget}
-                  onChange={(e) => setThinkingBudget(e.target.value)}
-                  placeholder="10000"
-                />
-              </div>
-            )}
           </div>
         )}
 

@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { GenerateRequest, NodeResponse } from '../../api/types.ts'
-import { getActivePath, useTreeStore } from '../../store/treeStore.ts'
+import { getActivePath, useTreeStore, useTreeData, useStreamingState, useNavigation, useComparison, useDigressionState, useResearchMetadata } from '../../store/treeStore.ts'
 import { ComparisonView } from '../ComparisonView/ComparisonView.tsx'
 import { ComparisonPickerBanner } from './ComparisonPickerBanner.tsx'
 import { ContextModal } from './ContextModal.tsx'
@@ -27,55 +27,42 @@ interface ForkTarget {
 }
 
 export function LinearView() {
+  const { currentTree, providers } = useTreeData()
   const {
-    currentTree,
-    providers,
-    isGenerating,
-    streamingContent,
-    streamingThinkingContent,
-    streamingContents,
-    streamingThinkingContents,
-    streamingNodeIds,
-    streamingTotal,
-    activeStreamIndex,
-    regeneratingParentId,
-    generationError,
-    branchSelections,
-    selectBranch,
-    editNodeContent,
-    setActiveStreamIndex,
-    forkAndGenerate,
-    regenerate,
-    prefillAssistant,
-    clearGenerationError,
-    fetchProviders,
-    selectedEditVersion,
-    editHistoryCache,
-    inspectedNodeId,
-    setInspectedNodeId,
-    splitViewNodeId,
-    setSplitViewNodeId,
-    bookmarks,
-    addBookmark,
-    removeBookmark,
-    exclusions,
-    digressionGroups,
-    excludeNode,
-    includeNode,
-    toggleAnchor,
-    groupSelectionMode,
-    selectedGroupNodeIds,
-    setGroupSelectionMode,
-    toggleGroupNodeSelection,
-    createDigressionGroup,
-    comparisonNodeId,
-    comparisonPickingMode,
-    comparisonPickingSourceId,
-    setComparisonNodeId,
-    enterComparisonPicking,
-    pickComparisonTarget,
-    cancelComparisonPicking,
-  } = useTreeStore()
+    isGenerating, streamingContent, streamingThinkingContent,
+    streamingContents, streamingThinkingContents, streamingNodeIds,
+    streamingTotal, activeStreamIndex, regeneratingParentId, generationError,
+  } = useStreamingState()
+  const { branchSelections } = useNavigation()
+  const {
+    splitViewNodeId, comparisonNodeId, comparisonPickingMode,
+    comparisonPickingSourceId, inspectedNodeId,
+  } = useComparison()
+  const { digressionGroups, groupSelectionMode, selectedGroupNodeIds } = useDigressionState()
+  const { bookmarks, exclusions, selectedEditVersion, editHistoryCache } = useResearchMetadata()
+
+  const selectBranch = useTreeStore(s => s.selectBranch)
+  const editNodeContent = useTreeStore(s => s.editNodeContent)
+  const setActiveStreamIndex = useTreeStore(s => s.setActiveStreamIndex)
+  const forkAndGenerate = useTreeStore(s => s.forkAndGenerate)
+  const regenerate = useTreeStore(s => s.regenerate)
+  const prefillAssistant = useTreeStore(s => s.prefillAssistant)
+  const clearGenerationError = useTreeStore(s => s.clearGenerationError)
+  const fetchProviders = useTreeStore(s => s.fetchProviders)
+  const setInspectedNodeId = useTreeStore(s => s.setInspectedNodeId)
+  const setSplitViewNodeId = useTreeStore(s => s.setSplitViewNodeId)
+  const addBookmark = useTreeStore(s => s.addBookmark)
+  const removeBookmark = useTreeStore(s => s.removeBookmark)
+  const excludeNode = useTreeStore(s => s.excludeNode)
+  const includeNode = useTreeStore(s => s.includeNode)
+  const toggleAnchor = useTreeStore(s => s.toggleAnchor)
+  const setGroupSelectionMode = useTreeStore(s => s.setGroupSelectionMode)
+  const toggleGroupNodeSelection = useTreeStore(s => s.toggleGroupNodeSelection)
+  const createDigressionGroup = useTreeStore(s => s.createDigressionGroup)
+  const setComparisonNodeId = useTreeStore(s => s.setComparisonNodeId)
+  const enterComparisonPicking = useTreeStore(s => s.enterComparisonPicking)
+  const pickComparisonTarget = useTreeStore(s => s.pickComparisonTarget)
+  const cancelComparisonPicking = useTreeStore(s => s.cancelComparisonPicking)
 
   const bottomRef = useRef<HTMLDivElement>(null)
   const [forkTarget, setForkTarget] = useState<ForkTarget | null>(null)
@@ -342,56 +329,57 @@ export function LinearView() {
               <MessageRow
                 node={node}
                 siblings={siblings}
-                onSelectSibling={(siblingId) =>
-                  handleSelectSibling(nodeParentKey, siblingId)
-                }
-                onFork={isPicking ? () => {} : () => handleFork(nodeParentKey, node.role)}
-                onPrefill={isPicking ? undefined : node.role === 'user' ? () => {
-                  if (forkTarget?.parentId === node.node_id && forkTarget.mode === 'prefill') {
-                    setForkTarget(null)
-                  } else {
-                    setForkTarget({ parentId: node.node_id, mode: 'prefill' })
-                  }
-                } : undefined}
-                onGenerate={isPicking ? undefined : node.role === 'user' ? () => {
-                  if (forkTarget?.parentId === node.node_id && forkTarget.mode === 'generate') {
-                    setForkTarget(null)
-                  } else {
-                    setForkTarget({ parentId: node.node_id, mode: 'generate' })
-                  }
-                } : undefined}
-                onEdit={isPicking ? undefined : (nodeId, editedContent) => editNodeContent(nodeId, editedContent)}
-                onInspect={isPicking ? undefined : node.role === 'assistant' && node.mode !== 'manual'
-                  ? () => setInspectedNodeId(
-                      inspectedNodeId === node.node_id ? null : node.node_id
-                    )
-                  : undefined}
-                diffSummary={isPicking ? undefined : diffSummaries.get(node.node_id)}
-                onSplitView={isPicking ? undefined : diffSummaries.has(node.node_id)
-                  ? () => setSplitViewNodeId(
-                      splitViewNodeId === node.node_id ? null : node.node_id
-                    )
-                  : undefined}
-                onBookmarkToggle={isPicking ? undefined : () => {
-                  if (node.is_bookmarked) {
-                    const bm = bookmarks.find((b) => b.node_id === node.node_id)
-                    if (bm) removeBookmark(bm.bookmark_id)
-                  } else {
-                    addBookmark(node.node_id, node.content.slice(0, 60))
-                  }
+                actions={{
+                  onSelectSibling: (siblingId) =>
+                    handleSelectSibling(nodeParentKey, siblingId),
+                  onFork: isPicking ? () => {} : () => handleFork(nodeParentKey, node.role),
+                  onPrefill: isPicking ? undefined : node.role === 'user' ? () => {
+                    if (forkTarget?.parentId === node.node_id && forkTarget.mode === 'prefill') {
+                      setForkTarget(null)
+                    } else {
+                      setForkTarget({ parentId: node.node_id, mode: 'prefill' })
+                    }
+                  } : undefined,
+                  onGenerate: isPicking ? undefined : node.role === 'user' ? () => {
+                    if (forkTarget?.parentId === node.node_id && forkTarget.mode === 'generate') {
+                      setForkTarget(null)
+                    } else {
+                      setForkTarget({ parentId: node.node_id, mode: 'generate' })
+                    }
+                  } : undefined,
+                  onEdit: isPicking ? undefined : (nodeId, editedContent) => editNodeContent(nodeId, editedContent),
+                  onInspect: isPicking ? undefined : node.role === 'assistant' && node.mode !== 'manual'
+                    ? () => setInspectedNodeId(
+                        inspectedNodeId === node.node_id ? null : node.node_id
+                      )
+                    : undefined,
+                  onSplitView: isPicking ? undefined : diffSummaries.has(node.node_id)
+                    ? () => setSplitViewNodeId(
+                        splitViewNodeId === node.node_id ? null : node.node_id
+                      )
+                    : undefined,
+                  onBookmarkToggle: isPicking ? undefined : () => {
+                    if (node.is_bookmarked) {
+                      const bm = bookmarks.find((b) => b.node_id === node.node_id)
+                      if (bm) removeBookmark(bm.bookmark_id)
+                    } else {
+                      addBookmark(node.node_id, node.content.slice(0, 60))
+                    }
+                  },
+                  onExcludeToggle: isPicking ? undefined : () => handleExcludeToggle(node.node_id),
+                  onAnchorToggle: isPicking ? undefined : () => toggleAnchor(node.node_id),
+                  onGroupToggle: () => handleGroupNodeToggle(node.node_id),
+                  onCompare: isPicking ? undefined : siblings.length > 1 ? () => setComparingAtParent(
+                    comparingAtParent === nodeParentKey ? null : nodeParentKey,
+                  ) : undefined,
+                  onComparisonPick: isPicking && isPickable ? () => pickComparisonTarget(node.node_id) : undefined,
                 }}
-                onExcludeToggle={isPicking ? undefined : () => handleExcludeToggle(node.node_id)}
-                onAnchorToggle={isPicking ? undefined : () => toggleAnchor(node.node_id)}
                 isExcludedOnPath={effectiveExcludedIds.has(node.node_id)}
                 groupSelectable={!isPicking && groupSelectionMode}
                 groupSelected={selectedGroupNodeIds.includes(node.node_id)}
-                onGroupToggle={() => handleGroupNodeToggle(node.node_id)}
-                onCompare={isPicking ? undefined : siblings.length > 1 ? () => setComparingAtParent(
-                  comparingAtParent === nodeParentKey ? null : nodeParentKey,
-                ) : undefined}
+                diffSummary={isPicking ? undefined : diffSummaries.get(node.node_id)}
                 highlightClass={highlights.get(node.node_id)}
                 comparisonPickable={isPicking ? isPickable : undefined}
-                onComparisonPick={isPicking && isPickable ? () => pickComparisonTarget(node.node_id) : undefined}
               />
               {!isPicking && comparingAtParent === nodeParentKey && (
                 <ComparisonView

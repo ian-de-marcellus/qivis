@@ -339,27 +339,43 @@ _Goal: Annotate, bookmark, manage context, export._
 
 _Goal: Fix bugs, clean up debt, solid foundation before new features._
 
-### Bug Fixes
+Organized into four chunks, each interleaving bug fixes and refactors that touch the same code areas.
+
+### Chunk 1 — Generation Pipeline (backend)
+
+Bug fixes and debt in the context building / eviction / summary path.
+
+- **Eviction summary injection**: insertion position works by coincidence (hardcoded 2 matches default `keep_first_turns=2`). Fix: carry `keep_first_turns` through `EvictionReport`, use it for correct positioning
+- **Configurable summary model**: `EvictionStrategy.summary_model` field exists but is never read — both summary methods hardcode `"claude-haiku-4-5"`. Wire the field through `EvictionReport` to the actual API calls
+- **Token counter interface**: replace `len(text) // 4` with `TokenCounter` ABC + `ApproximateTokenCounter`. Accept counter in `ContextBuilder.build()`. Provider-specific counters come in Phase 8
+- **Unified JSON parsing**: consolidate `_parse_json_field()`, `maybe_json()`, `_parse_json_or_raw()`, `_json_str()`, and bare `json.loads()` into `qivis/utils/json.py`
+
+### Chunk 2 — Store & Component Architecture (frontend)
+
+Frontend structural refactors.
+
+- **Zustand store slicing**: break 1374-line store into coherent slices (streaming, comparison, digression groups, UI panels). Use Zustand selector pattern instead of destructuring 26+ fields. Add `rightPaneMode` to centralize mutual exclusion of graph/digression/split views
+- **Extract shared sampling UI**: `<SamplingParamsPanel />` component used by both ForkPanel and TreeSettings. Move `SAMPLING_PRESETS` and `detectPreset` to shared location. Eliminates ~150 lines of duplication
+- **MessageRow prop reduction**: split 22-prop MessageRow into `<MessageRow>` (content) + `<MessageRowToolbar>` (actions). Wrap in `React.memo()`
+- **Modal focus management**: add focus traps to ContextModal, ContextSplitView, CanvasView. Add `aria-live` to error banners and streaming status
+
+### Chunk 3 — UI Fixes & Polish (frontend)
+
+Six small-to-medium UI bugs, rapid-fire.
 
 - **Context bar clickable size**: increase hit target for the context usage bar on assistant messages
 - **Regen dialog position**: should appear above the message, not below (current placement pushes content off-screen)
 - **Extended thinking override on regenerate**: turning thinking off in regen dialog may not override tree default due to sampling param merge backward-compat hack
-- **TreeSettings save consistency**: some fields save immediately (checkboxes), others buffer and require explicit Save button. Inconsistent UX — user can't tell what's saved. Fix: either auto-save all, or make all fields buffer with clear dirty indicators and a single Save
+- **TreeSettings save consistency**: some fields save immediately (checkboxes), others buffer and require explicit Save button. Fix: either auto-save all, or make all fields buffer with clear dirty indicators and a single Save
 - **Center button for collapsed tree panel**: when sidebar is collapsed, add a centered expand button
 - **Markdown rendering**: message content should render markdown (bold, italic, code blocks, lists). Double asterisks currently display raw
-- **Eviction summary injection**: `_smart_evict()` collects evicted content and sets `summary_needed: True`, but no summary is ever generated or inserted into messages. Wire up the last mile
-- **Configurable summary model**: replace hardcoded `"claude-haiku-4-5"` for bookmark and eviction summaries with a configurable per-tree or global setting
 
-### Technical Debt
+### Chunk 4 — Documentation & Infrastructure (backend + docs)
 
-- **Token counter interface**: replace `len(text) // 4` with a `TokenCounter` ABC. Implement `ApproximateTokenCounter` (current behavior) and `TiktokenTokenCounter` for accuracy. Make switchable per provider in context builder
-- **Zustand store slicing**: break 1374-line store into coherent slices (streaming, comparison, digression groups, UI panels). Use Zustand selector pattern instead of destructuring 26+ fields. Add `rightPaneMode` to centralize mutual exclusion of graph/digression/split views
-- **Extract shared sampling UI**: `<SamplingParamsPanel />` component used by both ForkPanel and TreeSettings. Move `SAMPLING_PRESETS` and `detectPreset` to shared location. Eliminates ~150 lines of duplication
-- **Unified JSON parsing**: consolidate `_parse_json_field()`, `maybe_json()`, and direct `json.loads()` into `qivis/utils/json.py`
+Bookends: one looks backward (documenting reality), one looks forward (safer migrations).
+
 - **Update architecture doc**: reflect implementation reality — context builder signature, anchors vs bookmarks, provider class attributes vs abstract methods, extra data model fields (thinking, editing, timestamps, prefill/manual mode)
 - **Migration system**: add version tracking table, specific error catching (not bare `except Exception: pass`), logging of success/failure per migration
-- **MessageRow prop reduction**: split 22-prop MessageRow into `<MessageRow>` (content) + `<MessageRowToolbar>` (actions). Wrap in `React.memo()`
-- **Modal focus management**: add focus traps to ContextModal, ContextSplitView, CanvasView. Add `aria-live` to error banners and streaming status
 
 ✅ All bugs fixed, debt addressed, architecture doc matches code. Store is organized, components are manageable, modals are accessible. Clean foundation for Phase 7+.
 

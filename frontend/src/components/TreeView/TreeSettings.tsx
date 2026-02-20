@@ -1,18 +1,18 @@
 import { useEffect, useState } from 'react'
 import type { EvictionStrategy, PatchTreeRequest, SamplingParams } from '../../api/types.ts'
 import { exportTree } from '../../api/client.ts'
-import { useTreeStore } from '../../store/treeStore.ts'
-import { SAMPLING_PRESETS, detectPreset, type PresetName } from './samplingPresets.ts'
+import { useTreeStore, useTreeData, useRightPane } from '../../store/treeStore.ts'
+import { SamplingParamsPanel, type SamplingParamValues } from '../shared/SamplingParamsPanel.tsx'
 import './TreeSettings.css'
 
-interface TreeSettingsProps {
-  graphOpen?: boolean
-  onToggleGraph?: () => void
-}
+export function TreeSettings() {
+  const { currentTree, providers } = useTreeData()
+  const { rightPaneMode, canvasOpen } = useRightPane()
+  const updateTree = useTreeStore(s => s.updateTree)
+  const fetchProviders = useTreeStore(s => s.fetchProviders)
+  const setCanvasOpen = useTreeStore(s => s.setCanvasOpen)
+  const setRightPaneMode = useTreeStore(s => s.setRightPaneMode)
 
-export function TreeSettings({ graphOpen, onToggleGraph }: TreeSettingsProps) {
-  // Close graph when opening groups panel (mutual exclusion for right pane)
-  const { currentTree, updateTree, providers, fetchProviders, canvasOpen, setCanvasOpen, digressionPanelOpen, setDigressionPanelOpen } = useTreeStore()
   const [isOpen, setIsOpen] = useState(false)
   const [isEditingTitle, setIsEditingTitle] = useState(false)
 
@@ -22,15 +22,26 @@ export function TreeSettings({ graphOpen, onToggleGraph }: TreeSettingsProps) {
   const [model, setModel] = useState('')
   const [systemPrompt, setSystemPrompt] = useState('')
 
-  // Sampling defaults state
-  const [temperature, setTemperature] = useState('')
-  const [topP, setTopP] = useState('')
-  const [topK, setTopK] = useState('')
-  const [maxTokens, setMaxTokens] = useState('')
-  const [frequencyPenalty, setFrequencyPenalty] = useState('')
-  const [presencePenalty, setPresencePenalty] = useState('')
-  const [extendedThinking, setExtendedThinking] = useState(false)
-  const [thinkingBudget, setThinkingBudget] = useState('10000')
+  // Sampling defaults state — single object for SamplingParamsPanel
+  const [samplingValues, setSamplingValues] = useState<SamplingParamValues>({
+    temperature: '',
+    topP: '',
+    topK: '',
+    maxTokens: '',
+    frequencyPenalty: '',
+    presencePenalty: '',
+    useThinking: false,
+    thinkingBudget: '10000',
+  })
+  const handleSamplingChange = (field: keyof SamplingParamValues, value: string | boolean) => {
+    setSamplingValues(prev => ({ ...prev, [field]: value }))
+  }
+
+  // Metadata toggle state (previously auto-saved, now buffered)
+  const [includeTimestamps, setIncludeTimestamps] = useState(false)
+  const [streamResponses, setStreamResponses] = useState(true)
+  const [includeThinking, setIncludeThinking] = useState(false)
+  const [debugContextLimit, setDebugContextLimit] = useState('')
 
   // Eviction strategy state
   const [evictionMode, setEvictionMode] = useState<'smart' | 'truncate' | 'none'>('smart')
@@ -51,19 +62,23 @@ export function TreeSettings({ graphOpen, onToggleGraph }: TreeSettingsProps) {
       // Sampling defaults — read from default_sampling_params, fall back to metadata
       const sp = currentTree.default_sampling_params
       const meta = currentTree.metadata
-      setTemperature(sp?.temperature != null ? String(sp.temperature) : '')
-      setTopP(sp?.top_p != null ? String(sp.top_p) : '')
-      setTopK(sp?.top_k != null ? String(sp.top_k) : '')
-      setMaxTokens(sp?.max_tokens != null ? String(sp.max_tokens) : '')
-      setFrequencyPenalty(sp?.frequency_penalty != null ? String(sp.frequency_penalty) : '')
-      setPresencePenalty(sp?.presence_penalty != null ? String(sp.presence_penalty) : '')
-
-      // Extended thinking: prefer default_sampling_params, fall back to metadata
       const thinkingOn = sp?.extended_thinking ?? !!meta?.extended_thinking
-      setExtendedThinking(thinkingOn)
-      setThinkingBudget(
-        String(sp?.thinking_budget ?? (meta?.thinking_budget as number | undefined) ?? 10000),
-      )
+      setSamplingValues({
+        temperature: sp?.temperature != null ? String(sp.temperature) : '',
+        topP: sp?.top_p != null ? String(sp.top_p) : '',
+        topK: sp?.top_k != null ? String(sp.top_k) : '',
+        maxTokens: sp?.max_tokens != null ? String(sp.max_tokens) : '',
+        frequencyPenalty: sp?.frequency_penalty != null ? String(sp.frequency_penalty) : '',
+        presencePenalty: sp?.presence_penalty != null ? String(sp.presence_penalty) : '',
+        useThinking: thinkingOn,
+        thinkingBudget: String(sp?.thinking_budget ?? (meta?.thinking_budget as number | undefined) ?? 10000),
+      })
+
+      // Metadata toggles
+      setIncludeTimestamps(!!meta?.include_timestamps)
+      setStreamResponses(meta?.stream_responses !== false)
+      setIncludeThinking(!!meta?.include_thinking_in_context)
+      setDebugContextLimit(meta?.debug_context_limit != null ? String(meta.debug_context_limit) : '')
 
       // Eviction strategy from metadata
       const es = meta?.eviction_strategy as Partial<EvictionStrategy> | undefined
@@ -86,19 +101,18 @@ export function TreeSettings({ graphOpen, onToggleGraph }: TreeSettingsProps) {
   const selectedProvider = providers.find((p) => p.name === provider)
   const suggestedModels = selectedProvider?.models ?? []
   const supportedParams = selectedProvider?.supported_params ?? []
-  const isSupported = (param: string) => !provider || supportedParams.length === 0 || supportedParams.includes(param)
 
   // Build what the current sampling params "should be" from form
   const formSamplingParams: SamplingParams = {}
-  if (temperature) formSamplingParams.temperature = parseFloat(temperature)
-  if (topP) formSamplingParams.top_p = parseFloat(topP)
-  if (topK) formSamplingParams.top_k = parseInt(topK, 10)
-  if (maxTokens) formSamplingParams.max_tokens = parseInt(maxTokens, 10)
-  if (frequencyPenalty) formSamplingParams.frequency_penalty = parseFloat(frequencyPenalty)
-  if (presencePenalty) formSamplingParams.presence_penalty = parseFloat(presencePenalty)
-  if (extendedThinking) {
+  if (samplingValues.temperature) formSamplingParams.temperature = parseFloat(samplingValues.temperature)
+  if (samplingValues.topP) formSamplingParams.top_p = parseFloat(samplingValues.topP)
+  if (samplingValues.topK) formSamplingParams.top_k = parseInt(samplingValues.topK, 10)
+  if (samplingValues.maxTokens) formSamplingParams.max_tokens = parseInt(samplingValues.maxTokens, 10)
+  if (samplingValues.frequencyPenalty) formSamplingParams.frequency_penalty = parseFloat(samplingValues.frequencyPenalty)
+  if (samplingValues.presencePenalty) formSamplingParams.presence_penalty = parseFloat(samplingValues.presencePenalty)
+  if (samplingValues.useThinking) {
     formSamplingParams.extended_thinking = true
-    formSamplingParams.thinking_budget = parseInt(thinkingBudget, 10) || 10000
+    formSamplingParams.thinking_budget = parseInt(samplingValues.thinkingBudget, 10) || 10000
   }
 
   // Compare form sampling params to current tree
@@ -109,26 +123,29 @@ export function TreeSettings({ graphOpen, onToggleGraph }: TreeSettingsProps) {
     ),
   )
 
+  const currentMeta = currentTree.metadata ?? {}
+  const currentEs = currentMeta.eviction_strategy as Partial<EvictionStrategy> | undefined
+  const metadataChanged =
+    includeTimestamps !== !!currentMeta.include_timestamps ||
+    streamResponses !== (currentMeta.stream_responses !== false) ||
+    includeThinking !== !!currentMeta.include_thinking_in_context ||
+    debugContextLimit !== (currentMeta.debug_context_limit != null ? String(currentMeta.debug_context_limit) : '') ||
+    evictionMode !== (currentEs?.mode ?? 'smart') ||
+    (evictionMode === 'smart' && (
+      keepFirstTurns !== String(currentEs?.keep_first_turns ?? 2) ||
+      recentTurnsToKeep !== String(currentEs?.recent_turns_to_keep ?? 4) ||
+      keepAnchored !== (currentEs?.keep_anchored ?? true) ||
+      summarizeEvicted !== (currentEs?.summarize_evicted ?? true) ||
+      warnThreshold !== String(currentEs?.warn_threshold ?? 0.85)
+    ))
+
   const hasChanges =
     title !== (currentTree.title ?? '') ||
     provider !== (currentTree.default_provider ?? '') ||
     model !== (currentTree.default_model ?? '') ||
     systemPrompt !== (currentTree.default_system_prompt ?? '') ||
-    samplingChanged
-
-  const handlePresetChange = (presetName: PresetName) => {
-    if (presetName === 'custom') return
-    const preset = SAMPLING_PRESETS[presetName]
-    if (!preset) return
-    setTemperature(preset.temperature != null ? String(preset.temperature) : '')
-    setTopP(preset.top_p != null ? String(preset.top_p) : '')
-    if (preset.top_k != null) setTopK(String(preset.top_k))
-    if (preset.max_tokens != null) setMaxTokens(String(preset.max_tokens))
-    if (preset.frequency_penalty != null) setFrequencyPenalty(String(preset.frequency_penalty))
-    if (preset.presence_penalty != null) setPresencePenalty(String(preset.presence_penalty))
-  }
-
-  const currentPreset = detectPreset(temperature, topP)
+    samplingChanged ||
+    metadataChanged
 
   const handleSave = async () => {
     if (!hasChanges) return
@@ -147,12 +164,36 @@ export function TreeSettings({ graphOpen, onToggleGraph }: TreeSettingsProps) {
         : null
     }
 
-    // If metadata still has extended_thinking, clear it now that we use default_sampling_params
-    if (currentTree.metadata?.extended_thinking != null) {
-      const cleanMeta = { ...currentTree.metadata }
-      delete cleanMeta.extended_thinking
-      delete cleanMeta.thinking_budget
-      req.metadata = cleanMeta
+    // Build merged metadata from all buffered fields
+    if (metadataChanged || currentTree.metadata?.extended_thinking != null) {
+      const newMeta = { ...currentTree.metadata } as Record<string, unknown>
+      // Clear legacy thinking fields (now in default_sampling_params)
+      delete newMeta.extended_thinking
+      delete newMeta.thinking_budget
+
+      // Metadata toggles
+      newMeta.include_timestamps = includeTimestamps
+      newMeta.stream_responses = streamResponses
+      newMeta.include_thinking_in_context = includeThinking
+      newMeta.debug_context_limit = debugContextLimit
+        ? (parseInt(debugContextLimit, 10) || null)
+        : null
+
+      // Eviction strategy
+      if (evictionMode === 'smart') {
+        newMeta.eviction_strategy = {
+          mode: evictionMode,
+          keep_first_turns: parseInt(keepFirstTurns, 10) || 2,
+          recent_turns_to_keep: parseInt(recentTurnsToKeep, 10) || 4,
+          keep_anchored: keepAnchored,
+          summarize_evicted: summarizeEvicted,
+          warn_threshold: parseFloat(warnThreshold) || 0.85,
+        }
+      } else {
+        newMeta.eviction_strategy = { mode: evictionMode }
+      }
+
+      req.metadata = newMeta
     }
 
     await updateTree(currentTree.tree_id, req)
@@ -177,6 +218,8 @@ export function TreeSettings({ graphOpen, onToggleGraph }: TreeSettingsProps) {
     }
   }
 
+  const graphOpen = rightPaneMode === 'graph'
+
   return (
     <div className="tree-settings">
       <div className="tree-settings-bar">
@@ -198,22 +241,20 @@ export function TreeSettings({ graphOpen, onToggleGraph }: TreeSettingsProps) {
             {currentTree.title || 'Untitled'}
           </span>
         )}
-        {onToggleGraph && (
-          <button
-            className={`graph-toggle ${graphOpen ? 'active' : ''}`}
-            onClick={onToggleGraph}
-            aria-label={graphOpen ? 'Hide graph view' : 'Show graph view'}
-            title={graphOpen ? 'Hide graph' : 'Show graph'}
-          >
-            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-              <circle cx="10" cy="4" r="2" />
-              <circle cx="5" cy="14" r="2" />
-              <circle cx="15" cy="14" r="2" />
-              <line x1="10" y1="6" x2="5" y2="12" />
-              <line x1="10" y1="6" x2="15" y2="12" />
-            </svg>
-          </button>
-        )}
+        <button
+          className={`graph-toggle ${graphOpen ? 'active' : ''}`}
+          onClick={() => setRightPaneMode(graphOpen ? null : 'graph')}
+          aria-label={graphOpen ? 'Hide graph view' : 'Show graph view'}
+          title={graphOpen ? 'Hide graph' : 'Show graph'}
+        >
+          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+            <circle cx="10" cy="4" r="2" />
+            <circle cx="5" cy="14" r="2" />
+            <circle cx="15" cy="14" r="2" />
+            <line x1="10" y1="6" x2="5" y2="12" />
+            <line x1="10" y1="6" x2="15" y2="12" />
+          </svg>
+        </button>
         <button
           className={`graph-toggle canvas-toggle ${canvasOpen ? 'active' : ''}`}
           onClick={() => setCanvasOpen(!canvasOpen)}
@@ -227,15 +268,10 @@ export function TreeSettings({ graphOpen, onToggleGraph }: TreeSettingsProps) {
           </svg>
         </button>
         <button
-          className={`graph-toggle ${digressionPanelOpen ? 'active' : ''}`}
-          onClick={() => {
-            if (!digressionPanelOpen && graphOpen && onToggleGraph) {
-              onToggleGraph() // close graph first
-            }
-            setDigressionPanelOpen(!digressionPanelOpen)
-          }}
-          aria-label={digressionPanelOpen ? 'Hide digression groups' : 'Show digression groups'}
-          title={digressionPanelOpen ? 'Hide groups' : 'Digression groups'}
+          className={`graph-toggle ${rightPaneMode === 'digressions' ? 'active' : ''}`}
+          onClick={() => setRightPaneMode(rightPaneMode === 'digressions' ? null : 'digressions')}
+          aria-label={rightPaneMode === 'digressions' ? 'Hide digression groups' : 'Show digression groups'}
+          title={rightPaneMode === 'digressions' ? 'Hide groups' : 'Digression groups'}
         >
           <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
             <rect x="3" y="3" width="14" height="4" rx="1" />
@@ -316,138 +352,12 @@ export function TreeSettings({ graphOpen, onToggleGraph }: TreeSettingsProps) {
 
             <div className="tree-settings-section-label">Sampling defaults</div>
 
-            <div className="tree-settings-field">
-              <label>Preset</label>
-              <select
-                value={currentPreset}
-                onChange={(e) => handlePresetChange(e.target.value as PresetName)}
-              >
-                {Object.entries(SAMPLING_PRESETS).map(([key, p]) => (
-                  <option key={key} value={key}>{p.label}</option>
-                ))}
-                <option value="custom">Custom</option>
-              </select>
-            </div>
-
-            <div className="tree-settings-row-pair">
-              <div className={`tree-settings-field${isSupported('temperature') ? '' : ' unsupported-param'}`}>
-                <label>Temperature</label>
-                <input
-                  type="number"
-                  step="0.05"
-                  min="0"
-                  max="2"
-                  value={temperature}
-                  onChange={(e) => setTemperature(e.target.value)}
-                  placeholder="default"
-                  disabled={!isSupported('temperature')}
-                  title={isSupported('temperature') ? undefined : `Not supported by ${provider}`}
-                />
-              </div>
-              <div className={`tree-settings-field${isSupported('top_p') ? '' : ' unsupported-param'}`}>
-                <label>Top P</label>
-                <input
-                  type="number"
-                  step="0.05"
-                  min="0"
-                  max="1"
-                  value={topP}
-                  onChange={(e) => setTopP(e.target.value)}
-                  placeholder="default"
-                  disabled={!isSupported('top_p')}
-                  title={isSupported('top_p') ? undefined : `Not supported by ${provider}`}
-                />
-              </div>
-            </div>
-
-            <div className="tree-settings-row-pair">
-              <div className={`tree-settings-field${isSupported('top_k') ? '' : ' unsupported-param'}`}>
-                <label>Top K</label>
-                <input
-                  type="number"
-                  step="1"
-                  min="0"
-                  value={topK}
-                  onChange={(e) => setTopK(e.target.value)}
-                  placeholder="default"
-                  disabled={!isSupported('top_k')}
-                  title={isSupported('top_k') ? undefined : `Not supported by ${provider}`}
-                />
-              </div>
-              <div className={`tree-settings-field${isSupported('max_tokens') ? '' : ' unsupported-param'}`}>
-                <label>Max tokens</label>
-                <input
-                  type="number"
-                  step="256"
-                  min="1"
-                  value={maxTokens}
-                  onChange={(e) => setMaxTokens(e.target.value)}
-                  placeholder="2048"
-                  disabled={!isSupported('max_tokens')}
-                  title={isSupported('max_tokens') ? undefined : `Not supported by ${provider}`}
-                />
-              </div>
-            </div>
-
-            <div className="tree-settings-row-pair">
-              <div className={`tree-settings-field${isSupported('frequency_penalty') ? '' : ' unsupported-param'}`}>
-                <label>Freq penalty</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  min="-2"
-                  max="2"
-                  value={frequencyPenalty}
-                  onChange={(e) => setFrequencyPenalty(e.target.value)}
-                  placeholder="default"
-                  disabled={!isSupported('frequency_penalty')}
-                  title={isSupported('frequency_penalty') ? undefined : `Not supported by ${provider}`}
-                />
-              </div>
-              <div className={`tree-settings-field${isSupported('presence_penalty') ? '' : ' unsupported-param'}`}>
-                <label>Pres penalty</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  min="-2"
-                  max="2"
-                  value={presencePenalty}
-                  onChange={(e) => setPresencePenalty(e.target.value)}
-                  placeholder="default"
-                  disabled={!isSupported('presence_penalty')}
-                  title={isSupported('presence_penalty') ? undefined : `Not supported by ${provider}`}
-                />
-              </div>
-            </div>
-
-            <div className={`tree-settings-toggle${isSupported('extended_thinking') ? '' : ' unsupported-param'}`}>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={extendedThinking}
-                  onChange={(e) => setExtendedThinking(e.target.checked)}
-                  disabled={!isSupported('extended_thinking')}
-                />
-                Extended thinking
-              </label>
-              {!isSupported('extended_thinking') && (
-                <span className="unsupported-hint" title={`Not supported by ${provider}`}>unsupported</span>
-              )}
-            </div>
-
-            {extendedThinking && isSupported('extended_thinking') && (
-              <div className="tree-settings-field">
-                <label>Thinking budget</label>
-                <input
-                  type="number"
-                  min="1024"
-                  step="1024"
-                  value={thinkingBudget}
-                  onChange={(e) => setThinkingBudget(e.target.value)}
-                  placeholder="10000"
-                />
-              </div>
-            )}
+            <SamplingParamsPanel
+              values={samplingValues}
+              onChange={handleSamplingChange}
+              supportedParams={supportedParams}
+              providerName={provider}
+            />
 
             <div className="tree-settings-divider" />
 
@@ -455,15 +365,8 @@ export function TreeSettings({ graphOpen, onToggleGraph }: TreeSettingsProps) {
               <label>
                 <input
                   type="checkbox"
-                  checked={!!currentTree.metadata?.include_timestamps}
-                  onChange={async (e) => {
-                    await updateTree(currentTree.tree_id, {
-                      metadata: {
-                        ...currentTree.metadata,
-                        include_timestamps: e.target.checked,
-                      },
-                    })
-                  }}
+                  checked={includeTimestamps}
+                  onChange={(e) => setIncludeTimestamps(e.target.checked)}
                 />
                 Include timestamps in context
               </label>
@@ -473,15 +376,8 @@ export function TreeSettings({ graphOpen, onToggleGraph }: TreeSettingsProps) {
               <label>
                 <input
                   type="checkbox"
-                  checked={currentTree.metadata?.stream_responses !== false}
-                  onChange={async (e) => {
-                    await updateTree(currentTree.tree_id, {
-                      metadata: {
-                        ...currentTree.metadata,
-                        stream_responses: e.target.checked,
-                      },
-                    })
-                  }}
+                  checked={streamResponses}
+                  onChange={(e) => setStreamResponses(e.target.checked)}
                 />
                 Stream responses
               </label>
@@ -491,15 +387,8 @@ export function TreeSettings({ graphOpen, onToggleGraph }: TreeSettingsProps) {
               <label>
                 <input
                   type="checkbox"
-                  checked={!!currentTree.metadata?.include_thinking_in_context}
-                  onChange={async (e) => {
-                    await updateTree(currentTree.tree_id, {
-                      metadata: {
-                        ...currentTree.metadata,
-                        include_thinking_in_context: e.target.checked,
-                      },
-                    })
-                  }}
+                  checked={includeThinking}
+                  onChange={(e) => setIncludeThinking(e.target.checked)}
                 />
                 Include thinking in context
               </label>
@@ -516,19 +405,7 @@ export function TreeSettings({ graphOpen, onToggleGraph }: TreeSettingsProps) {
               <label>Eviction mode</label>
               <select
                 value={evictionMode}
-                onChange={async (e) => {
-                  const mode = e.target.value as 'smart' | 'truncate' | 'none'
-                  setEvictionMode(mode)
-                  await updateTree(currentTree.tree_id, {
-                    metadata: {
-                      ...currentTree.metadata,
-                      eviction_strategy: {
-                        ...(currentTree.metadata?.eviction_strategy as Record<string, unknown> ?? {}),
-                        mode,
-                      },
-                    },
-                  })
-                }}
+                onChange={(e) => setEvictionMode(e.target.value as 'smart' | 'truncate' | 'none')}
               >
                 <option value="smart">Smart (protect first/last/anchored)</option>
                 <option value="truncate">Truncate (oldest first)</option>
@@ -542,23 +419,13 @@ export function TreeSettings({ graphOpen, onToggleGraph }: TreeSettingsProps) {
                 type="number"
                 min="0"
                 step="100"
-                value={currentTree.metadata?.debug_context_limit != null
-                  ? String(currentTree.metadata.debug_context_limit)
-                  : ''}
-                onChange={async (e) => {
-                  const val = e.target.value ? parseInt(e.target.value, 10) : null
-                  await updateTree(currentTree.tree_id, {
-                    metadata: {
-                      ...currentTree.metadata,
-                      debug_context_limit: val && val > 0 ? val : null,
-                    },
-                  })
-                }}
+                value={debugContextLimit}
+                onChange={(e) => setDebugContextLimit(e.target.value)}
                 placeholder="Use real model limit"
               />
-              {currentTree.metadata?.debug_context_limit != null && (
+              {debugContextLimit && parseInt(debugContextLimit, 10) > 0 && (
                 <span className="tree-settings-note" style={{ color: 'var(--ctx-yellow)' }}>
-                  Context limited to {(currentTree.metadata.debug_context_limit as number).toLocaleString()} tokens for testing
+                  Context limited to {parseInt(debugContextLimit, 10).toLocaleString()} tokens for testing
                 </span>
               )}
             </div>
@@ -628,27 +495,6 @@ export function TreeSettings({ graphOpen, onToggleGraph }: TreeSettingsProps) {
                   </span>
                 </div>
 
-                <button
-                  className="tree-settings-save"
-                  onClick={async () => {
-                    const strategy: EvictionStrategy = {
-                      mode: evictionMode,
-                      keep_first_turns: parseInt(keepFirstTurns, 10) || 2,
-                      recent_turns_to_keep: parseInt(recentTurnsToKeep, 10) || 4,
-                      keep_anchored: keepAnchored,
-                      summarize_evicted: summarizeEvicted,
-                      warn_threshold: parseFloat(warnThreshold) || 0.85,
-                    }
-                    await updateTree(currentTree.tree_id, {
-                      metadata: {
-                        ...currentTree.metadata,
-                        eviction_strategy: strategy,
-                      },
-                    })
-                  }}
-                >
-                  Save eviction settings
-                </button>
               </>
             )}
 
@@ -678,12 +524,15 @@ export function TreeSettings({ graphOpen, onToggleGraph }: TreeSettingsProps) {
             </div>
 
             <div className="tree-settings-actions">
+              {hasChanges && (
+                <span className="tree-settings-dirty">Unsaved changes</span>
+              )}
               <button
                 className="tree-settings-save"
                 onClick={handleSave}
                 disabled={!hasChanges}
               >
-                Save defaults
+                Save
               </button>
             </div>
           </div>

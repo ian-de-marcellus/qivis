@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import * as api from '../../api/client.ts'
 import type { EditHistoryEntry, NodeResponse } from '../../api/types.ts'
-import { useTreeStore } from '../../store/treeStore.ts'
+import { useTreeStore, useResearchMetadata } from '../../store/treeStore.ts'
 import './EditHistory.css'
 
 function formatRelativeTime(isoString: string): string {
@@ -32,13 +32,10 @@ interface EditHistoryProps {
 }
 
 export function EditHistory({ node }: EditHistoryProps) {
-  const {
-    editHistoryCache,
-    cacheEditHistory,
-    selectedEditVersion,
-    setSelectedEditVersion,
-    editNodeContent,
-  } = useTreeStore()
+  const { editHistoryCache, selectedEditVersion } = useResearchMetadata()
+  const cacheEditHistory = useTreeStore(s => s.cacheEditHistory)
+  const setSelectedEditVersion = useTreeStore(s => s.setSelectedEditVersion)
+  const editNodeContent = useTreeStore(s => s.editNodeContent)
 
   const [expanded, setExpanded] = useState(false)
   const [loading, setLoading] = useState(false)

@@ -1,0 +1,95 @@
+.sampling-params-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.sampling-params-field label {
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+}
+
+.sampling-params-field input,
+.sampling-params-field select {
+  padding: var(--space-xs) var(--space-sm);
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-sizing: border-box;
+  transition: border-color 0.15s;
+}
+
+.sampling-params-field input:focus,
+.sampling-params-field select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.sampling-params-field select {
+  resize: none;
+  cursor: pointer;
+}
+
+.sampling-params-field input[type="number"] {
+  max-width: 8rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.sampling-params-pair {
+  display: flex;
+  gap: var(--space-sm);
+}
+
+.sampling-params-pair .sampling-params-field {
+  flex: 1;
+  min-width: 0;
+}
+
+.sampling-params-pair input[type="number"] {
+  max-width: none;
+  width: 100%;
+}
+
+.sampling-params-toggle {
+  display: flex;
+  flex-direction: row;
+  gap: 0.2rem;
+}
+
+.sampling-params-toggle label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.sampling-params-toggle input[type="checkbox"] {
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.sampling-params-divider {
+  height: 1px;
+  background: var(--border-subtle);
+  margin: var(--space-xs) 0;
+}
+
+.unsupported-param {
+  opacity: 0.4;
+}
+
+.unsupported-hint {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  margin-left: var(--space-sm);
+}

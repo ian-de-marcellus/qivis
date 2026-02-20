@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { DigressionGroupResponse, EvictionStrategy, NodeResponse } from '../../api/types.ts'
-import { getActivePath, useTreeStore } from '../../store/treeStore.ts'
+import { getActivePath, useTreeStore, useTreeData, useNavigation, useComparison, useDigressionState } from '../../store/treeStore.ts'
 import { computeTreeLayout, type LayoutNode } from './treeLayout.ts'
 import { useZoomPan } from './useZoomPan.ts'
 import './GraphView.css'
@@ -185,7 +185,11 @@ function edgePath(px: number, py: number, cx: number, cy: number): string {
 }
 
 export function GraphView() {
-  const { currentTree, branchSelections, navigateToNode, comparisonHoveredNodeId, digressionGroups } = useTreeStore()
+  const { currentTree } = useTreeData()
+  const { branchSelections } = useNavigation()
+  const { comparisonHoveredNodeId } = useComparison()
+  const { digressionGroups } = useDigressionState()
+  const navigateToNode = useTreeStore(s => s.navigateToNode)
   const containerRef = useRef<HTMLDivElement>(null)
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null)
   const [tooltip, setTooltip] = useState<{

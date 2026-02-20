@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
-import { useTreeStore } from '../../store/treeStore.ts'
+import { useTreeStore, useTreeData } from '../../store/treeStore.ts'
 import './TreeList.css'
 
 export function TreeList() {
-  const { trees, selectedTreeId, selectTree, createTree, isLoading, providers, fetchProviders } =
-    useTreeStore()
+  const { trees, selectedTreeId, providers, isLoading } = useTreeData()
+  const selectTree = useTreeStore(s => s.selectTree)
+  const createTree = useTreeStore(s => s.createTree)
+  const fetchProviders = useTreeStore(s => s.fetchProviders)
   const [isCreating, setIsCreating] = useState(false)
   const [newTitle, setNewTitle] = useState('')
   const [newSystemPrompt, setNewSystemPrompt] = useState('')

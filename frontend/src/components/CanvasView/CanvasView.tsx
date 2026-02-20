@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useModalBehavior } from '../../hooks/useModalBehavior.ts'
 import { getInterventions } from '../../api/client.ts'
 import type { InterventionEntry, NodeResponse } from '../../api/types.ts'
 import type { TreeDefaults } from '../TreeView/contextDiffs.ts'
@@ -32,23 +33,8 @@ export function CanvasView({ treeId, pathNodes, treeDefaults, onDismiss }: Canva
     return () => { cancelled = true }
   }, [treeId])
 
-  // Escape to dismiss
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault()
-        onDismiss()
-      }
-    }
-    document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [onDismiss])
-
-  const handleBackdropClick = (e: React.MouseEvent) => {
-    if (e.target === e.currentTarget) {
-      onDismiss()
-    }
-  }
+  const canvasRef = useRef<HTMLDivElement>(null)
+  const { handleBackdropClick } = useModalBehavior(canvasRef, onDismiss)
 
   // Sync horizontal scroll from body to era header strip
   const handleBodyScroll = useCallback(() => {
@@ -150,7 +136,7 @@ export function CanvasView({ treeId, pathNodes, treeDefaults, onDismiss }: Canva
 
   return (
     <div className="canvas-backdrop" onClick={handleBackdropClick}>
-      <div className="canvas-view" role="dialog" aria-label="Palimpsest View">
+      <div className="canvas-view" ref={canvasRef} role="dialog" aria-label="Palimpsest View">
 
         {/* Title bar */}
         <div className="canvas-header">

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { DigressionGroupResponse, NodeResponse } from '../../api/types.ts'
-import { getActivePath, useTreeStore } from '../../store/treeStore.ts'
+import { getActivePath, useTreeStore, useTreeData, useNavigation, useDigressionState } from '../../store/treeStore.ts'
 import './DigressionPanel.css'
 
 interface DigressionPanelProps {
@@ -11,7 +11,10 @@ interface DigressionPanelProps {
 }
 
 export function DigressionPanel({ groups, path, onDismiss, onStartSelection }: DigressionPanelProps) {
-  const { currentTree, toggleDigressionGroup, deleteDigressionGroup, anchorGroup } = useTreeStore()
+  const { currentTree } = useTreeData()
+  const toggleDigressionGroup = useTreeStore(s => s.toggleDigressionGroup)
+  const deleteDigressionGroup = useTreeStore(s => s.deleteDigressionGroup)
+  const anchorGroup = useTreeStore(s => s.anchorGroup)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
 
   const pathNodeIds = new Set(path.map((n) => n.node_id))
@@ -166,16 +169,14 @@ export function DigressionCreator({ selectedNodeIds, onToggleNode: _onToggleNode
  * Designed to live in the right pane alongside (or instead of) the graph view.
  */
 export function DigressionSidePanel() {
-  const {
-    currentTree,
-    digressionGroups,
-    branchSelections,
-    toggleDigressionGroup,
-    deleteDigressionGroup,
-    anchorGroup,
-    setDigressionPanelOpen,
-    setGroupSelectionMode,
-  } = useTreeStore()
+  const { currentTree } = useTreeData()
+  const { branchSelections } = useNavigation()
+  const { digressionGroups } = useDigressionState()
+  const toggleDigressionGroup = useTreeStore(s => s.toggleDigressionGroup)
+  const deleteDigressionGroup = useTreeStore(s => s.deleteDigressionGroup)
+  const anchorGroup = useTreeStore(s => s.anchorGroup)
+  const setRightPaneMode = useTreeStore(s => s.setRightPaneMode)
+  const setGroupSelectionMode = useTreeStore(s => s.setGroupSelectionMode)
 
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
 
@@ -192,14 +193,14 @@ export function DigressionSidePanel() {
             className="digression-new-btn"
             onClick={() => {
               setGroupSelectionMode(true)
-              setDigressionPanelOpen(false)
+              setRightPaneMode(null)
             }}
           >
             New Group
           </button>
           <button
             className="digression-close-btn"
-            onClick={() => setDigressionPanelOpen(false)}
+            onClick={() => setRightPaneMode(null)}
           >
             Close
           </button>

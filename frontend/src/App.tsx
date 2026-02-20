@@ -9,7 +9,7 @@ import { LinearView } from './components/TreeView/LinearView.tsx'
 import { MessageInput } from './components/TreeView/MessageInput.tsx'
 import { SystemPromptInput } from './components/TreeView/SystemPromptInput.tsx'
 import { TreeSettings } from './components/TreeView/TreeSettings.tsx'
-import { getActivePath, useTreeStore } from './store/treeStore.ts'
+import { getActivePath, useTreeStore, useTreeData, useNavigation, useRightPane } from './store/treeStore.ts'
 import './App.css'
 
 type ThemeMode = 'system' | 'light' | 'dark'
@@ -37,10 +37,15 @@ function applyTheme(mode: ThemeMode) {
 }
 
 function App() {
-  const { fetchTrees, currentTree, error, clearError, canvasOpen, setCanvasOpen, branchSelections, digressionPanelOpen, setDigressionPanelOpen } = useTreeStore()
+  const { currentTree, error } = useTreeData()
+  const { branchSelections } = useNavigation()
+  const { rightPaneMode, canvasOpen } = useRightPane()
+  const fetchTrees = useTreeStore(s => s.fetchTrees)
+  const clearError = useTreeStore(s => s.clearError)
+  const setCanvasOpen = useTreeStore(s => s.setCanvasOpen)
+
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [theme, setTheme] = useState<ThemeMode>(getInitialTheme)
-  const [graphOpen, setGraphOpen] = useState(false)
   const [graphPaneWidth, setGraphPaneWidth] = useState(0) // 0 = use default %
   const isResizing = useRef(false)
   const mainRef = useRef<HTMLElement>(null)
@@ -121,20 +126,10 @@ function App() {
         )}
 
         {currentTree ? (
-          (graphOpen || digressionPanelOpen) ? (
+          rightPaneMode != null ? (
             <div className="split-layout">
               <div className="linear-pane">
-                <TreeSettings
-                  graphOpen={graphOpen}
-                  onToggleGraph={() => {
-                    if (graphOpen) {
-                      setGraphOpen(false)
-                    } else {
-                      setDigressionPanelOpen(false)
-                      setGraphOpen(true)
-                    }
-                  }}
-                />
+                <TreeSettings />
                 <SystemPromptInput />
                 <LinearView />
                 <MessageInput />
@@ -147,16 +142,13 @@ function App() {
                 className="graph-pane"
                 style={graphPaneWidth > 0 ? { width: graphPaneWidth } : undefined}
               >
-                {graphOpen && <GraphView />}
-                {digressionPanelOpen && !graphOpen && <DigressionSidePanel />}
+                {rightPaneMode === 'graph' && <GraphView />}
+                {rightPaneMode === 'digressions' && <DigressionSidePanel />}
               </div>
             </div>
           ) : (
             <>
-              <TreeSettings
-                graphOpen={graphOpen}
-                onToggleGraph={() => setGraphOpen(true)}
-              />
+              <TreeSettings />
               <SystemPromptInput />
               <LinearView />
               <MessageInput />

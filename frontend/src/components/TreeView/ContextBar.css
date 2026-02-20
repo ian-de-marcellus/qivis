@@ -7,9 +7,10 @@
   width: 100%;
   height: 2px;
   background: var(--border-subtle);
+  background-clip: content-box;
   border: none;
   border-radius: 1px;
-  padding: 0;
+  padding: 10px 0;
   cursor: pointer;
   overflow: hidden;
   transition: height 0.2s ease;

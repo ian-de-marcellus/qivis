@@ -71,6 +71,8 @@ class SamplingParams:
     presence_penalty: float | None = None
     logprobs: bool = True              # request by default
     top_logprobs: int | None = 5
+    extended_thinking: bool = False    # Anthropic extended thinking
+    thinking_budget: int | None = None # max thinking tokens (when extended_thinking=True)
 ```
 
 ### LogprobData
@@ -109,6 +111,8 @@ class ContextUsage:
     breakdown: dict[str, int]       # by role: system, user, assistant, tool
     excluded_tokens: int            # tokens saved by exclusions
     excluded_count: int             # number of excluded nodes/groups
+    excluded_node_ids: list[str]    # IDs of excluded nodes
+    evicted_node_ids: list[str]     # IDs of evicted nodes
 ```
 
 ### EvictionStrategy
@@ -119,7 +123,7 @@ class EvictionStrategy:
     mode: str = "smart"                     # "smart" | "truncate" | "none"
     recent_turns_to_keep: int = 4           # always keep the N most recent turns
     keep_first_turns: int = 2               # always keep opening turns
-    keep_bookmarked: bool = True            # never evict bookmarked nodes
+    keep_anchored: bool = True              # never evict anchored nodes
     summarize_evicted: bool = True          # summarize dropped middle context?
     summary_model: str = "claude-haiku-4-5-20251001"
     warn_threshold: float = 0.85            # warn researcher at this % of context
@@ -135,8 +139,12 @@ class EvictionReport:
     evicted_node_ids: list[str] = field(default_factory=list)
     tokens_freed: int = 0
     summary_inserted: bool = False
+    summary_needed: bool = False           # downstream signal for summary injection
+    evicted_content: list[str] = field(default_factory=list)  # text of evicted nodes
     final_token_count: int = 0
     warning: str | None = None
+    keep_first_turns: int = 0              # how many opening turns were protected
+    summary_model: str = "claude-haiku-4-5-20251001"
 ```
 
 ### Participant (multi-agent)
@@ -218,23 +226,28 @@ NodeCreated {
   provider: string | null
   system_prompt: string | null
   sampling_params: SamplingParams | null
-  mode: "chat" | "completion"
+  mode: "chat" | "completion" | "manual"
   prompt_text: string | null        // full prompt for completion mode
-  
+
   // Response metadata
   usage: { input_tokens: int, output_tokens: int } | null
   latency_ms: int | null
   finish_reason: string | null
   logprobs: LogprobData | null
   context_usage: ContextUsage | null
-  
+
+  // Extended thinking
+  thinking_content: string | null   // reasoning trace from extended thinking
+  include_thinking_in_context: bool // snapshot of tree setting at generation time
+  include_timestamps: bool          // snapshot of tree setting at generation time
+
   // Multi-agent identity
   participant_id: string | null
   participant_name: string | null
-  
+
   // For researcher notes with selective visibility
   visible_to: string[] | null       // participant IDs, or null = visible to all
-  
+
   raw_response: object | null
 }
 
@@ -299,16 +312,35 @@ BookmarkSummaryGenerated {
 
 Every bookmark has a **"Summarize" button** that calls Haiku to summarize the branch (root → bookmarked node). Stored with the bookmark, making bookmarks browsable and searchable by content. Regeneratable at any time.
 
+### Node Editing Events
+
+```
+NodeContentEdited {
+  node_id: UUID
+  original_content: string
+  new_content: string
+}
+```
+
+### Anchor Events
+
+Anchors protect nodes from context eviction. Separate from bookmarks (which are for labeling/summarizing branches).
+
+```
+NodeAnchored { node_id: UUID }
+NodeUnanchored { node_id: UUID }
+```
+
 ### Context Management Events
 
 ```
 NodeContextExcluded {
   node_id: UUID
-  scope: "this_branch" | "all_branches"
+  scope_node_id: string           // leaf of active path at exclusion time
   reason: string | null
 }
 
-NodeContextIncluded { node_id: UUID }
+NodeContextIncluded { node_id: UUID, scope_node_id: string }
 
 DigressionGroupCreated {
   group_id: UUID
@@ -362,36 +394,31 @@ GarbagePurged { purged_node_ids: UUID[], purged_tree_ids: UUID[] }
 
 ```python
 class LLMProvider(ABC):
+    suggested_models: list[str] = []     # models to show in UI dropdowns
+    supported_params: list[str] = []     # sampling param names this provider accepts
+
     @property
     @abstractmethod
     def name(self) -> str: ...
-    
+
     @abstractmethod
     async def generate(self, request: GenerationRequest) -> GenerationResult: ...
-    
+
     @abstractmethod
-    async def generate_stream(self, request: GenerationRequest) -> AsyncIterator[GenerationChunk]: ...
-    
-    @abstractmethod
-    def supports_mode(self, mode: str) -> bool: ...
-    
-    @abstractmethod
-    def supports_logprobs(self) -> bool: ...
-    
-    @abstractmethod
-    def available_models(self) -> list[str]: ...
+    def generate_stream(self, request: GenerationRequest) -> AsyncIterator[StreamChunk]: ...
 ```
+
+OpenAI and OpenRouter share a base class `OpenAICompatibleProvider` that handles the common chat completion API pattern.
 
 ### Concrete Providers
 
-| Provider | File | Modes | Logprobs | Notes |
-|----------|------|-------|----------|-------|
-| Anthropic | `anthropic.py` | chat | beta | Primary provider |
-| OpenAI | `openai.py` | chat + completion | yes (0-20) | |
-| OpenRouter | `openrouter.py` | chat + completion | varies | Routes to many models |
-| Ollama | `ollama.py` | chat + completion | varies | Local models |
-| llama.cpp | `llamacpp.py` | completion | full vocab | Richest logprob data |
-| Generic OpenAI | `generic_openai.py` | chat + completion | varies | vLLM, LM Studio, etc. |
+| Provider | File | Logprobs | Notes |
+|----------|------|----------|-------|
+| Anthropic | `anthropic.py` | no | Primary provider, supports extended thinking |
+| OpenAI | `openai_provider.py` | yes (0-20) | Extends `OpenAICompatibleProvider` |
+| OpenRouter | `openrouter_provider.py` | varies | Extends `OpenAICompatibleProvider`, routes to many models |
+
+Future providers (not yet implemented): Ollama, llama.cpp, Generic OpenAI-compatible.
 
 ### Provider Configuration
 
@@ -496,59 +523,34 @@ The single component responsible for assembling messages. Handles all concerns i
 class ContextBuilder:
     def build(
         self,
-        path: list[ProjectedNode],          # root-to-current node
-        system_prompt: str,
+        nodes: list[dict],              # all nodes in tree (projected rows)
+        target_node_id: str,            # leaf of path to build context for
+        system_prompt: str | None,
         model_context_limit: int,
-        excluded_ids: set[str],
-        digression_groups: dict[str, DigressionGroup],
-        excluded_group_ids: set[str],
-        bookmarked_ids: set[str],
-        eviction: EvictionStrategy,
-        participant: Participant | None,     # for multi-agent perspective
+        *,
+        include_timestamps: bool = False,
+        include_thinking: bool = False,
+        excluded_ids: set[str] | None = None,
+        digression_groups: dict | None = None,
+        excluded_group_ids: set[str] | None = None,
+        anchored_ids: set[str] | None = None,
+        eviction: EvictionStrategy | None = None,
+        participant: object | None = None,
         mode: str = "chat",
-    ) -> tuple[list[dict], ContextUsage, EvictionReport]:
-        """
-        Build messages array with smart eviction.
-        Returns (messages, usage, eviction_report).
-        """
-        # 1. Apply manual exclusions
-        all_excluded = set(excluded_ids)
-        for gid in excluded_group_ids:
-            all_excluded.update(digression_groups[gid].node_ids)
-        
-        filtered_path = [n for n in path if n.node_id not in all_excluded]
-        
-        # 2. Format messages (respecting multi-agent perspective)
-        messages = []
-        for node in filtered_path:
-            if participant:
-                # Multi-agent: own messages as "assistant", others as "user" with name
-                if node.participant_id == participant.participant_id:
-                    messages.append({"role": "assistant", "content": node.content})
-                elif node.role == "researcher_note" and node.visible_to and participant.participant_id not in node.visible_to:
-                    continue
-                else:
-                    name = node.participant_name or "Researcher"
-                    messages.append({"role": "user", "content": f"[{name}]: {node.content}"})
-            else:
-                messages.append({"role": node.role, "content": node.content})
-        
-        # 3. Count tokens and apply smart eviction if needed
-        system_tokens = self._count_tokens(system_prompt)
-        message_tokens = [self._count_tokens(m["content"]) for m in messages]
-        total = system_tokens + sum(message_tokens)
-        
-        eviction_report = EvictionReport()
-        if total > model_context_limit and eviction.mode == "smart":
-            messages, eviction_report = self._smart_evict(
-                messages, message_tokens, filtered_path,
-                system_tokens, model_context_limit, bookmarked_ids, eviction
-            )
-        
-        # 4. Compute final usage
-        usage = self._compute_usage(messages, system_prompt, all_excluded, digression_groups)
-        return messages, usage, eviction_report
+        token_counter: TokenCounter | None = None,
+    ) -> tuple[list[dict[str, str]], ContextUsage, EvictionReport]:
 ```
+
+The builder walks from `target_node_id` up to the root to construct the path, then:
+1. Applies manual exclusions (individual nodes + digression groups)
+2. Optionally prepends timestamps to message content
+3. Optionally includes thinking content in assistant messages
+4. Uses `edited_content` when present (the "model sees" version)
+5. Counts tokens and applies smart eviction if context exceeds the limit
+6. Smart eviction protects first turns, recent turns, and anchored nodes; sets `summary_needed=True` with `evicted_content` for downstream summary injection (does not insert summary inline)
+7. Returns `(messages, ContextUsage, EvictionReport)`
+
+`TokenCounter` is an abstract base class with an `ApproximateTokenCounter` implementation that estimates ~4 chars per token.
 
 ### Smart Eviction
 
@@ -571,20 +573,21 @@ When context exceeds the model's window:
 4. If still over, warn the researcher and let them decide.
 
 ```python
-def _smart_evict(self, messages, token_counts, path, 
-                 system_tokens, limit, bookmarked_ids, strategy):
+def _smart_evict(self, messages, token_counts, node_ids,
+                 system_tokens, limit, anchored_ids, strategy):
     n = len(messages)
     report = EvictionReport()
-    
+
     # Mark protected ranges
     protected = set()
     for i in range(min(strategy.keep_first_turns, n)):
         protected.add(i)
     for i in range(max(0, n - strategy.recent_turns_to_keep), n):
         protected.add(i)
-    for i, node in enumerate(path[:n]):
-        if node.node_id in bookmarked_ids:
-            protected.add(i)
+    if strategy.keep_anchored:
+        for i, nid in enumerate(node_ids):
+            if nid in anchored_ids:
+                protected.add(i)
     
     # Evict unprotected middle messages, oldest first
     evicted_indices = []
@@ -599,24 +602,19 @@ def _smart_evict(self, messages, token_counts, path,
             report.evicted_node_ids.append(path[i].node_id)
             report.tokens_freed += token_counts[i]
     
-    # Rebuild message list, inserting summaries where content was evicted
+    # Rebuild message list, collecting evicted content for downstream summary
     result = []
-    evicted_content = []
     for i, msg in enumerate(messages):
-        if i in evicted_indices:
-            evicted_content.append(msg["content"])
-        else:
-            if evicted_content and strategy.summarize_evicted:
-                summary = self._generate_summary_placeholder(evicted_content)
-                result.append({"role": "system", "content": summary})
-                report.summary_inserted = True
-                evicted_content = []
-            elif evicted_content:
-                evicted_content = []
+        if i not in evicted_indices:
             result.append(msg)
-    
+        else:
+            report.evicted_content.append(msg["content"])
+
     report.final_token_count = current_total
     report.eviction_applied = len(evicted_indices) > 0
+    report.keep_first_turns = strategy.keep_first_turns
+    if report.evicted_content and strategy.summarize_evicted:
+        report.summary_needed = True  # caller handles summary generation
     return result, report
 ```
 
@@ -853,28 +851,40 @@ POST   /api/trees/{id}/multi/run               # auto-run N turns
 POST   /api/trees/{id}/multi/inject            # researcher injects (visibility control)
 ```
 
+### Node Editing & History
+
+```
+PATCH  /api/trees/{id}/nodes/{nid}/content     # edit node content
+GET    /api/trees/{id}/nodes/{nid}/edit-history # get edit history
+GET    /api/trees/{id}/interventions            # intervention timeline
+```
+
 ### Context Management
 
 ```
-POST   /api/nodes/{nid}/exclude                # exclude from context
-POST   /api/nodes/{nid}/include                # re-include
+POST   /api/trees/{id}/nodes/{nid}/exclude     # exclude from context
+POST   /api/trees/{id}/nodes/{nid}/include     # re-include
+GET    /api/trees/{id}/exclusions               # get exclusion state
+POST   /api/trees/{id}/nodes/{nid}/anchor      # toggle anchor (eviction protection)
+POST   /api/trees/{id}/bulk-anchor              # bulk anchor/unanchor
 POST   /api/trees/{id}/digression-groups       # create group
-PATCH  /api/trees/{id}/digression-groups/{gid} # toggle
-GET    /api/trees/{id}/context-preview/{nid}   # preview usage
+POST   /api/trees/{id}/digression-groups/{gid}/toggle  # toggle inclusion
+GET    /api/trees/{id}/digression-groups        # list groups
+DELETE /api/trees/{id}/digression-groups/{gid}  # delete group
 ```
 
 ### Annotations, Bookmarks & Summarization
 
 ```
-POST   /api/nodes/{nid}/annotations
-GET    /api/annotations?tag=coherence
-GET    /api/taxonomy
-POST   /api/taxonomy
+POST   /api/trees/{id}/nodes/{nid}/annotations # add annotation
+GET    /api/trees/{id}/nodes/{nid}/annotations # get node annotations
+DELETE /api/trees/{id}/annotations/{aid}       # remove annotation
+GET    /api/trees/{id}/taxonomy                # get tree's taxonomy
 
-POST   /api/nodes/{nid}/bookmarks
-GET    /api/bookmarks
-POST   /api/bookmarks/{bid}/summarize
+POST   /api/trees/{id}/nodes/{nid}/bookmarks   # create bookmark
+GET    /api/trees/{id}/bookmarks               # list bookmarks (with optional search)
 
+# Not yet implemented: global annotation search, summary generation
 POST   /api/trees/{id}/summarize
   Body: { "type": "branch"|"subtree"|"selection", "node_ids": [...],
           "summary_type": "concise"|"detailed"|"key_points"|"custom",
@@ -919,125 +929,50 @@ GET    /api/maintenance/stats
 
 ## Incremental Build Plan
 
-### Phase 0: Foundation (Week 1-2)
-- Project scaffolding (FastAPI + React + SQLite)
-- Event store + state projector
-- Basic tree CRUD + node creation
-- Anthropic provider (with logprob normalization from day one)
-- Context builder with boundary-aware behavior (never cut mid-message, always preserve system prompt)
-- Minimal UI: linear chat
-- **Milestone**: Talk to Claude through your own tool.
-
-### Phase 1: Branching + Provider Selection (Week 3-5)
-- Branch creation, fork at any node
-- Branch navigation UI
-- System prompt override per branch
-- Per-node model/provider selection
-- n>1 sibling generation
-- OpenAI + OpenRouter providers
-- Context usage bar (% indicator per node, clickable token breakdown)
-- **Milestone**: Fork, try different models/prompts, compare.
-
-### Phase 2: Local Models + Logprobs (Week 6-8)
-- Ollama + llama.cpp + generic OpenAI providers (each with logprob normalizer)
-- Completion mode (base models)
-- Logprob storage + inline visualization (consistent across providers)
-- Sampling parameter controls
-- **Milestone**: Compare cloud vs. local with uncertainty viz.
-
-### Phase 3: Research Instrumentation (Week 9-11)
-- Annotation system (taxonomy + custom)
-- Bookmarks + Haiku branch summaries
-- Context exclusion (individual nodes)
-- Digression groups (bundle & toggle)
-- Smart eviction (summarize-and-drop middle context)
-- Export (JSON, CSV)
-- FTS5 keyword search
-- Comparison view
-- Manual summarization (branch, subtree, selection, custom prompt)
-- **Milestone**: Annotate, manage context, search, export.
-
-### Phase 4: Multi-Agent (Week 12-15)
-- Participant configuration (model + provider + system prompt, no personas)
-- AnimaChat-style directed responses (pick which model responds at any point)
-- Per-participant context assembly
-- Researcher injection with per-participant visibility
-- Auto-run with configurable turn order
-- Multi-agent UI (participant selector, turn controls)
-- **Milestone**: Run model-to-model conversations AnimaChat-style.
-
-### Phase 5: Search + Analysis (Week 16-18)
-- Semantic embedding index
-- Hybrid search (keyword + semantic)
-- Agent-friendly search API
-- Built-in analysis skills
-- Skill plugin system
-- **Milestone**: AI-assisted corpus analysis.
-
-### Phase 6: MCP + Ecosystem (Week 19+)
-- MCP client + server
-- Garbage collection (big red button + grace period)
-- Conversation import (Claude.ai, ChatGPT, AnimaChat formats)
-- Multi-device sync
-- Deployment docs for other researchers
-- **Milestone**: Community-deployable research tool.
+See `.Claude/qivis-build-plan.md` for the detailed build order, phase definitions, and current progress. The phases described in the original architecture doc were the initial plan; actual implementation reordered and reorganized significantly based on what was learned during development.
 
 ---
 
 ## File Structure
 
 ```
-loom/
-├── README.md
-├── LICENSE                              # MIT
-├── docker-compose.yml
-├── providers.yml.example
-├── annotation_taxonomy.yml
-├── mcp_servers.yml.example
+qivis/
+├── CLAUDE.md                            # project conventions
+├── .Claude/                             # architecture docs, build plan, scratchpad
 │
 ├── backend/
 │   ├── pyproject.toml
-│   ├── loom/
+│   ├── .env                             # provider API keys (not committed)
+│   ├── qivis/
 │   │   ├── __init__.py
-│   │   ├── main.py                      # FastAPI entry
+│   │   ├── main.py                      # FastAPI entry + lifespan
 │   │   ├── config.py                    # settings, env vars
-│   │   ├── models.py                    # canonical data structures (shared across modules)
+│   │   ├── models.py                    # canonical data structures (Pydantic)
 │   │   │
+│   │   ├── api/                         # FastAPI routers (trees, generation, providers, etc.)
 │   │   ├── events/                      # event store, projector
 │   │   ├── trees/                       # tree/node CRUD, service
-│   │   ├── providers/                   # LLMProvider adapters, registry, logprob_normalizer
-│   │   ├── context/                     # context builder, smart eviction, exclusions, digression groups
-│   │   ├── generation/                  # generation orchestration, streaming
-│   │   ├── multi_agent/                 # participant management, orchestrator, conversation runner
-│   │   ├── summarization/               # branch/subtree/selection/bookmark summaries
-│   │   ├── search/                      # FTS5, embeddings, hybrid search service
-│   │   ├── mcp/                         # MCP client + server
-│   │   ├── skills/                      # analysis skill ABC, built-ins, plugin registry
+│   │   ├── providers/                   # LLMProvider adapters, registry, logprob normalizer
+│   │   ├── generation/                  # generation orchestration, streaming, context builder
 │   │   ├── export/                      # JSON, CSV exporters
-│   │   ├── maintenance/                 # garbage collection, stats
-│   │   └── db/                          # database connection, migrations
+│   │   ├── utils/                       # JSON helpers
+│   │   └── db/                          # database connection, schema, migrations
 │   │
-│   └── tests/
+│   └── tests/                           # organized by phase (phase0/, phase1/, ..., interlude/)
 │
 ├── frontend/
 │   ├── src/
 │   │   ├── api/                         # API client, TypeScript types
+│   │   ├── hooks/                       # shared hooks (useModalBehavior, etc.)
+│   │   ├── store/                       # Zustand store (treeStore)
 │   │   ├── components/
-│   │   │   ├── Library/                 # tree listing, search, filters
-│   │   │   ├── TreeView/                # LinearView, GraphView, LogprobOverlay, ContextUsageBar
-│   │   │   ├── NodeDetail/              # content, metadata, annotations, token breakdown
-│   │   │   ├── MultiAgent/              # participant config, turn controls, visibility
-│   │   │   ├── Comparison/              # side-by-side node comparison
-│   │   │   ├── Context/                 # exclusion toggles, digression groups
-│   │   │   ├── Controls/                # model/provider/param selectors
-│   │   │   ├── Search/                  # keyword + semantic search
-│   │   │   └── common/
-│   │   ├── store/                       # tree, ui, provider state (zustand)
-│   │   └── utils/                       # tree traversal, logprob helpers, export
+│   │   │   ├── Library/                 # tree listing, bookmarks
+│   │   │   ├── TreeView/                # LinearView, MessageRow, ForkPanel, ContextBar, etc.
+│   │   │   ├── GraphView/              # Force-directed graph visualization
+│   │   │   ├── CanvasView/             # Palimpsest (era-based intervention timeline)
+│   │   │   └── shared/                 # SamplingParamsPanel, etc.
+│   │   └── utils/
 │   └── public/
-│
-├── skills/                              # plugin skills directory
-└── docs/                                # architecture, deployment, providers, api, mcp, research guide
 ```
 
 ---

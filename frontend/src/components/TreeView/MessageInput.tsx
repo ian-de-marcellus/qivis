@@ -1,9 +1,12 @@
 import { useRef, useState } from 'react'
-import { useTreeStore } from '../../store/treeStore.ts'
+import { useTreeStore, useTreeData, useStreamingState } from '../../store/treeStore.ts'
 import './MessageInput.css'
 
 export function MessageInput() {
-  const { sendMessage, sendMessageOnly, isGenerating, currentTree } = useTreeStore()
+  const { currentTree } = useTreeData()
+  const { isGenerating } = useStreamingState()
+  const sendMessage = useTreeStore(s => s.sendMessage)
+  const sendMessageOnly = useTreeStore(s => s.sendMessageOnly)
   const [content, setContent] = useState('')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
