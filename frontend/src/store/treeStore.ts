@@ -121,6 +121,7 @@ interface TreeStore {
   setGroupSelectionMode: (active: boolean) => void
   toggleGroupNodeSelection: (nodeId: string) => void
   toggleAnchor: (nodeId: string) => Promise<void>
+  anchorGroup: (groupId: string) => Promise<void>
   setComparisonNodeId: (nodeId: string | null) => void
   enterComparisonPicking: () => void
   pickComparisonTarget: (nodeId: string) => void
@@ -1295,6 +1296,38 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
               ...state.currentTree,
               nodes: state.currentTree.nodes.map((n) =>
                 n.node_id === nodeId ? { ...n, is_anchored: result.is_anchored } : n,
+              ),
+            }
+          : null,
+      }))
+    } catch (e) {
+      set({ error: String(e) })
+    }
+  },
+
+  anchorGroup: async (groupId: string) => {
+    const { currentTree, digressionGroups } = get()
+    if (!currentTree) return
+
+    const group = digressionGroups.find((g) => g.group_id === groupId)
+    if (!group) return
+
+    try {
+      // If all nodes in the group are already anchored, unanchor all; otherwise anchor all
+      const allAnchored = group.node_ids.every((nid) => {
+        const node = currentTree.nodes.find((n) => n.node_id === nid)
+        return node?.is_anchored ?? false
+      })
+      const anchor = !allAnchored
+      await api.bulkAnchor(currentTree.tree_id, group.node_ids, anchor)
+      // Update local state
+      const anchoredSet = new Set(group.node_ids)
+      set((state) => ({
+        currentTree: state.currentTree
+          ? {
+              ...state.currentTree,
+              nodes: state.currentTree.nodes.map((n) =>
+                anchoredSet.has(n.node_id) ? { ...n, is_anchored: anchor } : n,
               ),
             }
           : null,

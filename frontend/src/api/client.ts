@@ -221,6 +221,18 @@ export function toggleAnchor(
   })
 }
 
+export function bulkAnchor(
+  treeId: string,
+  nodeIds: string[],
+  anchor: boolean,
+): Promise<{ changed: number; anchor: boolean }> {
+  return request(`/trees/${treeId}/bulk-anchor`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ node_ids: nodeIds, anchor }),
+  })
+}
+
 // -- Digression groups --
 
 export function createDigressionGroup(

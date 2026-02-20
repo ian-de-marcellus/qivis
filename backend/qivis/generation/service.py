@@ -83,6 +83,15 @@ def merge_sampling_params(
     return base
 
 
+def _apply_debug_context_limit(tree: dict, context_limit: int) -> int:
+    """Override context limit with debug value from tree metadata, if set."""
+    metadata = _parse_json_field(tree.get("metadata")) or {}
+    debug_limit = metadata.get("debug_context_limit")
+    if isinstance(debug_limit, int) and debug_limit > 0:
+        return debug_limit
+    return context_limit
+
+
 class GenerationService:
     """Orchestrates LLM generation: context assembly, API call, event emission."""
 
@@ -113,7 +122,7 @@ class GenerationService:
          anchored_ids, eviction_strategy) = (
             await self._resolve_context(tree_id, node_id, model, system_prompt, sampling_params)
         )
-        context_limit = get_model_context_limit(resolved_model)
+        context_limit = _apply_debug_context_limit(tree, get_model_context_limit(resolved_model))
         messages, context_usage, eviction_report = self._context_builder.build(
             nodes=nodes,
             target_node_id=node_id,
@@ -170,7 +179,7 @@ class GenerationService:
          anchored_ids, eviction_strategy) = (
             await self._resolve_context(tree_id, node_id, model, system_prompt, sampling_params)
         )
-        context_limit = get_model_context_limit(resolved_model)
+        context_limit = _apply_debug_context_limit(tree, get_model_context_limit(resolved_model))
         messages, context_usage, eviction_report = self._context_builder.build(
             nodes=nodes,
             target_node_id=node_id,
@@ -234,7 +243,7 @@ class GenerationService:
                 tree_id, node_id, model, system_prompt, sampling_params
             )
         )
-        context_limit = get_model_context_limit(resolved_model)
+        context_limit = _apply_debug_context_limit(tree, get_model_context_limit(resolved_model))
         messages, context_usage, eviction_report = (
             self._context_builder.build(
                 nodes=nodes,
@@ -359,7 +368,7 @@ class GenerationService:
          anchored_ids, eviction_strategy) = (
             await self._resolve_context(tree_id, node_id, model, system_prompt, sampling_params)
         )
-        context_limit = get_model_context_limit(resolved_model)
+        context_limit = _apply_debug_context_limit(tree, get_model_context_limit(resolved_model))
         messages, context_usage, eviction_report = self._context_builder.build(
             nodes=nodes,
             target_node_id=node_id,

@@ -184,3 +184,107 @@ class TestAnchorReplay:
         )
         assert row is not None
         assert row["node_id"] == node_id
+
+
+# ---------------------------------------------------------------------------
+# Bulk anchor: anchor/unanchor multiple nodes at once
+# ---------------------------------------------------------------------------
+
+
+class TestBulkAnchor:
+    """POST /api/trees/{tree_id}/bulk-anchor endpoint."""
+
+    async def test_bulk_anchor_multiple_nodes(self, client):
+        """Bulk anchor creates anchors for multiple nodes."""
+        tree = await create_tree_with_messages(client, n_messages=4)
+        tree_id = tree["tree_id"]
+        node_ids = tree["node_ids"]
+
+        resp = await client.post(
+            f"/api/trees/{tree_id}/bulk-anchor",
+            json={"node_ids": node_ids[:3], "anchor": True},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["changed"] == 3
+        assert data["anchor"] is True
+
+        # Verify all three are anchored
+        resp = await client.get(f"/api/trees/{tree_id}")
+        nodes = resp.json()["nodes"]
+        for nid in node_ids[:3]:
+            node = next(n for n in nodes if n["node_id"] == nid)
+            assert node["is_anchored"] is True
+        # Fourth node should not be anchored
+        fourth = next(n for n in nodes if n["node_id"] == node_ids[3])
+        assert fourth["is_anchored"] is False
+
+    async def test_bulk_unanchor_removes_anchors(self, client):
+        """Bulk unanchor removes anchors for multiple nodes."""
+        tree = await create_tree_with_messages(client, n_messages=4)
+        tree_id = tree["tree_id"]
+        node_ids = tree["node_ids"]
+
+        # First anchor all
+        await client.post(
+            f"/api/trees/{tree_id}/bulk-anchor",
+            json={"node_ids": node_ids, "anchor": True},
+        )
+
+        # Unanchor first two
+        resp = await client.post(
+            f"/api/trees/{tree_id}/bulk-anchor",
+            json={"node_ids": node_ids[:2], "anchor": False},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["changed"] == 2
+
+        # Verify state
+        resp = await client.get(f"/api/trees/{tree_id}")
+        nodes = resp.json()["nodes"]
+        for nid in node_ids[:2]:
+            node = next(n for n in nodes if n["node_id"] == nid)
+            assert node["is_anchored"] is False
+        for nid in node_ids[2:]:
+            node = next(n for n in nodes if n["node_id"] == nid)
+            assert node["is_anchored"] is True
+
+    async def test_bulk_anchor_skips_already_anchored(self, client):
+        """Bulk anchor skips nodes that are already in the desired state."""
+        tree = await create_tree_with_messages(client, n_messages=4)
+        tree_id = tree["tree_id"]
+        node_ids = tree["node_ids"]
+
+        # Anchor first two individually
+        for nid in node_ids[:2]:
+            await client.post(f"/api/trees/{tree_id}/nodes/{nid}/anchor")
+
+        # Bulk anchor all four — only 2 should change
+        resp = await client.post(
+            f"/api/trees/{tree_id}/bulk-anchor",
+            json={"node_ids": node_ids, "anchor": True},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["changed"] == 2
+
+    async def test_bulk_anchor_returns_correct_count(self, client):
+        """Changed count reflects actual state changes, not input count."""
+        tree = await create_tree_with_messages(client, n_messages=2)
+        tree_id = tree["tree_id"]
+        node_ids = tree["node_ids"]
+
+        # Unanchoring nodes that aren't anchored should change 0
+        resp = await client.post(
+            f"/api/trees/{tree_id}/bulk-anchor",
+            json={"node_ids": node_ids, "anchor": False},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["changed"] == 0
+
+    async def test_bulk_anchor_404_for_nonexistent_tree(self, client):
+        """404 if tree doesn't exist."""
+        resp = await client.post(
+            "/api/trees/nonexistent/bulk-anchor",
+            json={"node_ids": ["abc"], "anchor": True},
+        )
+        assert resp.status_code == 404

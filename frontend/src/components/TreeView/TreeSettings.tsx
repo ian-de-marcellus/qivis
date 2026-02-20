@@ -536,6 +536,33 @@ export function TreeSettings({ graphOpen, onToggleGraph }: TreeSettingsProps) {
               </select>
             </div>
 
+            <div className="tree-settings-field">
+              <label>Debug: context limit override (tokens)</label>
+              <input
+                type="number"
+                min="0"
+                step="100"
+                value={currentTree.metadata?.debug_context_limit != null
+                  ? String(currentTree.metadata.debug_context_limit)
+                  : ''}
+                onChange={async (e) => {
+                  const val = e.target.value ? parseInt(e.target.value, 10) : null
+                  await updateTree(currentTree.tree_id, {
+                    metadata: {
+                      ...currentTree.metadata,
+                      debug_context_limit: val && val > 0 ? val : null,
+                    },
+                  })
+                }}
+                placeholder="Use real model limit"
+              />
+              {currentTree.metadata?.debug_context_limit != null && (
+                <span className="tree-settings-note" style={{ color: 'var(--ctx-yellow)' }}>
+                  Context limited to {(currentTree.metadata.debug_context_limit as number).toLocaleString()} tokens for testing
+                </span>
+              )}
+            </div>
+
             {evictionMode === 'smart' && (
               <>
                 <div className="tree-settings-row-pair">

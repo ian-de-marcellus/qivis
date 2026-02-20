@@ -28,7 +28,7 @@
   stroke: var(--border);
   stroke-width: 1.5;
   stroke-linecap: round;
-  opacity: 0.4;
+  opacity: 0.6;
   transition: stroke 0.2s ease, opacity 0.2s ease, stroke-width 0.2s ease;
 }
 
@@ -60,7 +60,7 @@
 .graph-node {
   stroke-width: 1.5;
   transition: r 0.2s ease, opacity 0.2s ease, stroke-width 0.2s ease;
-  opacity: 0.45;
+  opacity: 0.65;
 }
 
 .graph-node.active {
@@ -135,6 +135,116 @@
   opacity: 0.4;
 }
 
+/* ---- Digression group hulls ---- */
+
+.graph-group-hull {
+  stroke-width: 1;
+  pointer-events: none;
+}
+
+.graph-group-hull.excluded {
+  stroke-dasharray: 4 3;
+  opacity: 0.6;
+}
+
+.graph-group-label {
+  font-family: var(--font-ui);
+  font-size: 7px;
+  font-weight: 600;
+  fill: var(--text-tertiary);
+  pointer-events: none;
+  user-select: none;
+}
+
+/* ---- Eviction protection zone halos ---- */
+
+.graph-zone-halo {
+  fill: none;
+  stroke: var(--ctx-green);
+  opacity: 0.12;
+  stroke-width: 8;
+  stroke-linecap: round;
+  pointer-events: none;
+}
+
+/* ---- Evicted nodes/edges ---- */
+
+.graph-edge.evicted {
+  stroke-dasharray: 4 3;
+  opacity: 0.15 !important;
+}
+
+.graph-node-group.evicted {
+  opacity: 0.2;
+}
+
+.graph-node-group.evicted .graph-node {
+  stroke-dasharray: 3 2;
+  opacity: 1;
+}
+
+/* ---- Collapsed chain indicators ---- */
+
+.graph-collapsed-capsule {
+  fill: var(--bg-secondary);
+  stroke: var(--border);
+  stroke-width: 1;
+  stroke-dasharray: 2 2;
+  opacity: 0.4;
+  transition: opacity 0.2s ease;
+}
+
+.graph-collapsed.active .graph-collapsed-capsule {
+  stroke: var(--accent);
+  opacity: 0.7;
+}
+
+.graph-node-group:hover .graph-collapsed-capsule {
+  opacity: 0.7;
+}
+
+.graph-collapsed-dot {
+  fill: var(--text-tertiary);
+  opacity: 0.35;
+}
+
+.graph-collapsed.active .graph-collapsed-dot {
+  fill: var(--accent);
+  opacity: 0.6;
+}
+
+.graph-node-group:hover .graph-collapsed-dot {
+  opacity: 0.6;
+}
+
+/* ---- Anchor pins ---- */
+
+.graph-anchor-pin {
+  stroke: var(--text-tertiary);
+  fill: none;
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.graph-anchor-pin.active {
+  stroke: var(--accent);
+  opacity: 0.85;
+}
+
+.graph-node-group:hover .graph-anchor-pin {
+  opacity: 0.8;
+}
+
+/* ---- Exclusion marks ---- */
+
+.graph-exclusion-mark {
+  stroke: var(--ctx-red);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  opacity: 0.6;
+  pointer-events: none;
+}
+
 /* ---- Role labels ---- */
 
 .graph-node-label {
@@ -147,7 +257,7 @@
   text-anchor: middle;
   pointer-events: none;
   user-select: none;
-  opacity: 0.5;
+  opacity: 0.65;
   transition: opacity 0.2s ease;
 }
 
@@ -202,6 +312,39 @@
   font-size: 0.65rem;
   color: var(--text-tertiary);
   margin-top: 0.25rem;
+}
+
+.graph-tooltip-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-top: 0.35rem;
+}
+
+.graph-tooltip-pill {
+  display: inline-block;
+  font-family: var(--font-ui);
+  font-size: 0.6rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.1rem 0.35rem;
+  border-radius: var(--radius-sm);
+}
+
+.graph-tooltip-pill.anchored {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--text-accent);
+}
+
+.graph-tooltip-pill.excluded {
+  background: color-mix(in srgb, var(--ctx-red) 18%, transparent);
+  color: var(--ctx-red);
+}
+
+.graph-tooltip-pill.annotations {
+  background: color-mix(in srgb, var(--text-secondary) 12%, transparent);
+  color: var(--text-secondary);
 }
 
 /* ---- Stats badge ---- */

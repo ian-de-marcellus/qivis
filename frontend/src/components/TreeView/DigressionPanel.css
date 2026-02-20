@@ -226,6 +226,36 @@
   cursor: pointer;
 }
 
+/* ---- Anchor group button ---- */
+
+.digression-anchor-btn {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.digression-anchor-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.digression-anchor-btn.anchored {
+  color: var(--accent);
+}
+
+.digression-anchor-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
 /* ---- Creator bar (appears when creating a group) ---- */
 
 .digression-creator {

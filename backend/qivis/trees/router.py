@@ -17,6 +17,7 @@ from qivis.trees.schemas import (
     AddAnnotationRequest,
     AnnotationResponse,
     BookmarkResponse,
+    BulkAnchorRequest,
     CreateBookmarkRequest,
     CreateDigressionGroupRequest,
     CreateNodeRequest,
@@ -365,6 +366,19 @@ async def delete_digression_group(
         raise HTTPException(
             status_code=404, detail=f"Digression group not found: {group_id}"
         )
+
+
+@router.post("/{tree_id}/bulk-anchor")
+async def bulk_anchor(
+    tree_id: str,
+    request: BulkAnchorRequest,
+    service: TreeService = Depends(get_tree_service),
+) -> dict:
+    try:
+        changed = await service.bulk_anchor(tree_id, request.node_ids, request.anchor)
+        return {"changed": changed, "anchor": request.anchor}
+    except TreeNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Tree not found: {tree_id}")
 
 
 @router.post("/{tree_id}/nodes/{node_id}/anchor")

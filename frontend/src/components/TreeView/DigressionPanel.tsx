@@ -11,7 +11,7 @@ interface DigressionPanelProps {
 }
 
 export function DigressionPanel({ groups, path, onDismiss, onStartSelection }: DigressionPanelProps) {
-  const { toggleDigressionGroup, deleteDigressionGroup } = useTreeStore()
+  const { currentTree, toggleDigressionGroup, deleteDigressionGroup, anchorGroup } = useTreeStore()
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
 
   const pathNodeIds = new Set(path.map((n) => n.node_id))
@@ -38,6 +38,10 @@ export function DigressionPanel({ groups, path, onDismiss, onStartSelection }: D
         <div className="digression-list">
           {groups.map((group) => {
             const allOnPath = group.node_ids.every((nid) => pathNodeIds.has(nid))
+            const allAnchored = currentTree != null && group.node_ids.every((nid) => {
+              const node = currentTree.nodes.find((n) => n.node_id === nid)
+              return node?.is_anchored ?? false
+            })
             return (
               <div
                 key={group.group_id}
@@ -61,6 +65,17 @@ export function DigressionPanel({ groups, path, onDismiss, onStartSelection }: D
                   )}
                 </div>
                 <div className="digression-item-actions">
+                  <button
+                    className={`digression-anchor-btn${allAnchored ? ' anchored' : ''}`}
+                    onClick={() => anchorGroup(group.group_id)}
+                    title={allAnchored ? 'Unanchor all nodes in group' : 'Anchor all nodes in group'}
+                  >
+                    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round">
+                      <circle cx="8" cy="3.5" r="2" />
+                      <line x1="8" y1="5.5" x2="8" y2="13" />
+                      <line x1="4.5" y1="10" x2="11.5" y2="10" />
+                    </svg>
+                  </button>
                   {confirmDelete === group.group_id ? (
                     <>
                       <button
@@ -157,6 +172,7 @@ export function DigressionSidePanel() {
     branchSelections,
     toggleDigressionGroup,
     deleteDigressionGroup,
+    anchorGroup,
     setDigressionPanelOpen,
     setGroupSelectionMode,
   } = useTreeStore()
@@ -199,6 +215,10 @@ export function DigressionSidePanel() {
           <div className="digression-list">
             {digressionGroups.map((group) => {
               const allOnPath = group.node_ids.every((nid) => pathNodeIds.has(nid))
+              const allAnchored = currentTree != null && group.node_ids.every((nid) => {
+                const node = currentTree.nodes.find((n) => n.node_id === nid)
+                return node?.is_anchored ?? false
+              })
               return (
                 <div
                   key={group.group_id}
@@ -222,6 +242,17 @@ export function DigressionSidePanel() {
                     )}
                   </div>
                   <div className="digression-item-actions">
+                    <button
+                      className={`digression-anchor-btn${allAnchored ? ' anchored' : ''}`}
+                      onClick={() => anchorGroup(group.group_id)}
+                      title={allAnchored ? 'Unanchor all nodes in group' : 'Anchor all nodes in group'}
+                    >
+                      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round">
+                        <circle cx="8" cy="3.5" r="2" />
+                        <line x1="8" y1="5.5" x2="8" y2="13" />
+                        <line x1="4.5" y1="10" x2="11.5" y2="10" />
+                      </svg>
+                    </button>
                     {confirmDelete === group.group_id ? (
                       <>
                         <button

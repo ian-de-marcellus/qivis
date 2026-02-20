@@ -192,6 +192,11 @@ class ToggleDigressionGroupRequest(BaseModel):
     included: bool
 
 
+class BulkAnchorRequest(BaseModel):
+    node_ids: list[str]
+    anchor: bool
+
+
 class DigressionGroupResponse(BaseModel):
     group_id: str
     tree_id: str

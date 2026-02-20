@@ -856,6 +856,59 @@ class TreeService:
             await self._projector.project([event])
             return True
 
+    async def bulk_anchor(
+        self, tree_id: str, node_ids: list[str], anchor: bool,
+    ) -> int:
+        """Anchor or unanchor multiple nodes. Returns count of nodes that changed state."""
+        tree = await self._projector.get_tree(tree_id)
+        if tree is None:
+            raise TreeNotFoundError(tree_id)
+
+        nodes = await self._projector.get_nodes(tree_id)
+        valid_ids = {n["node_id"] for n in nodes}
+
+        # Get current anchor state for all requested nodes
+        anchor_rows = await self._db.fetchall(
+            "SELECT DISTINCT node_id FROM node_anchors WHERE tree_id = ?",
+            (tree_id,),
+        )
+        currently_anchored = {r["node_id"] for r in anchor_rows}
+
+        events: list[EventEnvelope] = []
+        now = datetime.now(UTC)
+
+        for nid in node_ids:
+            if nid not in valid_ids:
+                continue
+            is_anchored = nid in currently_anchored
+            if anchor and not is_anchored:
+                payload = NodeAnchoredPayload(node_id=nid)
+                events.append(EventEnvelope(
+                    event_id=str(uuid4()),
+                    tree_id=tree_id,
+                    timestamp=now,
+                    device_id="local",
+                    event_type="NodeAnchored",
+                    payload=payload.model_dump(),
+                ))
+            elif not anchor and is_anchored:
+                payload = NodeUnanchoredPayload(node_id=nid)
+                events.append(EventEnvelope(
+                    event_id=str(uuid4()),
+                    tree_id=tree_id,
+                    timestamp=now,
+                    device_id="local",
+                    event_type="NodeUnanchored",
+                    payload=payload.model_dump(),
+                ))
+
+        for event in events:
+            await self._store.append(event)
+        if events:
+            await self._projector.project(events)
+
+        return len(events)
+
     # -- Digression group methods --
 
     async def create_digression_group(
