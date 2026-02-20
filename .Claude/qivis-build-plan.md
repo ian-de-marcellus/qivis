@@ -335,9 +335,39 @@ _Goal: Annotate, bookmark, manage context, export._
 
 ---
 
+## Interlude: Immediate Fixes + Technical Debt
+
+_Goal: Fix bugs, clean up debt, solid foundation before new features._
+
+### Bug Fixes
+
+- **Context bar clickable size**: increase hit target for the context usage bar on assistant messages
+- **Regen dialog position**: should appear above the message, not below (current placement pushes content off-screen)
+- **Extended thinking override on regenerate**: turning thinking off in regen dialog may not override tree default due to sampling param merge backward-compat hack
+- **TreeSettings save consistency**: some fields save immediately (checkboxes), others buffer and require explicit Save button. Inconsistent UX — user can't tell what's saved. Fix: either auto-save all, or make all fields buffer with clear dirty indicators and a single Save
+- **Center button for collapsed tree panel**: when sidebar is collapsed, add a centered expand button
+- **Markdown rendering**: message content should render markdown (bold, italic, code blocks, lists). Double asterisks currently display raw
+- **Eviction summary injection**: `_smart_evict()` collects evicted content and sets `summary_needed: True`, but no summary is ever generated or inserted into messages. Wire up the last mile
+- **Configurable summary model**: replace hardcoded `"claude-haiku-4-5"` for bookmark and eviction summaries with a configurable per-tree or global setting
+
+### Technical Debt
+
+- **Token counter interface**: replace `len(text) // 4` with a `TokenCounter` ABC. Implement `ApproximateTokenCounter` (current behavior) and `TiktokenTokenCounter` for accuracy. Make switchable per provider in context builder
+- **Zustand store slicing**: break 1374-line store into coherent slices (streaming, comparison, digression groups, UI panels). Use Zustand selector pattern instead of destructuring 26+ fields. Add `rightPaneMode` to centralize mutual exclusion of graph/digression/split views
+- **Extract shared sampling UI**: `<SamplingParamsPanel />` component used by both ForkPanel and TreeSettings. Move `SAMPLING_PRESETS` and `detectPreset` to shared location. Eliminates ~150 lines of duplication
+- **Unified JSON parsing**: consolidate `_parse_json_field()`, `maybe_json()`, and direct `json.loads()` into `qivis/utils/json.py`
+- **Update architecture doc**: reflect implementation reality — context builder signature, anchors vs bookmarks, provider class attributes vs abstract methods, extra data model fields (thinking, editing, timestamps, prefill/manual mode)
+- **Migration system**: add version tracking table, specific error catching (not bare `except Exception: pass`), logging of success/failure per migration
+- **MessageRow prop reduction**: split 22-prop MessageRow into `<MessageRow>` (content) + `<MessageRowToolbar>` (actions). Wrap in `React.memo()`
+- **Modal focus management**: add focus traps to ContextModal, ContextSplitView, CanvasView. Add `aria-live` to error banners and streaming status
+
+✅ All bugs fixed, debt addressed, architecture doc matches code. Store is organized, components are manageable, modals are accessible. Clean foundation for Phase 7+.
+
+---
+
 ## Phase 7: Corpus & Search
 
-_Goal: Build and search a research corpus._
+_Goal: Build and search a research corpus. Organize trees. Import external conversations._
 
 ### 7.1 — FTS5 Search 🔒
 
@@ -359,11 +389,13 @@ _Goal: Build and search a research corpus._
 - Graceful handling of missing fields (no logprobs, no context_usage, approximate timestamps)
 - Events emitted as if the conversation happened natively (`TreeCreated` + `NodeCreated`)
 - Import wizard UI with format selection and preview
+- **Import placeholder for default Anthropic system prompt**: when importing Claude.ai conversations, detect and mark the Anthropic default prompt separately from researcher-authored system prompts
+- **Tree merge/reconciliation**: import a continuation of an existing tree from a different source (e.g., conversation started in Claude.ai, continued in OpenRouter, then back to Claude.ai). Match overlapping messages by content hash, graft new branches onto the existing tree
 - Stress-tests data model with "information not available" patterns
 
 **Blockers:** 6.1 (imported conversations should be annotatable). Can parallel with 7.1.
 
-✅ Can import conversations from Claude.ai and ChatGPT. Imported trees fully functional.
+✅ Can import conversations from Claude.ai and ChatGPT. Can merge trees from different sources. Imported trees fully functional.
 
 ### 7.3 — Manual Summarization 🔀
 
@@ -375,46 +407,115 @@ _Goal: Build and search a research corpus._
 
 **Blockers:** 6.2 (bookmark summary infrastructure).
 
-✅ Can summarize branches, subtrees, selections with various prompts. **Phase 7 complete.**
+✅ Can summarize branches, subtrees, selections with various prompts.
+
+### 7.4 — Tree Organization 🔀
+
+**Tasks:**
+- **Folders**: hierarchical folder structure in sidebar. Trees can be moved between folders. Drag-and-drop or context menu
+- **Tags**: arbitrary string tags on trees (not nodes — node tags are annotations). Filter sidebar by tag. Color-coded tag chips
+- **Right-click context menu**: rename, move to folder, add tag, duplicate, archive, delete. Available on tree items in sidebar
+- Folder and tag data stored as tree metadata (no new event types needed)
+
+**Blockers:** None (pure organization layer).
+
+✅ Trees organized into folders and tags. Sidebar filterable. Right-click actions work. **Phase 7 complete.**
 
 ---
 
-## Phase 8: Multimodal
+## Phase 8: Generation Modes & Local Models
 
-_Goal: Images, files, and rich content in conversations._
+_Goal: Prefill, base models, local inference, full-vocab logprobs. The research capabilities that require non-standard generation._
 
-### 8.1 — Content Block Model 🔒
-
-**Tasks:**
-- Content becomes `string | ContentBlock[]` in events, projections, context builder
-- Backward-compatible: plain strings still valid
-- ContentBlock types: text, image, file (PDF, markdown, etc.)
-- Frontend renders mixed content inline
-
-**Blockers:** Phase 7 complete (text-based research workflow should be solid first).
-
-✅ Data model supports mixed content. Existing conversations unaffected.
-
-### 8.2 — File Uploads + Provider Support 🔒
+### 8.1 — Prefill / Continuation Mode 🔒
 
 **Tasks:**
-- Upload API + storage (local filesystem or configurable)
-- Frontend: drag-and-drop or file picker in message input
-- Inline rendering: images displayed, PDFs previewed, markdown rendered
-- Provider adapters: pass multimodal content to APIs that support it (Claude, GPT-4V, etc.)
-- Graceful degradation: providers that don't support images get text-only context
+- Researcher writes a partial assistant response; model continues from there
+- `mode: "prefill"` on `GenerateRequest` — appends partial assistant message to context, model completes it
+- Anthropic: native support via partial assistant message in Messages API
+- OpenAI: best-effort via system prompt instruction (less reliable)
+- Frontend: "Prefill" button on user messages opens text area for partial response. Generated content appended after the prefill text. Prefill portion visually distinguished (different background, "PREFILL" label) like the palimpsest edit display
+- `NodeCreatedPayload.prefill_content`: stores the researcher-authored prefix separately from model-generated continuation
+- Key research use case: "The model said X — what if it had started with Y instead?"
 
-**Blockers:** 8.1 (content block model).
+**Blockers:** Phase 6 complete.
 
-✅ Can include images and files in conversations. Providers handle multimodal input. **Phase 8 complete.**
+✅ Can supply partial assistant responses. Model continues naturally. Prefill content distinguished from generated content.
+
+### 8.2 — Local Providers 🔒
+
+**Tasks:**
+- `OllamaProvider`: chat + completion modes, auto-discover models via Ollama API (`/api/tags`), streaming
+- `LlamaCppProvider`: completion mode, logprob extraction from `completion_probabilities`, full vocabulary distributions
+- `GenericOpenAIProvider`: any OpenAI-compatible endpoint (vLLM, LM Studio, text-generation-webui)
+- Handle provider-specific quirks: Ollama's streaming format, llama.cpp's token handling
+- Provider auto-discovery: detect running Ollama/llama.cpp on startup, add to provider list
+- Settings panel integration: configure local provider URLs
+
+**Blockers:** Provider pattern established (Phase 1).
+
+✅ Can generate from local Ollama and llama.cpp models.
+
+### 8.3 — Completion Mode + Full-Vocab Logprobs 🔒
+
+**Tasks:**
+- `mode: "completion"` support: full conversation rendered as a single text prompt via configurable prompt templates
+- Prompt template system: Alpaca, ChatML, Llama, custom. Stored per tree or per participant
+- `prompt_text` stored on `NodeCreated` — the exact string sent to the model
+- `LLMProvider.supports_mode()` validation
+- `LogprobNormalizer.from_llamacpp()` — full vocabulary distributions (thousands of alternatives per token, not just top-5)
+- Enriches Phase 3 logprob visualization with complete alternative data: full probability distributions, entropy computation, token-level surprise metrics
+
+**Blockers:** 8.2 (local providers).
+
+✅ Completion mode works. Full-vocab logprobs from local models enrich visualization. **Phase 8 complete.**
 
 ---
 
-## Phase 9: Multi-Agent
+## Phase 9: Research Intervention Tools
 
-_Goal: Run model-to-model conversations AnimaChat-style._
+_Goal: Systematic tools for designing and running experiments on AI conversation behavior._
 
-### 9.1 — Participants + Context 🔒
+### 9.1 — Systematic Context Interventions 🔒
+
+**Tasks:**
+- **Context packaging dialog**: configurable transforms applied to messages before sending to model. Examples: prepend timestamps, append metadata, wrap in XML tags, insert separators. Per-tree configuration with preview
+- **Move context tokens out of system prompt**: option to place system-prompt-like instructions in a user message or as a context preamble instead of the system prompt field. Some models respond differently to the same instructions in different positions
+- **Long context reminder injection**: insert a configurable reminder at a specified position in the context (e.g., halfway, every N turns). Research tool for studying the effects of in-context reminders. Gated behind explicit opt-in with clear documentation of research purpose
+
+**Blockers:** Phase 6 complete.
+
+✅ Can configure how messages are packaged for the model. Can experiment with instruction placement.
+
+### 9.2 — Conversation Replay & Perturbation 🔀
+
+**Tasks:**
+- **Replay**: take a path through a tree and replay it through a different model — same user messages, regenerate all assistant responses. Creates a new branch at each fork. Shows how different models handle the same conversation trajectory
+- **Context perturbation experiments**: automated exclude/include/regenerate/diff cycles. Toggle a digression group or exclusion, regenerate, toggle back, regenerate, diff the results. Produces a structured comparison of "what changed when this context was present vs absent"
+- **Perturbation report**: summary of which context changes had the largest effect on model output, measured by edit distance or semantic similarity
+
+**Blockers:** 6.3 (exclusions and digression groups), Phase 7 (search for finding similar conversations).
+
+✅ Can replay conversations through different models. Can run controlled perturbation experiments.
+
+### 9.3 — Cross-Tree Reference & Display 🔀
+
+**Tasks:**
+- **Split-pane cross-tree view**: the graph/transcript pane on the right can show a different tree than the main conversation. For repeating experiments with different models or referencing other conversations while working
+- **Customizable role labels**: replace "user" and "assistant" with researcher-chosen labels. Per-tree setting. Default labels should work for non-human "user" roles (e.g., "Participant A" / "Participant B" instead of "User" / "Assistant")
+- Tree selector in the right pane header. Independent scroll, navigation, and branch selection from the main pane
+
+**Blockers:** Phase 4 (graph view exists).
+
+✅ Can view two trees side by side. Role labels customizable. **Phase 9 complete.**
+
+---
+
+## Phase 10: Multi-Agent
+
+_Goal: Run model-to-model conversations. Multiple models with different contexts in shared conversations._
+
+### 10.1 — Participants & Context 🔒
 
 **Tasks:**
 - Participant CRUD: model + provider + system prompt + sampling params per participant
@@ -427,18 +528,18 @@ _Goal: Run model-to-model conversations AnimaChat-style._
 
 ✅ Multi-agent trees with correct per-participant context. Selective visibility works.
 
-### 9.2 — Directed Generation + Injection 🔒
+### 10.2 — Directed Generation & Injection 🔒
 
 **Tasks:**
 - "Who responds?" selector before generating (dropdown of participants)
 - Researcher injection: add message with per-participant visibility control
 - Participant visual identity: colors, name badges on messages
 
-**Blockers:** 9.1.
+**Blockers:** 10.1.
 
 ✅ Can direct any participant to respond. Can inject selectively visible messages.
 
-### 9.3 — Auto-Run + Turn Controls 🔀
+### 10.3 — Auto-Run & Turn Controls 🔀
 
 **Tasks:**
 - `POST /api/trees/{id}/multi/run` — run N turns with configurable turn order (round-robin or specified)
@@ -446,101 +547,183 @@ _Goal: Run model-to-model conversations AnimaChat-style._
 - Fork from any point in a multi-agent conversation with different participant responding
 - Per-participant context usage bars
 
-**Blockers:** 9.2.
+**Blockers:** 10.2.
 
-✅ Automated multi-agent conversations with live streaming. **Phase 9 complete.**
+✅ Automated multi-agent conversations with live streaming.
+
+### 10.4 — Group Chat with Divergent Histories 🔒
+
+**Tasks:**
+- Bring two (or more) models with different prior conversation contexts into a shared group chat
+- Each participant retains access to their full prior context (from a different tree or branch) plus the shared group chat messages
+- Per-participant private notes: visible only to the participant they're addressed to (internal monologue / scratchpad for each model)
+- Context assembly: `[prior context from participant's source tree] + [shared group chat messages] + [private notes for this participant]`
+- UI: participant setup wizard showing which tree/branch each participant brings as "memory"
+
+**Blockers:** 10.1, 10.2 (basic multi-agent must work first).
+
+✅ Can create group conversations where each model brings different context. Private notes work. **Phase 10 complete.**
 
 ---
 
-## Phase 10: Local Models
+## Phase 11: Memory System
 
-_Goal: Local inference with rich logprob data._
+_Goal: Persistent, portable context that transcends individual conversations._
 
-### 10.1 — Local Providers 🔒
-
-**Tasks:**
-- `OllamaProvider`: chat + completion, auto-discover models via Ollama API (`/api/tags`)
-- `LlamaCppProvider`: completion mode, logprob extraction from `completion_probabilities`
-- `GenericOpenAIProvider`: any OpenAI-compatible endpoint (vLLM, LM Studio, text-generation-webui)
-- Handle provider-specific quirks: Ollama's streaming format, llama.cpp's token handling
-
-**Blockers:** Provider pattern established (Phase 1). Independent of Phases 2–9.
-
-✅ Can generate from local Ollama and llama.cpp models.
-
-### 10.2 — Completion Mode + Full-Vocab Logprobs 🔒
+### 11.1 — Portable Digression Groups 🔒
 
 **Tasks:**
-- `mode: "completion"` support: full conversation as single text prompt
-- `prompt_text` stored on `NodeCreated` — the exact string sent
-- `LLMProvider.supports_mode()` validation
-- `LogprobNormalizer.from_llamacpp()` — full vocabulary distributions
-- Enriches Phase 3 logprob visualization with complete alternative data
+- **Memory bank**: a tree-independent store of context snippets. Each memory has: content (from digression group nodes), label, source tree/branch, tags, created_at
+- Promote any digression group to a "memory" — copies the content into the memory bank, decoupled from the source tree
+- **Memory injection**: when creating or continuing a tree, select memories to include in context. Injected as a preamble or at a configurable position
+- Memory CRUD endpoints, memory list in sidebar
 
-**Blockers:** 10.1.
+**Blockers:** 6.3 (digression groups exist).
 
-✅ Completion mode works. Full-vocab logprobs from llama.cpp enrich visualization. **Phase 10 complete.**
+✅ Can save digression groups as persistent memories. Can inject memories into any conversation.
+
+### 11.2 — Model-Queryable Memories 🔒
+
+**Tasks:**
+- Tool-use interface: models can call a `search_memories` tool during generation to retrieve relevant memories
+- Requires MCP client integration or native function-calling support per provider
+- Memory search uses FTS5 + optional semantic matching
+- Retrieved memories inserted into context with `[Memory: {label}]` prefix
+- Researcher controls: which memories are searchable, maximum retrieval count, whether to auto-inject or require model to query
+
+**Blockers:** 11.1, Phase 7.1 (FTS5 for memory search), Phase 12.1 (MCP for tool use).
+
+✅ Models can query and retrieve memories during conversation.
+
+### 11.3 — Automatic Memory Creation 🔀
+
+**Tasks:**
+- Sentiment analysis / semantic clustering to auto-identify digression-worthy segments
+- Auto-creation of digression groups from detected topic shifts or emotional valence changes
+- Auto-tagging of memories based on content analysis
+- Configurable sensitivity: researcher controls what triggers auto-detection
+- Uses analysis skills infrastructure (Phase 13.2)
+
+**Blockers:** 11.1, Phase 13.2 (analysis skills for detection).
+
+✅ System can suggest and auto-create memory groups from conversation patterns. **Phase 11 complete.**
 
 ---
 
-## Phase 11: Analysis & Intelligence
+## Phase 12: Multimodal
 
-_Goal: AI-assisted corpus analysis._
+_Goal: Images, files, and rich content in conversations._
 
-### 11.1 — Semantic Search 🔒
+### 12.1 — Content Block Model 🔒
 
 **Tasks:**
-- Embedding index: sentence-transformers (`all-MiniLM-L6-v2`), hnswlib, incremental embedding of new nodes
-- `SearchService.hybrid_merge()`: combine FTS5 + embedding results with configurable weighting
-- `SearchQuery` with `semantic: bool` flag
-- Structured queries: tags + text + semantic + model/date filters
-- "Similar nodes" feature: click any node, find semantically similar across corpus
-- `agent_search()` convenience method for LLM agents
+- Content becomes `string | ContentBlock[]` in events, projections, context builder
+- Backward-compatible: plain strings still valid
+- ContentBlock types: text, image, file (PDF, markdown, etc.)
+- Frontend renders mixed content inline
 
-**Blockers:** 7.1 (FTS5 must exist for hybrid search).
+**Blockers:** Phase 7 complete (text-based research workflow should be solid first).
 
-✅ Keyword, semantic, and hybrid search all work.
+✅ Data model supports mixed content. Existing conversations unaffected.
 
-### 11.2 — Analysis Skills + Templates 🔀
+### 12.2 — File Uploads + Provider Support 🔒
+
+**Tasks:**
+- Upload API + storage (local filesystem or configurable)
+- Frontend: drag-and-drop or file picker in message input
+- Inline rendering: images displayed, PDFs previewed, markdown rendered
+- Provider adapters: pass multimodal content to APIs that support it (Claude, GPT-4V, etc.)
+- Graceful degradation: providers that don't support images get text-only context
+
+**Blockers:** 12.1 (content block model).
+
+✅ Can include images and files in conversations. Providers handle multimodal input. **Phase 12 complete.**
+
+---
+
+## Phase 13: Analysis & Intelligence
+
+_Goal: AI-assisted corpus analysis. Behavioral pattern detection. Agent co-annotation._
+
+### 13.1 — Agent Co-Annotation 🔒
+
+**Tasks:**
+- **Meta-conversation**: a special tree where the agent (Claude or similar) can query, view, and annotate other conversations in the corpus
+- Qivis as MCP server: expose `search_conversations`, `get_tree`, `get_node_context`, `get_annotations`, `add_annotation`, `get_memories` as tools
+- Agent can browse trees, read branches, add annotations, create bookmarks, and write research notes — all through natural conversation
+- Researcher guides the agent's analysis through the meta-conversation, building up annotations collaboratively
+
+**Blockers:** Phase 7.1 (search), Phase 6.1 (annotations).
+
+✅ Agent can explore and annotate the corpus through conversation.
+
+### 13.2 — Behavioral Fingerprinting & Pattern Detection 🔀
+
+**Tasks:**
+- **Temporal marker tracking**: flag when models use temporal language ("tonight", "this afternoon", "this weekend"), correlate with context window metrics (% full, token count, turn count). Test the "tonight = full context" hypothesis across models and prompt styles
+- **Self-reference pattern analysis**: track when models refer to themselves (I/me vs we vs passive voice), how this shifts across conversation length, system prompts, and models. Detect the "we" overloading phenomenon (using first-person plural to refer to humans)
+- **Cross-model behavioral comparison**: given the same conversation up to a fork, run N models and auto-annotate structural differences — hedging patterns, mirroring, list-vs-prose, agreement-first vs qualification-first
+- **Semantic search**: embedding index (sentence-transformers), `SearchService.hybrid_merge()` combining FTS5 + embeddings, "similar nodes" feature
+- Results stored as annotations, queryable via search
+
+**Blockers:** 7.1 (FTS5), 6.1 (annotations).
+
+✅ Can detect and track behavioral patterns across models and conversations.
+
+### 13.3 — Analysis Skills & Templates 🔀
 
 **Tasks:**
 - `AnalysisSkill` ABC: `name`, `analyze(nodes) -> AnalysisResult`
-- Built-in skills: `LinguisticMarkerSkill` (hedging, denial, defensive language), `CoherenceScoreSkill`, `LogprobAnalysisSkill` (uncertainty patterns, entropy)
+- Built-in skills: `LinguisticMarkerSkill` (hedging, denial, defensive language), `CoherenceScoreSkill`, `LogprobAnalysisSkill` (uncertainty patterns, entropy), `TemporalMarkerSkill`, `SelfReferenceSkill`
 - Plugin system: load skills from `skills/` directory
 - Skill runner UI: select nodes, pick skill, see results (stored as annotations)
-- **Conversation templates / research protocols**: pre-built tree starters for specific research questions (sycophancy testing, persona consistency, emotional response patterns). Shareable as JSON.
+- **Conversation templates / research protocols**: pre-built tree starters for specific research questions (sycophancy testing, persona consistency, emotional response patterns). Shareable as JSON
 
 **Blockers:** 6.1 (annotations for storing skill results).
 
-✅ Built-in skills produce useful analysis. Templates shareable. **Phase 11 complete.**
+✅ Built-in skills produce useful analysis. Templates shareable. **Phase 13 complete.**
 
 ---
 
-## Phase 12: Ecosystem
+## Phase 14: Settings & Ecosystem
 
-_Goal: Community-deployable research tool._
+_Goal: First-class settings experience. Community-deployable research tool._
 
-### 12.1 — MCP 🔀
-
-**Tasks:**
-- MCP client: connect to configured servers (`mcp_servers.yml`), discover tools, wire into generation. Tool calls and results stored as `role: "tool"` nodes.
-- MCP server: expose Qivis as MCP server. Tools: `search_conversations`, `get_tree`, `get_node_context`, `get_annotations`, `add_annotation`.
-
-**Blockers:** 11.1 (search for MCP server's `search_conversations` tool).
-
-✅ Models can use external tools. External agents can query and annotate the Qivis corpus.
-
-### 12.2 — Maintenance + Deployment 🔀
+### 14.1 — Settings Panel 🔀
 
 **Tasks:**
-- Garbage collection: `POST /api/maintenance/gc` with preview, confirmation, and grace period before purge. Logged as `GarbageCollected` events.
+- **API key management**: configure provider API keys through the UI (stored encrypted, not in `.env`). Connection testing per provider — verify the key works before saving
+- **Custom model registration**: add models not in the suggested list. Specify provider, model ID, context window size, capabilities
+- **Global defaults**: default provider, model, system prompt, sampling params. Applied to new trees
+- **Provider health dashboard**: show which providers are configured, connected, and responding
+
+**Blockers:** None (independent infrastructure).
+
+✅ Can configure providers and models without editing `.env`. Connection testing works.
+
+### 14.2 — MCP Client Integration 🔀
+
+**Tasks:**
+- MCP client: connect to configured servers (`mcp_servers.yml`), discover tools, wire into generation
+- Tool calls and results stored as `role: "tool"` nodes
+- Tool approval UI: researcher can approve/deny tool calls before execution
+- Shared infrastructure with 11.2 (model-queryable memories use same tool-calling path)
+
+**Blockers:** Phase 8 complete (generation modes stable).
+
+✅ Models can use external tools via MCP.
+
+### 14.3 — Maintenance & Deployment 🔀
+
+**Tasks:**
+- Garbage collection: `POST /api/maintenance/gc` with preview, confirmation, and grace period before purge. Logged as `GarbageCollected` events
 - Multi-device sync: event exchange between instances, conflict resolution (tree structure resolves most conflicts naturally)
 - Docker image: single `docker-compose up` for the full stack
 - Deployment guide, provider setup guides, research workflow guide, API documentation
 
 **Blockers:** Everything else should be stable.
 
-✅ A new researcher can go from zero to running Qivis with one page of instructions. **Phase 12 complete. Qivis is a community-deployable research tool.**
+✅ A new researcher can go from zero to running Qivis with one page of instructions. **Phase 14 complete. Qivis is a community-deployable research tool.**
 
 ---
 
@@ -548,11 +731,11 @@ _Goal: Community-deployable research tool._
 
 Ideas noted for consideration beyond the current roadmap:
 
-- **Image generation**: Support for models with image output (DALL-E, future Claude image generation). Fundamentally different generation mode — nodes would store image outputs alongside or instead of text.
-- **Conversation templates marketplace**: Community-contributed shareable research protocols beyond local templates.
-- **Real-time collaboration**: Multiple researchers on the same tree simultaneously. Event sourcing makes this architecturally straightforward to add later.
-- **Postgres migration**: For multi-user deployments. SQLite is single-researcher; Postgres enables shared instances.
-- **Prefill / continuation mode**: Let the researcher supply a partial assistant response and see where the model takes it. Anthropic Messages API supports this natively (partial assistant message). OpenAI chat API doesn't reliably continue from a prefill. Completion APIs (llama.cpp, Phase 10.2) support it perfectly with full logprobs. A lighter version using Anthropic prefill could land before Phase 10. Key research use case: "the model said X — but what if it had started with Y instead?"
+- **Image generation**: support for models with image output (DALL-E, future Claude image generation). Fundamentally different generation mode — nodes would store image outputs alongside or instead of text
+- **Conversation templates marketplace**: community-contributed shareable research protocols beyond local templates
+- **Real-time collaboration**: multiple researchers on the same tree simultaneously. Event sourcing makes this architecturally straightforward to add later
+- **Postgres migration**: for multi-user deployments. SQLite is single-researcher; Postgres enables shared instances
+- **Custom research scripting**: embedded scripting environment (Python or similar) for researchers to write custom analysis pipelines that interact with the Qivis API. Like a Jupyter notebook integrated into the tool — define custom experiments, transformations, and visualizations without modifying the codebase
 
 ---
 
@@ -561,42 +744,52 @@ Ideas noted for consideration beyond the current roadmap:
 ```
 Phase 0 ✅ → Phase 1 ✅ → Phase 1b ✅
                                 ↓
-                          Phase 2 (Essentials)
-                             ↓        ↘
-                          Phase 3      2.3 (parallel)
-                        (Uncertainty)
-                             ↓
-                          Phase 4
-                        (Structure)
-                             ↓
-                       Phase 5.1–5.2
-                       (Transparency)
-                             ↓
-                         Phase 5.3
-                    (Full Context Compare)
-                             ↓
-                          Phase 6
-                     (Instrumentation)
-                        ↓       ↘
-                     Phase 7    6.4 (parallel)
-                  (Corpus/Search)
-                        ↓
-                     Phase 8
-                   (Multimodal)
+                          Phase 2 ✅ (Essentials)
+                                ↓
+                          Phase 3 ✅ (Uncertainty)
+                                ↓
+                          Phase 4 ✅ (Structure)
+                                ↓
+                          Phase 5 ✅ (Transparency)
+                                ↓
+                          Phase 6 ✅ (Instrumentation)
+                                ↓
+                     Interlude (Fixes + Debt)
+                                ↓
+                          Phase 7 (Corpus/Search)
+                           ↓         ↘
+                     Phase 8          7.4 (parallel)
+                  (Gen Modes +
+                   Local Models)
                         ↓
                      Phase 9
-                   (Multi-Agent)
+                (Research Tools)
+                        ↓
+                    Phase 10
+                 (Multi-Agent)
+                        ↓
+                    Phase 11
+                  (Memory System)
+                        ↓
+                    Phase 12
+                  (Multimodal)
+                        ↓
+                    Phase 13
+                  (Analysis)
+                        ↓
+                    Phase 14
+                  (Ecosystem)
 
-  Phase 10 (Local Models) ─── independent, do whenever hardware available
-  Phase 11 (Analysis) ─────── needs Phase 6 + 7
-  Phase 12 (Ecosystem) ────── needs everything stable
+  Phase 14.1 (Settings) ────── independent, do whenever
+  Phase 8.2 (Local Models) ─── can pull forward if hardware available
 ```
 
 **Parallelism notes:**
-- Phase 10 (Local Models) is independent of Phases 2–9. Can be done whenever hardware is available.
-- Phase 4 subphases (graph view, comparison) are pure frontend and could theoretically be pulled forward.
+- Phase 14.1 (Settings Panel) is independent of other phases. Can be done whenever.
+- Phase 8.2 (Local Providers) can be pulled forward independently if hardware is available.
 - Within phases, 🔀 subphases can be parallelized.
-- UX polish ("b" phases) can be interjected between any phases as needed.
+- UX polish interludes can be interjected between any phases as needed.
+- Phase 11 (Memory System) has dependencies on both Phase 7 (search) and Phase 13 (analysis skills for auto-creation). 11.1 and 11.2 can start after Phase 7; 11.3 needs Phase 13.2.
 
 ---
 
@@ -604,10 +797,10 @@ Phase 0 ✅ → Phase 1 ✅ → Phase 1b ✅
 
 When handing this plan to Claude Code:
 
-1. **One subphase at a time.** Say "Implement 2.1" not "Build Phase 2."
+1. **One subphase at a time.** Say "Implement 7.1" not "Build Phase 7."
 2. **Definition of done matters.** Each ✅ is the acceptance criteria. Don't move on until it passes.
-3. **The architecture doc is the source of truth** for data structures, event types, and API shapes. This plan is the *order* to build them in.
+3. **The architecture doc is the source of truth** for data structures, event types, and API shapes. This plan is the *order* to build them in. The architecture doc needs updating (listed in Interlude).
 4. **Tests as you go.** Each subphase should have tests before moving to the next, especially event store, context builder, and new event types — these are load-bearing.
 5. **Frontend can lag.** It's OK if the frontend is a phase behind the backend. The API is the real interface; the UI catches up.
 6. **Frontend components are exempt from test-first.** Backend follows contract tests → integration tests → implement → cleanup → regression. Frontend React components are manually tested.
-7. **Subphase sizing matters.** Keep subphases large enough for real design decisions and discovery, not mechanical fill-in.
+7. **Subphase sizing matters.** Keep subphases large enough for real design decisions and discovery, not mechanical fill-in. The work is more alive when there's friction, surprise, or enough surface area to find its shape.
