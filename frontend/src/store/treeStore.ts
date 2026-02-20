@@ -191,6 +191,91 @@ export function getActivePath(
   return path
 }
 
+// ---- Helpers ----
+
+type SetFn = (
+  partial: Partial<TreeStore> | ((state: TreeStore) => Partial<TreeStore>),
+) => void
+
+const STREAMING_RESET = {
+  isGenerating: false,
+  streamingContent: '',
+  streamingThinkingContent: '',
+} as const
+
+const MULTI_STREAMING_RESET = {
+  ...STREAMING_RESET,
+  streamingContents: {} as Record<number, string>,
+  streamingThinkingContents: {} as Record<number, string>,
+  streamingNodeIds: {} as Record<number, string>,
+  streamingTotal: 0,
+  activeStreamIndex: 0,
+} as const
+
+function refreshTree(treeId: string, set: SetFn) {
+  api.getTree(treeId).then((tree) => set({ currentTree: tree }))
+  api.listTrees().then((trees) => set({ trees }))
+}
+
+function refreshTreeSelectNewest(
+  treeId: string,
+  parentNodeId: string,
+  set: SetFn,
+) {
+  api.getTree(treeId).then((tree) => {
+    const newChildren = tree.nodes.filter(
+      (nd) => nd.parent_id === parentNodeId,
+    )
+    const newest = newChildren[newChildren.length - 1]
+    if (newest) {
+      set((state) => ({
+        currentTree: tree,
+        branchSelections: {
+          ...state.branchSelections,
+          [parentNodeId]: newest.node_id,
+        },
+      }))
+    } else {
+      set({ currentTree: tree })
+    }
+  })
+  api.listTrees().then((trees) => set({ trees }))
+}
+
+async function fetchTreeData<T>(
+  get: () => TreeStore,
+  set: SetFn,
+  apiFn: (treeId: string) => Promise<T>,
+  onSuccess: (data: T, state: TreeStore) => Partial<TreeStore>,
+) {
+  const { currentTree } = get()
+  if (!currentTree) return
+  try {
+    const data = await apiFn(currentTree.tree_id)
+    set((state) => onSuccess(data, state))
+  } catch (e) {
+    set({ error: String(e) })
+  }
+}
+
+function updateNode(
+  tree: TreeDetail | null,
+  nodeId: string,
+  update:
+    | Partial<NodeResponse>
+    | ((node: NodeResponse) => Partial<NodeResponse>),
+): TreeDetail | null {
+  if (!tree) return null
+  return {
+    ...tree,
+    nodes: tree.nodes.map((n) =>
+      n.node_id === nodeId
+        ? { ...n, ...(typeof update === 'function' ? update(n) : update) }
+        : n,
+    ),
+  }
+}
+
 export const useTreeStore = create<TreeStore>((set, get) => ({
   trees: [],
   selectedTreeId: null,
@@ -383,7 +468,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
           : null,
       }))
 
-      set({ isGenerating: true, streamingContent: '', streamingThinkingContent: '' })
+      set({ ...STREAMING_RESET, isGenerating: true })
 
       // Branch-local defaults: prefer last assistant's provider/model over tree defaults
       const lastAssistant = [...activePath].reverse().find((n) => n.role === 'assistant')
@@ -409,19 +494,12 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
             set((state) => ({ streamingContent: state.streamingContent + text }))
           },
           () => {
-            set({ isGenerating: false, streamingContent: '', streamingThinkingContent: '' })
-            api.getTree(treeId).then((tree) => {
-              set({ currentTree: tree })
-            })
-            api.listTrees().then((trees) => {
-              set({ trees })
-            })
+            set({ ...STREAMING_RESET })
+            refreshTree(treeId, set)
           },
           (error) => {
             set({
-              isGenerating: false,
-              streamingContent: '',
-              streamingThinkingContent: '',
+              ...STREAMING_RESET,
               error: String(error),
               generationError: {
                 parentNodeId: userNode.node_id,
@@ -441,16 +519,11 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
       } else {
         try {
           await api.generate(treeId, userNode.node_id, generateReq)
-          set({ isGenerating: false, streamingContent: '', streamingThinkingContent: '' })
-          const tree = await api.getTree(treeId)
-          set({ currentTree: tree })
-          const trees = await api.listTrees()
-          set({ trees })
+          set({ ...STREAMING_RESET })
+          refreshTree(treeId, set)
         } catch (error) {
           set({
-            isGenerating: false,
-            streamingContent: '',
-            streamingThinkingContent: '',
+            ...STREAMING_RESET,
             error: String(error),
             generationError: {
               parentNodeId: userNode.node_id,
@@ -463,7 +536,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
         }
       }
     } catch (e) {
-      set({ isGenerating: false, streamingContent: '', streamingThinkingContent: '', error: String(e) })
+      set({ ...STREAMING_RESET, error: String(e) })
     }
   },
 
@@ -536,14 +609,9 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
       // Update node in tree, then re-fetch edit history so the section stays visible
       // even after restoring to original (edited_content=null but history exists)
       set((state) => ({
-        currentTree: state.currentTree
-          ? {
-              ...state.currentTree,
-              nodes: state.currentTree.nodes.map((n) =>
-                n.node_id === nodeId ? { ...n, edited_content: updated.edited_content } : n,
-              ),
-            }
-          : null,
+        currentTree: updateNode(state.currentTree, nodeId, {
+          edited_content: updated.edited_content,
+        }),
       }))
       // Re-fetch edit history in background to keep cache populated
       api.getEditHistory(currentTree.tree_id, nodeId).then((history) => {
@@ -614,16 +682,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
       const shouldStream = overrides.stream !== false
 
       if (shouldStream && n > 1) {
-        set({
-          isGenerating: true,
-          streamingContent: '',
-          streamingThinkingContent: '',
-          streamingContents: {},
-          streamingThinkingContents: {},
-          streamingNodeIds: {},
-          streamingTotal: n,
-          activeStreamIndex: 0,
-        })
+        set({ ...MULTI_STREAMING_RESET, isGenerating: true, streamingTotal: n })
         await api.generateMultiStream(
           treeId,
           userNode.node_id,
@@ -647,33 +706,12 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
             }
           },
           () => {
-            set({
-              isGenerating: false,
-              streamingContent: '',
-              streamingThinkingContent: '',
-              streamingContents: {},
-              streamingThinkingContents: {},
-              streamingNodeIds: {},
-              streamingTotal: 0,
-              activeStreamIndex: 0,
-            })
-            api.getTree(treeId).then((tree) => {
-              set({ currentTree: tree })
-            })
-            api.listTrees().then((trees) => {
-              set({ trees })
-            })
+            set({ ...MULTI_STREAMING_RESET })
+            refreshTree(treeId, set)
           },
           (error) => {
             set({
-              isGenerating: false,
-              streamingContent: '',
-              streamingThinkingContent: '',
-              streamingContents: {},
-              streamingThinkingContents: {},
-              streamingNodeIds: {},
-              streamingTotal: 0,
-              activeStreamIndex: 0,
+              ...MULTI_STREAMING_RESET,
               error: String(error),
               generationError: {
                 parentNodeId: userNode.node_id,
@@ -694,7 +732,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
           },
         )
       } else if (shouldStream) {
-        set({ isGenerating: true, streamingContent: '', streamingThinkingContent: '' })
+        set({ ...STREAMING_RESET, isGenerating: true })
         await api.generateStream(
           treeId,
           userNode.node_id,
@@ -703,19 +741,12 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
             set((state) => ({ streamingContent: state.streamingContent + text }))
           },
           () => {
-            set({ isGenerating: false, streamingContent: '', streamingThinkingContent: '' })
-            api.getTree(treeId).then((tree) => {
-              set({ currentTree: tree })
-            })
-            api.listTrees().then((trees) => {
-              set({ trees })
-            })
+            set({ ...STREAMING_RESET })
+            refreshTree(treeId, set)
           },
           (error) => {
             set({
-              isGenerating: false,
-              streamingContent: '',
-              streamingThinkingContent: '',
+              ...STREAMING_RESET,
               error: String(error),
               generationError: {
                 parentNodeId: userNode.node_id,
@@ -733,19 +764,14 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
           },
         )
       } else {
-        set({ isGenerating: true, streamingContent: '', streamingThinkingContent: '' })
+        set({ ...STREAMING_RESET, isGenerating: true })
         try {
           await api.generate(treeId, userNode.node_id, { ...overrides, n })
-          set({ isGenerating: false, streamingContent: '', streamingThinkingContent: '' })
-          const tree = await api.getTree(treeId)
-          set({ currentTree: tree })
-          const trees = await api.listTrees()
-          set({ trees })
+          set({ ...STREAMING_RESET })
+          refreshTree(treeId, set)
         } catch (error) {
           set({
-            isGenerating: false,
-            streamingContent: '',
-            streamingThinkingContent: '',
+            ...STREAMING_RESET,
             error: String(error),
             generationError: {
               parentNodeId: userNode.node_id,
@@ -758,7 +784,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
         }
       }
     } catch (e) {
-      set({ isGenerating: false, streamingContent: '', streamingThinkingContent: '', error: String(e) })
+      set({ ...STREAMING_RESET, error: String(e) })
     }
   },
 
@@ -769,12 +795,19 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
     const treeId = currentTree.tree_id
     set({
       error: null, generationError: null,
-      isGenerating: true, streamingContent: '', streamingThinkingContent: '',
+      ...STREAMING_RESET, isGenerating: true,
       regeneratingParentId: parentNodeId,
     })
 
     const n = overrides.n ?? 1
     const shouldStream = overrides.stream !== false
+    const regenError = (error: unknown) => ({
+      parentNodeId,
+      provider: overrides.provider ?? 'anthropic',
+      model: overrides.model ?? null,
+      systemPrompt: overrides.system_prompt ?? null,
+      errorMessage: String(error),
+    })
 
     try {
       if (shouldStream && n > 1) {
@@ -808,55 +841,15 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
             }
           },
           () => {
-            set({
-              isGenerating: false,
-              streamingContent: '',
-              streamingThinkingContent: '',
-              streamingContents: {},
-              streamingThinkingContents: {},
-              streamingNodeIds: {},
-              streamingTotal: 0,
-              activeStreamIndex: 0,
-              regeneratingParentId: null,
-            })
-            api.getTree(treeId).then((tree) => {
-              const newChildren = tree.nodes.filter((nd) => nd.parent_id === parentNodeId)
-              const newest = newChildren[newChildren.length - 1]
-              if (newest) {
-                set((state) => ({
-                  currentTree: tree,
-                  branchSelections: {
-                    ...state.branchSelections,
-                    [parentNodeId]: newest.node_id,
-                  },
-                }))
-              } else {
-                set({ currentTree: tree })
-              }
-            })
-            api.listTrees().then((trees) => {
-              set({ trees })
-            })
+            set({ ...MULTI_STREAMING_RESET, regeneratingParentId: null })
+            refreshTreeSelectNewest(treeId, parentNodeId, set)
           },
           (error) => {
             set({
-              isGenerating: false,
-              streamingContent: '',
-              streamingThinkingContent: '',
-              streamingContents: {},
-              streamingThinkingContents: {},
-              streamingNodeIds: {},
-              streamingTotal: 0,
-              activeStreamIndex: 0,
+              ...MULTI_STREAMING_RESET,
               regeneratingParentId: null,
               error: String(error),
-              generationError: {
-                parentNodeId,
-                provider: overrides.provider ?? 'anthropic',
-                model: overrides.model ?? null,
-                systemPrompt: overrides.system_prompt ?? null,
-                errorMessage: String(error),
-              },
+              generationError: regenError(error),
             })
           },
           (thinking, idx) => {
@@ -877,43 +870,15 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
             set((state) => ({ streamingContent: state.streamingContent + text }))
           },
           () => {
-            set({
-              isGenerating: false, streamingContent: '', streamingThinkingContent: '',
-              regeneratingParentId: null,
-            })
-            api.getTree(treeId).then((tree) => {
-              const newChildren = tree.nodes.filter((nd) => nd.parent_id === parentNodeId)
-              const newest = newChildren[newChildren.length - 1]
-              if (newest) {
-                set((state) => ({
-                  currentTree: tree,
-                  branchSelections: {
-                    ...state.branchSelections,
-                    [parentNodeId]: newest.node_id,
-                  },
-                }))
-              } else {
-                set({ currentTree: tree })
-              }
-            })
-            api.listTrees().then((trees) => {
-              set({ trees })
-            })
+            set({ ...STREAMING_RESET, regeneratingParentId: null })
+            refreshTreeSelectNewest(treeId, parentNodeId, set)
           },
           (error) => {
             set({
-              isGenerating: false,
-              streamingContent: '',
-              streamingThinkingContent: '',
+              ...STREAMING_RESET,
               regeneratingParentId: null,
               error: String(error),
-              generationError: {
-                parentNodeId,
-                provider: overrides.provider ?? 'anthropic',
-                model: overrides.model ?? null,
-                systemPrompt: overrides.system_prompt ?? null,
-                errorMessage: String(error),
-              },
+              generationError: regenError(error),
             })
           },
           (thinking) => {
@@ -925,48 +890,19 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
       } else {
         try {
           await api.generate(treeId, parentNodeId, { ...overrides, n })
-          set({
-            isGenerating: false, streamingContent: '', streamingThinkingContent: '',
-            regeneratingParentId: null,
-          })
-          const tree = await api.getTree(treeId)
-          const newChildren = tree.nodes.filter((nd) => nd.parent_id === parentNodeId)
-          const newest = newChildren[newChildren.length - 1]
-          if (newest) {
-            set((state) => ({
-              currentTree: tree,
-              branchSelections: {
-                ...state.branchSelections,
-                [parentNodeId]: newest.node_id,
-              },
-            }))
-          } else {
-            set({ currentTree: tree })
-          }
-          const trees = await api.listTrees()
-          set({ trees })
+          set({ ...STREAMING_RESET, regeneratingParentId: null })
+          refreshTreeSelectNewest(treeId, parentNodeId, set)
         } catch (error) {
           set({
-            isGenerating: false,
-            streamingContent: '',
-            streamingThinkingContent: '',
+            ...STREAMING_RESET,
             regeneratingParentId: null,
             error: String(error),
-            generationError: {
-              parentNodeId,
-              provider: overrides.provider ?? 'anthropic',
-              model: overrides.model ?? null,
-              systemPrompt: overrides.system_prompt ?? null,
-              errorMessage: String(error),
-            },
+            generationError: regenError(error),
           })
         }
       }
     } catch (e) {
-      set({
-        isGenerating: false, streamingContent: '', streamingThinkingContent: '',
-        regeneratingParentId: null, error: String(e),
-      })
+      set({ ...STREAMING_RESET, regeneratingParentId: null, error: String(e) })
     }
   },
 
@@ -1014,17 +950,9 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
           ...state.nodeAnnotations,
           [nodeId]: [...(state.nodeAnnotations[nodeId] ?? []), annotation],
         },
-        // Increment annotation_count on the node
-        currentTree: state.currentTree
-          ? {
-              ...state.currentTree,
-              nodes: state.currentTree.nodes.map((n) =>
-                n.node_id === nodeId
-                  ? { ...n, annotation_count: n.annotation_count + 1 }
-                  : n,
-              ),
-            }
-          : null,
+        currentTree: updateNode(state.currentTree, nodeId, (n) => ({
+          annotation_count: n.annotation_count + 1,
+        })),
         // Add tag to taxonomy used_tags if not already there
         taxonomy: state.taxonomy
           ? {
@@ -1053,48 +981,24 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
             (a) => a.annotation_id !== annotationId,
           ),
         },
-        // Decrement annotation_count on the node
-        currentTree: state.currentTree
-          ? {
-              ...state.currentTree,
-              nodes: state.currentTree.nodes.map((n) =>
-                n.node_id === nodeId
-                  ? { ...n, annotation_count: Math.max(0, n.annotation_count - 1) }
-                  : n,
-              ),
-            }
-          : null,
+        currentTree: updateNode(state.currentTree, nodeId, (n) => ({
+          annotation_count: Math.max(0, n.annotation_count - 1),
+        })),
       }))
     } catch (e) {
       set({ error: String(e) })
     }
   },
 
-  fetchNodeAnnotations: async (nodeId: string) => {
-    const { currentTree } = get()
-    if (!currentTree) return
+  fetchNodeAnnotations: (nodeId: string) => fetchTreeData(get, set,
+    (id) => api.getNodeAnnotations(id, nodeId),
+    (annotations, s) => ({ nodeAnnotations: { ...s.nodeAnnotations, [nodeId]: annotations } }),
+  ),
 
-    try {
-      const annotations = await api.getNodeAnnotations(currentTree.tree_id, nodeId)
-      set((state) => ({
-        nodeAnnotations: { ...state.nodeAnnotations, [nodeId]: annotations },
-      }))
-    } catch (e) {
-      set({ error: String(e) })
-    }
-  },
-
-  fetchTaxonomy: async () => {
-    const { currentTree } = get()
-    if (!currentTree) return
-
-    try {
-      const taxonomy = await api.getTreeTaxonomy(currentTree.tree_id)
-      set({ taxonomy })
-    } catch (e) {
-      set({ error: String(e) })
-    }
-  },
+  fetchTaxonomy: () => fetchTreeData(get, set,
+    (id) => api.getTreeTaxonomy(id),
+    (taxonomy) => ({ taxonomy }),
+  ),
 
   addNote: async (nodeId: string, content: string) => {
     const { currentTree } = get()
@@ -1108,16 +1012,9 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
           [nodeId]: [...(state.nodeNotes[nodeId] ?? []), note],
         },
         treeNotes: [...state.treeNotes, note],
-        currentTree: state.currentTree
-          ? {
-              ...state.currentTree,
-              nodes: state.currentTree.nodes.map((n) =>
-                n.node_id === nodeId
-                  ? { ...n, note_count: n.note_count + 1 }
-                  : n,
-              ),
-            }
-          : null,
+        currentTree: updateNode(state.currentTree, nodeId, (n) => ({
+          note_count: n.note_count + 1,
+        })),
       }))
     } catch (e) {
       set({ error: String(e) })
@@ -1138,59 +1035,29 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
           ),
         },
         treeNotes: state.treeNotes.filter((n) => n.note_id !== noteId),
-        currentTree: state.currentTree
-          ? {
-              ...state.currentTree,
-              nodes: state.currentTree.nodes.map((n) =>
-                n.node_id === nodeId
-                  ? { ...n, note_count: Math.max(0, n.note_count - 1) }
-                  : n,
-              ),
-            }
-          : null,
+        currentTree: updateNode(state.currentTree, nodeId, (n) => ({
+          note_count: Math.max(0, n.note_count - 1),
+        })),
       }))
     } catch (e) {
       set({ error: String(e) })
     }
   },
 
-  fetchNodeNotes: async (nodeId: string) => {
-    const { currentTree } = get()
-    if (!currentTree) return
+  fetchNodeNotes: (nodeId: string) => fetchTreeData(get, set,
+    (id) => api.getNodeNotes(id, nodeId),
+    (notes, s) => ({ nodeNotes: { ...s.nodeNotes, [nodeId]: notes } }),
+  ),
 
-    try {
-      const notes = await api.getNodeNotes(currentTree.tree_id, nodeId)
-      set((state) => ({
-        nodeNotes: { ...state.nodeNotes, [nodeId]: notes },
-      }))
-    } catch (e) {
-      set({ error: String(e) })
-    }
-  },
+  fetchTreeNotes: () => fetchTreeData(get, set,
+    (id) => api.getTreeNotes(id),
+    (treeNotes) => ({ treeNotes }),
+  ),
 
-  fetchTreeNotes: async () => {
-    const { currentTree } = get()
-    if (!currentTree) return
-
-    try {
-      const treeNotes = await api.getTreeNotes(currentTree.tree_id)
-      set({ treeNotes })
-    } catch (e) {
-      set({ error: String(e) })
-    }
-  },
-
-  fetchTreeAnnotations: async () => {
-    const { currentTree } = get()
-    if (!currentTree) return
-
-    try {
-      const treeAnnotations = await api.getTreeAnnotations(currentTree.tree_id)
-      set({ treeAnnotations })
-    } catch (e) {
-      set({ error: String(e) })
-    }
-  },
+  fetchTreeAnnotations: () => fetchTreeData(get, set,
+    (id) => api.getTreeAnnotations(id),
+    (treeAnnotations) => ({ treeAnnotations }),
+  ),
 
   setResearchPaneTab: (tab: 'bookmarks' | 'tags' | 'notes') => {
     set({ researchPaneTab: tab })
@@ -1217,14 +1084,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
       const bookmark = await api.addBookmark(currentTree.tree_id, nodeId, { label, notes })
       set((state) => ({
         bookmarks: [...state.bookmarks, bookmark],
-        currentTree: state.currentTree
-          ? {
-              ...state.currentTree,
-              nodes: state.currentTree.nodes.map((n) =>
-                n.node_id === nodeId ? { ...n, is_bookmarked: true } : n,
-              ),
-            }
-          : null,
+        currentTree: updateNode(state.currentTree, nodeId, { is_bookmarked: true }),
       }))
     } catch (e) {
       set({ error: String(e) })
@@ -1245,16 +1105,9 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
       const nodeStillBookmarked = remaining.some((b) => b.node_id === bookmark.node_id)
       set((state) => ({
         bookmarks: remaining,
-        currentTree: state.currentTree
-          ? {
-              ...state.currentTree,
-              nodes: state.currentTree.nodes.map((n) =>
-                n.node_id === bookmark.node_id && !nodeStillBookmarked
-                  ? { ...n, is_bookmarked: false }
-                  : n,
-              ),
-            }
-          : null,
+        currentTree: !nodeStillBookmarked
+          ? updateNode(state.currentTree, bookmark.node_id, { is_bookmarked: false })
+          : state.currentTree,
       }))
     } catch (e) {
       set({ error: String(e) })
@@ -1281,17 +1134,10 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
     get().navigateToNode(bookmark.node_id)
   },
 
-  fetchExclusions: async () => {
-    const { currentTree } = get()
-    if (!currentTree) return
-
-    try {
-      const exclusions = await api.getExclusions(currentTree.tree_id)
-      set({ exclusions })
-    } catch (e) {
-      set({ error: String(e) })
-    }
-  },
+  fetchExclusions: () => fetchTreeData(get, set,
+    (id) => api.getExclusions(id),
+    (exclusions) => ({ exclusions }),
+  ),
 
   excludeNode: async (nodeId: string, scopeNodeId: string, reason?: string) => {
     const { currentTree } = get()
@@ -1301,14 +1147,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
       const exclusion = await api.excludeNode(currentTree.tree_id, nodeId, scopeNodeId, reason)
       set((state) => ({
         exclusions: [...state.exclusions, exclusion],
-        currentTree: state.currentTree
-          ? {
-              ...state.currentTree,
-              nodes: state.currentTree.nodes.map((n) =>
-                n.node_id === nodeId ? { ...n, is_excluded: true } : n,
-              ),
-            }
-          : null,
+        currentTree: updateNode(state.currentTree, nodeId, { is_excluded: true }),
       }))
     } catch (e) {
       set({ error: String(e) })
@@ -1325,18 +1164,10 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
         const remaining = state.exclusions.filter(
           (ex) => !(ex.node_id === nodeId && ex.scope_node_id === scopeNodeId),
         )
-        // Node is only fully un-excluded if no exclusion records remain for it
         const stillExcluded = remaining.some((ex) => ex.node_id === nodeId)
         return {
           exclusions: remaining,
-          currentTree: state.currentTree
-            ? {
-                ...state.currentTree,
-                nodes: state.currentTree.nodes.map((n) =>
-                  n.node_id === nodeId ? { ...n, is_excluded: stillExcluded } : n,
-                ),
-              }
-            : null,
+          currentTree: updateNode(state.currentTree, nodeId, { is_excluded: stillExcluded }),
         }
       })
     } catch (e) {
@@ -1344,17 +1175,10 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
     }
   },
 
-  fetchDigressionGroups: async () => {
-    const { currentTree } = get()
-    if (!currentTree) return
-
-    try {
-      const digressionGroups = await api.getDigressionGroups(currentTree.tree_id)
-      set({ digressionGroups })
-    } catch (e) {
-      set({ error: String(e) })
-    }
-  },
+  fetchDigressionGroups: () => fetchTreeData(get, set,
+    (id) => api.getDigressionGroups(id),
+    (digressionGroups) => ({ digressionGroups }),
+  ),
 
   createDigressionGroup: async (req: CreateDigressionGroupRequest) => {
     const { currentTree } = get()
@@ -1429,14 +1253,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
     try {
       const result = await api.toggleAnchor(currentTree.tree_id, nodeId)
       set((state) => ({
-        currentTree: state.currentTree
-          ? {
-              ...state.currentTree,
-              nodes: state.currentTree.nodes.map((n) =>
-                n.node_id === nodeId ? { ...n, is_anchored: result.is_anchored } : n,
-              ),
-            }
-          : null,
+        currentTree: updateNode(state.currentTree, nodeId, { is_anchored: result.is_anchored }),
       }))
     } catch (e) {
       set({ error: String(e) })

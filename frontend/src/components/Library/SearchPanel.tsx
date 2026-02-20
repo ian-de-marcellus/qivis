@@ -98,6 +98,7 @@ export function SearchPanel() {
     <div className={`search-panel${hasQuery ? ' has-results' : ''}`}>
       <div className="search-input-wrap">
         <input
+          className="form-input"
           ref={inputRef}
           type="text"
           placeholder="Search all trees..."

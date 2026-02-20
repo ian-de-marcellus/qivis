@@ -38,22 +38,13 @@
   padding: 0 var(--space-md) var(--space-sm);
 }
 
+/* Composes .form-input (index.css) — adds sizing + font overrides */
 .bookmark-search input {
   width: 100%;
   box-sizing: border-box;
   padding: var(--space-xs) var(--space-sm);
   font-family: var(--font-ui);
   font-size: var(--text-xs);
-  background: var(--bg-input);
-  color: var(--text-primary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  transition: border-color 0.15s;
-}
-
-.bookmark-search input:focus {
-  outline: none;
-  border-color: var(--accent);
 }
 
 .bookmark-items {

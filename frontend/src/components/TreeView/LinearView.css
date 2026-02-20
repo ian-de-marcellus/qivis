@@ -282,17 +282,6 @@
   animation: panel-enter 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-@keyframes panel-enter {
-  from {
-    opacity: 0;
-    transform: translateY(-8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
 .generation-error-header {
   font-family: var(--font-ui);
   font-size: var(--text-xs);

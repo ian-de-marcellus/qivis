@@ -159,7 +159,7 @@ export const MessageRow = memo(function MessageRow({
         </ActionMenu>
         {onEdit && !isEditing && (
           <button
-            className="edit-btn"
+            className="hover-btn edit-btn"
             onClick={() => {
               setEditValue(node.edited_content ?? node.content)
               setIsEditing(true)
@@ -170,7 +170,7 @@ export const MessageRow = memo(function MessageRow({
           </button>
         )}
         {onInspect && node.role === 'assistant' && !isManual && (
-          <button className="inspect-btn" onClick={onInspect} aria-label="View generation context">
+          <button className="hover-btn inspect-btn" onClick={onInspect} aria-label="View generation context">
             Context
           </button>
         )}
@@ -191,7 +191,7 @@ export const MessageRow = memo(function MessageRow({
             active={showAnnotations}
           >
             Tag{node.annotation_count > 0 && (
-              <span className="annotation-badge">{node.annotation_count}</span>
+              <span className="badge annotation-badge">{node.annotation_count}</span>
             )}
           </ActionMenuItem>
           <ActionMenuItem
@@ -199,7 +199,7 @@ export const MessageRow = memo(function MessageRow({
             active={showNotes}
           >
             Note{node.note_count > 0 && (
-              <span className="annotation-badge">{node.note_count}</span>
+              <span className="badge annotation-badge">{node.note_count}</span>
             )}
           </ActionMenuItem>
           {onBookmarkToggle && (

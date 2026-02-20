@@ -8,17 +8,6 @@
   animation: panel-enter 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-@keyframes panel-enter {
-  from {
-    opacity: 0;
-    transform: translateY(-8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
 .fork-panel-header {
   display: flex;
   justify-content: space-between;
@@ -61,24 +50,16 @@
   gap: var(--space-sm);
 }
 
+/* Composes .form-input (index.css) — adds sizing + font overrides + radius-md */
 .fork-panel-input {
   width: 100%;
   padding: var(--space-sm) var(--space-md);
   font-family: var(--font-body);
   font-size: var(--text-base);
   line-height: var(--leading-normal);
-  background: var(--bg-input);
-  color: var(--text-primary);
-  border: 1px solid var(--border);
   border-radius: var(--radius-md);
   resize: vertical;
   box-sizing: border-box;
-  transition: border-color 0.15s ease;
-}
-
-.fork-panel-input:focus {
-  outline: none;
-  border-color: var(--accent);
 }
 
 .fork-settings-toggle {

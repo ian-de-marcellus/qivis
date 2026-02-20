@@ -31,7 +31,7 @@ export function NotePanel({ node }: NotePanelProps) {
   }
 
   return (
-    <div className="note-panel">
+    <div className="inline-panel note-panel">
       <div className="note-input-row">
         <textarea
           className="note-textarea"

@@ -1,0 +1,30 @@
+.icon-toggle-btn {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.icon-toggle-btn:hover {
+  color: var(--text-secondary);
+  border-color: var(--border);
+}
+
+.icon-toggle-btn.active {
+  color: var(--text-accent);
+  border-color: var(--accent);
+  background: var(--accent-muted);
+}
+
+.icon-toggle-btn svg {
+  width: 16px;
+  height: 16px;
+}

@@ -3,6 +3,7 @@ import type { EvictionStrategy, PatchTreeRequest, SamplingParams } from '../../a
 import { exportTree } from '../../api/client.ts'
 import { useTreeStore, useTreeData, useRightPane } from '../../store/treeStore.ts'
 import { SamplingParamsPanel, type SamplingParamValues } from '../shared/SamplingParamsPanel.tsx'
+import { IconToggleButton } from '../shared/IconToggleButton.tsx'
 import './TreeSettings.css'
 
 export function TreeSettings() {
@@ -241,10 +242,11 @@ export function TreeSettings() {
             {currentTree.title || 'Untitled'}
           </span>
         )}
-        <button
-          className={`graph-toggle ${graphOpen ? 'active' : ''}`}
+        <IconToggleButton
+          active={graphOpen}
           onClick={() => setRightPaneMode(graphOpen ? null : 'graph')}
-          aria-label={graphOpen ? 'Hide graph view' : 'Show graph view'}
+          activeLabel="Hide graph view"
+          inactiveLabel="Show graph view"
           title={graphOpen ? 'Hide graph' : 'Show graph'}
         >
           <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
@@ -254,11 +256,12 @@ export function TreeSettings() {
             <line x1="10" y1="6" x2="5" y2="12" />
             <line x1="10" y1="6" x2="15" y2="12" />
           </svg>
-        </button>
-        <button
-          className={`graph-toggle canvas-toggle ${canvasOpen ? 'active' : ''}`}
+        </IconToggleButton>
+        <IconToggleButton
+          active={canvasOpen}
           onClick={() => setCanvasOpen(!canvasOpen)}
-          aria-label={canvasOpen ? 'Hide palimpsest' : 'Show palimpsest'}
+          activeLabel="Hide palimpsest"
+          inactiveLabel="Show palimpsest"
           title={canvasOpen ? 'Hide palimpsest' : 'Show palimpsest'}
         >
           <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
@@ -266,11 +269,12 @@ export function TreeSettings() {
             <rect x="8" y="3" width="5" height="10" rx="1" />
             <rect x="14" y="3" width="4" height="6" rx="1" />
           </svg>
-        </button>
-        <button
-          className={`graph-toggle ${rightPaneMode === 'digressions' ? 'active' : ''}`}
+        </IconToggleButton>
+        <IconToggleButton
+          active={rightPaneMode === 'digressions'}
           onClick={() => setRightPaneMode(rightPaneMode === 'digressions' ? null : 'digressions')}
-          aria-label={rightPaneMode === 'digressions' ? 'Hide digression groups' : 'Show digression groups'}
+          activeLabel="Hide digression groups"
+          inactiveLabel="Show digression groups"
           title={rightPaneMode === 'digressions' ? 'Hide groups' : 'Digression groups'}
         >
           <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
@@ -279,21 +283,23 @@ export function TreeSettings() {
             <line x1="6" y1="5" x2="6" y2="9" />
             <line x1="14" y1="5" x2="14" y2="9" />
           </svg>
-        </button>
-        <button
-          className={`graph-toggle ${rightPaneMode === 'research' ? 'active' : ''}`}
+        </IconToggleButton>
+        <IconToggleButton
+          active={rightPaneMode === 'research'}
           onClick={() => setRightPaneMode(rightPaneMode === 'research' ? null : 'research')}
-          aria-label={rightPaneMode === 'research' ? 'Hide research panel' : 'Show research panel'}
+          activeLabel="Hide research panel"
+          inactiveLabel="Show research panel"
           title={rightPaneMode === 'research' ? 'Hide research' : 'Research panel'}
         >
           <svg viewBox="0 0 20 20" fill="currentColor" stroke="none">
             <path d="M15.3 2.2c-.8 0-1.8.6-3 1.7C10 5.8 7.5 9 6 12l-2 6 1 .7c1.5-1.8 3.8-4.5 5.8-7 1.6-2.3 3.2-5.1 3.8-7.2.2-.8.2-1.6 0-2.1-.1-.3-.3-.5-.5-.5zM3.5 18.5L3 19l1.2-.6-.7.1z"/>
           </svg>
-        </button>
-        <button
-          className={`tree-settings-gear ${isOpen ? 'active' : ''}`}
+        </IconToggleButton>
+        <IconToggleButton
+          active={isOpen}
           onClick={() => setIsOpen(!isOpen)}
-          aria-label={isOpen ? 'Close settings' : 'Open settings'}
+          activeLabel="Close settings"
+          inactiveLabel="Open settings"
         >
           <svg viewBox="0 0 20 20" fill="currentColor">
             <path
@@ -302,7 +308,7 @@ export function TreeSettings() {
               clipRule="evenodd"
             />
           </svg>
-        </button>
+        </IconToggleButton>
       </div>
 
       {isOpen && (

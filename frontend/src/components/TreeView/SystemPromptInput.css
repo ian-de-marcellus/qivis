@@ -44,22 +44,13 @@
   to { opacity: 1; transform: translateY(0); }
 }
 
+/* Composes .form-input (index.css) — adds sizing + font overrides */
 .system-prompt-editor textarea {
   width: 100%;
   padding: var(--space-sm);
   font-family: var(--font-mono);
   font-size: var(--text-sm);
   line-height: var(--leading-normal);
-  background: var(--bg-input);
-  color: var(--text-primary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
   resize: vertical;
   box-sizing: border-box;
-  transition: border-color 0.15s;
-}
-
-.system-prompt-editor textarea:focus {
-  outline: none;
-  border-color: var(--accent);
 }

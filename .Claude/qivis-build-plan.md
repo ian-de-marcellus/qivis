@@ -398,6 +398,24 @@ Bookends: one looks backward (documenting reality), one looks forward (safer mig
 
 ---
 
+## Interlude 2: Pattern Consolidation
+
+_Goal: Deduplicate repeated CSS, store logic, and component patterns that accumulated across Phases 0–7._
+
+### Chunk 1 — CSS Utility Classes ✅
+
+Extracted 5 shared utilities to `index.css`: `.badge`, `.inline-panel`, `.hover-btn`, `.form-input`, `@keyframes panel-enter`. Component CSS files now compose from these, keeping only component-specific overrides. CSS bundle reduced ~620B. Descendant-selector form containers (SamplingParams, ForkPanel settings, TreeSettings) left for Chunk 3 (FormField component).
+
+### Chunk 2 — Store Helpers ✅
+
+Four helpers extracted above `create()`: `STREAMING_RESET`/`MULTI_STREAMING_RESET` constants (replaced ~14 streaming state resets), `refreshTree`/`refreshTreeSelectNewest` (replaced 7 getTree+listTrees pairs), `fetchTreeData` generic (consolidated 7 fetch actions to 3 lines each), `updateNode` (replaced 11 node-field update patterns). Store reduced from 1603 to 1420 lines. JS bundle reduced ~3.4KB.
+
+### Chunk 3 — Component Extraction ✅
+
+Extracted `IconToggleButton` component (`shared/IconToggleButton.tsx` + `.css`) — replaces 5 identical icon toggle buttons in TreeSettings (graph, canvas, digressions, research, gear) and their two duplicate CSS blocks (`.graph-toggle` + `.tree-settings-gear`). Extracted `useEscapeKey` and `useClickOutside` hooks — replaced ActionMenu's inline useEffects (20 lines -> 2 hook calls) and refactored `useModalBehavior` to consume `useEscapeKey` internally. NotePanel/AnnotationPanel convergence evaluated and deliberately passed — ~40% structural similarity but AnnotationPanel's complexity is genuinely different, not duplicated. CSS: 99.99 KB (-0.5KB from Chunk 2).
+
+---
+
 ## Phase 7: Corpus & Search
 
 _Goal: Build and search a research corpus. Organize trees. Import external conversations._

@@ -1,12 +1,6 @@
 /* ---- Annotation Panel: understated research tool ---- */
 
-.annotation-panel {
-  margin-top: var(--space-sm);
-  padding: var(--space-sm) var(--space-md);
-  background: var(--bg-secondary);
-  border-top: 1px solid var(--border-subtle);
-  border-radius: 0 0 var(--radius-md) var(--radius-md);
-}
+/* Uses shared .inline-panel from index.css */
 
 /* ---- Quick-tag chips ---- */
 

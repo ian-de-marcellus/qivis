@@ -40,6 +40,7 @@ export function SystemPromptInput() {
       {isExpanded && (
         <div className="system-prompt-editor">
           <textarea
+            className="form-input"
             value={displayValue}
             onChange={handleChange}
             placeholder="Enter system prompt..."

@@ -34,7 +34,7 @@ export function BranchIndicator({ node, siblings, onSelect, onCompare }: BranchI
       </button>
       {onCompare && (
         <button
-          className="compare-btn"
+          className="hover-btn compare-btn"
           onClick={(e) => { e.stopPropagation(); onCompare() }}
           aria-label="Compare siblings"
         >

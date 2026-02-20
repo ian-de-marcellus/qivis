@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
+import { useEscapeKey } from '../../hooks/useEscapeKey.ts'
+import { useClickOutside } from '../../hooks/useClickOutside.ts'
 import './ActionMenu.css'
 
 interface ActionMenuProps {
@@ -22,27 +24,8 @@ export function ActionMenu({
   const [open, setOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
 
-  // Close on outside click
-  useEffect(() => {
-    if (!open) return
-    const handler = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setOpen(false)
-      }
-    }
-    document.addEventListener('pointerdown', handler)
-    return () => document.removeEventListener('pointerdown', handler)
-  }, [open])
-
-  // Close on Escape
-  useEffect(() => {
-    if (!open) return
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false)
-    }
-    document.addEventListener('keydown', handler)
-    return () => document.removeEventListener('keydown', handler)
-  }, [open])
+  useClickOutside(menuRef, open, () => setOpen(false))
+  useEscapeKey(open, () => setOpen(false))
 
   // Close when a button inside the popover is clicked
   const handlePopoverClick = useCallback((e: React.MouseEvent) => {
@@ -75,7 +58,7 @@ export function ActionMenu({
       >
         {trigger}
         {badge != null && badge > 0 && (
-          <span className="action-menu-badge">{badge}</span>
+          <span className="badge">{badge}</span>
         )}
       </button>
       {open && (

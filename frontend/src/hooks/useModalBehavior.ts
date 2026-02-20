@@ -1,4 +1,5 @@
 import { useCallback, useEffect } from 'react'
+import { useEscapeKey } from './useEscapeKey.ts'
 
 const FOCUSABLE = 'a[href], button:not(:disabled), textarea:not(:disabled), input:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex="-1"])'
 
@@ -10,17 +11,7 @@ export function useModalBehavior(
   ref: React.RefObject<HTMLElement | null>,
   onDismiss: () => void,
 ) {
-  // Escape key handler
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault()
-        onDismiss()
-      }
-    }
-    document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [onDismiss])
+  useEscapeKey(true, onDismiss)
 
   // Focus trap: on mount, focus first focusable element.
   // On tab/shift+tab, cycle within the modal.

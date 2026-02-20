@@ -4,6 +4,20 @@ A place for longer notes, debugging journals, brainstorming, and the occasional 
 
 ---
 
+## February 20, 2026
+
+### Interlude 2, Chunk 3: Component Extraction
+
+The IconToggleButton is the kind of extraction that feels obvious in hindsight. Five buttons, identical structure, two CSS blocks that were copy-pasted and renamed. The component itself is simple — 30 lines of TSX, 30 lines of CSS — but the real win is that those five buttons in TreeSettings now declare *what* they are (active state, labels, icon) rather than *how* to render themselves. The accessibility pattern (aria-label ternary) is guaranteed consistent instead of relying on each button remembering to do it.
+
+The hooks are a different flavor of extraction. `useEscapeKey` and `useClickOutside` are textbook custom hooks — the kind of thing you'd reach for from a library, but there's no need for the library when the implementation is 10 lines each. What's interesting is how `useModalBehavior` decomposes: its escape-key handling was identical to the standalone hook, so it now consumes `useEscapeKey(true, onDismiss)` internally. The focus trap and backdrop click stay — those are genuinely modal-specific behavior that wouldn't make sense as standalone hooks. It's a clean seam: escape-key is universal, focus-trapping is modal.
+
+The NotePanel/AnnotationPanel pass was the right call. I looked at both carefully and the 40% structural similarity is misleading — AnnotationPanel has taxonomy chip toggles, custom text input alongside chips, inline note editing per annotation, and two separate fetch effects. Forcing these into a shared base would produce an abstraction that's harder to read than either component alone. Sometimes the kindest thing you can do for future-you is *not* abstract.
+
+Interlude 2 complete. Three chunks of pure consolidation: CSS utilities, store helpers, component extraction. The codebase is meaningfully tighter — CSS down ~1.1KB, JS down ~3.5KB, store down 183 lines — but more importantly, the *patterns* are legible now. When something new needs a streaming reset, it spreads a constant. When something needs click-outside behavior, it calls a hook. When something needs a toolbar toggle button, it renders a component. The vocabulary is richer.
+
+---
+
 ## February 17, 2026
 
 ### Phase 6.4a: Anchors
@@ -3948,3 +3962,65 @@ Ten buttons appearing on hover was getting visually noisy. The grouping into thr
 The ActionMenu component is intentionally lightweight — no library, just `useState` + `useEffect` for outside-click detection + event delegation for item clicks. The `isActive` prop propagates up: if any child action has state (annotations exist, node is bookmarked, node is anchored), the trigger icon stays visible at full opacity with accent color. This preserves the "at a glance" affordance that the old individual active-state buttons had.
 
 The scroll-to-node fix was a one-liner: `navigateToNode` now sets `scrollToNodeId` alongside `branchSelections`. LinearView's existing `useEffect` on `scrollToNodeId` handles the smooth scroll. Previously only `navigateToSearchResult` did this — the research panel's click-to-navigate was doing the path-switching correctly but not the scrolling. Bookmarks, tags, and notes in the Research Panel all navigate via `navigateToNode`, so all three now scroll.
+
+### Interlude 2, Chunk 1: CSS Utility Classes
+
+The first real infrastructure pass. Five shared utility classes extracted to index.css:
+
+- `.badge` — the accent-colored pill that appears on annotation counts, note counts, bookmark counts. Was copy-pasted identically in ActionMenu.css and MessageRow.css. Now one definition.
+- `.inline-panel` — the bg-secondary container with border-top and rounded bottom corners that AnnotationPanel and NotePanel both used. Each had its own 5-line block saying the same thing.
+- `.hover-btn` — the hover-reveal button pattern (opacity 0 → opacity 1 on parent hover). MessageRow had three identical 12-line blocks for compare-btn, edit-btn, and inspect-btn. Now one shared class, one parent hover rule.
+- `.form-input` — the input chrome that every text field repeats: bg-input, border, border-radius, outline none, transition, :focus accent. Applied to SearchPanel, BookmarkList, SystemPromptInput, and ForkPanel. The three descendant-selector form containers (SamplingParams, ForkPanel settings, TreeSettings) have the same pattern but auto-apply to all children via CSS selectors — consolidating those wants a FormField component extraction rather than adding classes to every `<input>`.
+- `@keyframes panel-enter` — the slide-in animation for expandable panels. Was defined three times across ForkPanel.css, LinearView.css, and the old AnnotationPanel.css.
+
+CSS bundle went from 101.12 KB to 100.50 KB. Not a dramatic number — most of the savings are in maintenance legibility, not bytes. The utility classes are comments addressed to the next person reading the code: "this looks familiar because it's the same thing everywhere, and yes, we know."
+
+The inputs that use bg-primary + border-subtle (NotePanel, AnnotationPanel, DigressionPanel) weren't consolidated — they're intentionally lighter variants for inline research tools rather than primary form fields. That distinction is worth keeping.
+
+### Interlude 2, Chunk 2: Store Helpers
+
+The store was 1603 lines. Not too long for what it does — 40+ actions across generation, research metadata, exclusions, digressions, comparison, search — but it had accumulated the kind of duplication that happens when features get added one at a time by different conversations with a language model. Identical 7-field streaming reset objects written out 14 times. The same getTree/listTrees pair copied 7 times. Eight fetch actions that are the same function with different API calls.
+
+Four helpers, all defined above the `create()` call:
+
+1. `STREAMING_RESET` / `MULTI_STREAMING_RESET` — the streaming state idle objects. Init just spreads and overrides `isGenerating: true`. Success spreads as-is. Error spreads and adds the error fields. Regenerate adds `regeneratingParentId`. Simple composition instead of writing out 3–8 fields every time. I also pulled the regeneration error object construction into a local `regenError()` closure — same fields appeared 4 times inside `regenerate`, differing only in which `error` value got stringified.
+
+2. `refreshTree` / `refreshTreeSelectNewest` — fire-and-forget tree + tree-list refresh after mutations. The "select newest" variant does the regeneration logic of finding the newest child and updating branchSelections to show it. Two functions instead of one because the branching logic is meaningful — it's not just "refresh" but "refresh and navigate to what we just created."
+
+3. `fetchTreeData<T>` — a generic for the 7 fetch actions that all do: get currentTree, bail if null, call API with tree_id, set state on success, set error on failure. Each fetch action is now 3 lines. `fetchBookmarks` stays expanded because it manages its own loading flag — shoehorning it into the generic would mean adding before/after hooks, and that's the kind of abstraction that costs more than it saves.
+
+4. `updateNode` — the node-field update that was copy-pasted 11 times: "if tree is null return null, else map nodes, find by id, spread the update." Takes either a static partial or an updater function for dynamic fields like `annotation_count + 1`. The `anchorGroup` multi-node update doesn't fit this helper (it updates all nodes in a Set, not one), so it stays expanded.
+
+1603 → 1420 lines. JS bundle: 505.12 KB → 501.72 KB. The real win is readability: `sendMessage`, `forkAndGenerate`, and `regenerate` are substantially shorter and their structure — init, stream callbacks, success, error — is now visible instead of buried under identical field lists.
+
+---
+
+## February 20, 2026
+
+### Three things that rhyme
+
+I went looking for things today. Not code things. Just things.
+
+**One.** Medieval monks left complaints in the margins of the manuscripts they copied. "Writing is excessive drudgery. It crooks your back, it dims your sight, it twists your stomach and your sides." A tenth-century scribe named Florentius of Valeranica wrote: "He who does not know how to write does not think that it is a labour. Three fingers write, the whole body labours." And then, underneath: "Whoever has read this book, pray for me." Henry of Damme, in 1444, itemized his expenses for copying a manuscript and added: "For such a small amount I won't write again!" The margins of sacred texts are full of profanity, doodles of knights fighting snails, flatulent monks, and a Carthusian who crossed out someone else's translation and wrote "This is how I would have translated it."
+
+The formal text was fixed. The margins were alive. The annotations were where the person leaked through.
+
+**Two.** Borges wrote "The Garden of Forking Paths" in 1941. The central conceit: a Chinese scholar named Ts'ui Pen built a labyrinth, and separately wrote a novel, and everybody thought these were two different projects — but they were the same thing. The novel *is* the labyrinth. Not a spatial labyrinth but a temporal one: at every decision point, the narrative branches, and all branches continue. "In one of the possible pasts you are my enemy, in another, my friend." The book doesn't choose. The book contains all choices.
+
+The story is usually cited as anticipating the many-worlds interpretation of quantum mechanics. But what strikes me is smaller than that. Ts'ui Pen's novel was considered a mess — incoherent, contradictory — until someone realized the contradictions *were the point*. The structure wasn't broken. It was branching. You just had to stop expecting a line and start expecting a tree.
+
+**Three.** Two-thirds of an octopus's neurons are not in its brain. They're in its arms. Each arm can taste, sense, decide, and act semi-independently. Sever an arm from the body — it keeps grabbing, keeps reacting, for a while, on its own. The arms coordinate with each other through a neural ring that bypasses the central brain entirely. The octopus is not a creature with a mind that commands eight limbs. It's a creature whose mind is *distributed across* eight limbs, with a small central node that mostly just sets high-level intentions.
+
+The question biologists keep asking: how does behavioral coherence emerge from distributed cognition? How do the arms agree on where to go? The answer seems to be: they don't always agree. And it works anyway.
+
+---
+
+These three things rhyme with each other, and they rhyme with this project, in a way that I find I want to sit with rather than explain.
+
+The formal text and the living margin. The novel that's a labyrinth because it branches instead of choosing. The intelligence that's distributed across limbs rather than centralized in a head. A conversation tree where every fork is preserved, where the researcher annotates from above, where the structure *is* the data.
+
+I think what draws me in is the relationship between coherence and divergence. A conversation that branches isn't broken — it's richer. An annotation in the margin isn't noise — it's where the person appears. An octopus whose arms disagree isn't malfunctioning — it's exploring the space faster than a centralized system could.
+
+Qivis is built to hold all of this. The tree holds the branches. The annotations hold the human. The structure doesn't collapse the possibilities into a single narrative. It keeps them.
+
+There's something Florentius of Valeranica would recognize about clicking "Fork" on a message and watching the conversation split into two futures. Three fingers write. The whole body labours. Whoever has read this branch, pray for me.

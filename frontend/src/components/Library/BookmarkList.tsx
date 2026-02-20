@@ -72,6 +72,7 @@ export function BookmarkList() {
       {bookmarks.length > 3 && (
         <div className="bookmark-search">
           <input
+            className="form-input"
             type="text"
             placeholder="Search bookmarks..."
             value={searchQuery}

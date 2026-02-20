@@ -98,7 +98,7 @@ export function ForkPanel({
         </div>
         <div className="fork-panel-body">
           <textarea
-            className="fork-panel-input"
+            className="form-input fork-panel-input"
             value={content}
             onChange={(e) => setContent(e.target.value)}
             onKeyDown={handlePrefillKeyDown}
@@ -183,7 +183,7 @@ export function ForkPanel({
       <div className="fork-panel-body">
         {mode === 'fork' && (
           <textarea
-            className="fork-panel-input"
+            className="form-input fork-panel-input"
             value={content}
             onChange={(e) => setContent(e.target.value)}
             onKeyDown={handleKeyDown}

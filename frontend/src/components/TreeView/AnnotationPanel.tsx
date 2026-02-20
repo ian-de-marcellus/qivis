@@ -78,7 +78,7 @@ export function AnnotationPanel({ node }: AnnotationPanelProps) {
   }
 
   return (
-    <div className="annotation-panel">
+    <div className="inline-panel annotation-panel">
       {/* Quick-tag chips */}
       {allTags.length > 0 && (
         <div className="annotation-tags">

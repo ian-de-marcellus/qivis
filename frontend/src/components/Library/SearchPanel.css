@@ -15,6 +15,7 @@
   position: relative;
 }
 
+/* Composes .form-input (index.css) — adds sizing + font overrides */
 .search-input-wrap input {
   width: 100%;
   box-sizing: border-box;
@@ -22,16 +23,6 @@
   padding-right: 1.8rem;
   font-family: var(--font-ui);
   font-size: var(--text-xs);
-  background: var(--bg-input);
-  color: var(--text-primary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  transition: border-color 0.15s;
-}
-
-.search-input-wrap input:focus {
-  outline: none;
-  border-color: var(--accent);
 }
 
 .search-input-wrap input::placeholder {
