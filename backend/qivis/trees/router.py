@@ -22,6 +22,7 @@ from qivis.trees.schemas import (
     CreateDigressionGroupRequest,
     CreateNodeRequest,
     CreateNoteRequest,
+    CreateSummaryRequest,
     CreateTreeRequest,
     DigressionGroupResponse,
     EditHistoryResponse,
@@ -34,6 +35,7 @@ from qivis.trees.schemas import (
     NoteResponse,
     PatchNodeContentRequest,
     PatchTreeRequest,
+    SummaryResponse,
     TaxonomyResponse,
     ToggleDigressionGroupRequest,
     TreeDetailResponse,
@@ -48,6 +50,7 @@ from qivis.trees.service import (
     NonContiguousGroupError,
     NoteNotFoundError,
     SummaryClientNotConfiguredError,
+    SummaryNotFoundError,
     TreeNotFoundError,
     TreeService,
 )
@@ -334,6 +337,53 @@ async def summarize_bookmark(
     except SummaryClientNotConfiguredError:
         raise HTTPException(
             status_code=503, detail="Summary API key not configured"
+        )
+
+
+# -- Manual summarization --
+
+
+@router.post("/{tree_id}/nodes/{node_id}/summarize")
+async def generate_summary(
+    tree_id: str,
+    node_id: str,
+    request: CreateSummaryRequest,
+    service: TreeService = Depends(get_tree_service),
+) -> SummaryResponse:
+    try:
+        return await service.generate_summary(tree_id, node_id, request)
+    except TreeNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Tree not found: {tree_id}")
+    except NodeNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Node not found: {node_id}")
+    except SummaryClientNotConfiguredError:
+        raise HTTPException(
+            status_code=503, detail="Summary API key not configured"
+        )
+
+
+@router.get("/{tree_id}/summaries")
+async def list_summaries(
+    tree_id: str,
+    service: TreeService = Depends(get_tree_service),
+) -> list[SummaryResponse]:
+    return await service.list_summaries(tree_id)
+
+
+@router.delete(
+    "/{tree_id}/summaries/{summary_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def remove_summary(
+    tree_id: str,
+    summary_id: str,
+    service: TreeService = Depends(get_tree_service),
+) -> None:
+    try:
+        await service.remove_summary(tree_id, summary_id)
+    except SummaryNotFoundError:
+        raise HTTPException(
+            status_code=404, detail=f"Summary not found: {summary_id}"
         )
 
 

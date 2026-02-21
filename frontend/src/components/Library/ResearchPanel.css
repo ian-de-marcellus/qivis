@@ -247,6 +247,13 @@
   border-radius: var(--radius-sm);
 }
 
+.summary-type-label {
+  font-family: var(--font-ui);
+  font-size: 0.65rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
 .research-empty {
   padding: var(--space-lg) var(--space-md);
   text-align: center;

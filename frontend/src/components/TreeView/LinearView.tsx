@@ -17,6 +17,7 @@ import type { DiffSummary } from './contextDiffs.ts'
 import { DigressionCreator } from './DigressionPanel.tsx'
 import { ForkPanel } from './ForkPanel.tsx'
 import { MessageRow } from './MessageRow.tsx'
+import { SummarizePanel } from './SummarizePanel.tsx'
 import { ThinkingSection } from './ThinkingSection.tsx'
 import './DigressionPanel.css'
 import './LinearView.css'
@@ -69,6 +70,7 @@ export function LinearView() {
   const bottomRef = useRef<HTMLDivElement>(null)
   const [forkTarget, setForkTarget] = useState<ForkTarget | null>(null)
   const [comparingAtParent, setComparingAtParent] = useState<string | null>(null)
+  const [summarizeTargetId, setSummarizeTargetId] = useState<string | null>(null)
 
   // Fetch providers once on mount
   useEffect(() => {
@@ -388,6 +390,9 @@ export function LinearView() {
                     comparingAtParent === nodeParentKey ? null : nodeParentKey,
                   ) : undefined,
                   onComparisonPick: isPicking && isPickable ? () => pickComparisonTarget(node.node_id) : undefined,
+                  onSummarize: isPicking ? undefined : () => setSummarizeTargetId(
+                    summarizeTargetId === node.node_id ? null : node.node_id
+                  ),
                 }}
                 isExcludedOnPath={effectiveExcludedIds.has(node.node_id)}
                 groupSelectable={!isPicking && groupSelectionMode}
@@ -423,6 +428,12 @@ export function LinearView() {
                   defaults={branchDefaults}
                   streamDefault={currentTree.metadata?.stream_responses !== false}
                   samplingDefaults={currentTree.default_sampling_params}
+                />
+              )}
+              {!isPicking && summarizeTargetId === node.node_id && (
+                <SummarizePanel
+                  nodeId={node.node_id}
+                  onClose={() => setSummarizeTargetId(null)}
                 />
               )}
             </Fragment>

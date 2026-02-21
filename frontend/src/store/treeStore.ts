@@ -7,6 +7,7 @@ import type {
   AnnotationResponse,
   BookmarkResponse,
   CreateDigressionGroupRequest,
+  CreateSummaryRequest,
   DigressionGroupResponse,
   EditHistoryEntry,
   GenerateRequest,
@@ -16,6 +17,7 @@ import type {
   PatchTreeRequest,
   ProviderInfo,
   SearchResultItem,
+  SummaryResponse,
   TaxonomyResponse,
   TreeDetail,
   TreeSummary,
@@ -64,7 +66,8 @@ interface TreeStore {
   nodeNotes: Record<string, NoteResponse[]>
   treeNotes: NoteResponse[]
   treeAnnotations: AnnotationResponse[]
-  researchPaneTab: 'bookmarks' | 'tags' | 'notes'
+  treeSummaries: SummaryResponse[]
+  researchPaneTab: 'bookmarks' | 'tags' | 'notes' | 'summaries'
   rightPaneMode: 'graph' | 'digressions' | 'research' | null
   groupSelectionMode: boolean
   selectedGroupNodeIds: string[]
@@ -121,7 +124,7 @@ interface TreeStore {
   fetchNodeNotes: (nodeId: string) => Promise<void>
   fetchTreeNotes: () => Promise<void>
   fetchTreeAnnotations: () => Promise<void>
-  setResearchPaneTab: (tab: 'bookmarks' | 'tags' | 'notes') => void
+  setResearchPaneTab: (tab: 'bookmarks' | 'tags' | 'notes' | 'summaries') => void
   fetchBookmarks: () => Promise<void>
   addBookmark: (nodeId: string, label: string, notes?: string) => Promise<void>
   removeBookmark: (bookmarkId: string) => Promise<void>
@@ -147,6 +150,9 @@ interface TreeStore {
   clearSearch: () => void
   navigateToSearchResult: (treeId: string, nodeId: string) => Promise<void>
   clearScrollToNode: () => void
+  fetchTreeSummaries: () => Promise<void>
+  generateSummary: (nodeId: string, req: CreateSummaryRequest) => Promise<SummaryResponse | null>
+  removeSummary: (summaryId: string) => Promise<void>
 }
 
 /**
@@ -310,6 +316,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
   nodeNotes: {},
   treeNotes: [],
   treeAnnotations: [],
+  treeSummaries: [],
   researchPaneTab: 'bookmarks',
   rightPaneMode: null,
   groupSelectionMode: false,
@@ -362,6 +369,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
       nodeNotes: {},
       treeNotes: [],
       treeAnnotations: [],
+      treeSummaries: [],
       rightPaneMode: null,
       groupSelectionMode: false,
       selectedGroupNodeIds: [],
@@ -387,6 +395,9 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
       }).catch(() => {/* ignore */})
       api.getTreeAnnotations(treeId).then((treeAnnotations) => {
         set({ treeAnnotations })
+      }).catch(() => {/* ignore */})
+      api.getTreeSummaries(treeId).then((treeSummaries) => {
+        set({ treeSummaries })
       }).catch(() => {/* ignore */})
     } catch (e) {
       set({ error: String(e), isLoading: false })
@@ -1059,7 +1070,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
     (treeAnnotations) => ({ treeAnnotations }),
   ),
 
-  setResearchPaneTab: (tab: 'bookmarks' | 'tags' | 'notes') => {
+  setResearchPaneTab: (tab: 'bookmarks' | 'tags' | 'notes' | 'summaries') => {
     set({ researchPaneTab: tab })
   },
 
@@ -1352,6 +1363,45 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
   clearScrollToNode: () => {
     set({ scrollToNodeId: null })
   },
+
+  fetchTreeSummaries: async () => {
+    const { currentTree } = get()
+    if (!currentTree) return
+    try {
+      const treeSummaries = await api.getTreeSummaries(currentTree.tree_id)
+      set({ treeSummaries })
+    } catch {
+      /* ignore fetch errors */
+    }
+  },
+
+  generateSummary: async (nodeId: string, req: CreateSummaryRequest) => {
+    const { currentTree } = get()
+    if (!currentTree) return null
+    try {
+      const summary = await api.generateSummary(currentTree.tree_id, nodeId, req)
+      set((state) => ({
+        treeSummaries: [...state.treeSummaries, summary],
+      }))
+      return summary
+    } catch (e) {
+      set({ error: String(e) })
+      return null
+    }
+  },
+
+  removeSummary: async (summaryId: string) => {
+    const { currentTree } = get()
+    if (!currentTree) return
+    try {
+      await api.removeSummary(currentTree.tree_id, summaryId)
+      set((state) => ({
+        treeSummaries: state.treeSummaries.filter((s) => s.summary_id !== summaryId),
+      }))
+    } catch (e) {
+      set({ error: String(e) })
+    }
+  },
 }))
 
 // ---------------------------------------------------------------------------
@@ -1410,6 +1460,7 @@ export const useResearchMetadata = () => useTreeStore(useShallow(s => ({
   nodeNotes: s.nodeNotes,
   treeNotes: s.treeNotes,
   treeAnnotations: s.treeAnnotations,
+  treeSummaries: s.treeSummaries,
   researchPaneTab: s.researchPaneTab,
   taxonomy: s.taxonomy,
 })))

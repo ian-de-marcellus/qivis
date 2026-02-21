@@ -219,6 +219,25 @@ class DigressionGroupResponse(BaseModel):
     created_at: str
 
 
+class CreateSummaryRequest(BaseModel):
+    scope: Literal["branch", "subtree"] = "branch"
+    summary_type: Literal["concise", "detailed", "key_points", "custom"] = "concise"
+    custom_prompt: str | None = None
+
+
+class SummaryResponse(BaseModel):
+    summary_id: str
+    tree_id: str
+    anchor_node_id: str
+    scope: str
+    summary_type: str
+    summary: str
+    model: str
+    node_ids: list[str]
+    prompt_used: str | None = None
+    created_at: str
+
+
 class TreeDetailResponse(BaseModel):
     tree_id: str
     title: str | None = None

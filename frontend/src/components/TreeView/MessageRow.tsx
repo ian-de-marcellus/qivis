@@ -64,6 +64,7 @@ export interface MessageRowActions {
   onGroupToggle?: () => void
   onSplitView?: () => void
   onComparisonPick?: () => void
+  onSummarize?: () => void
 }
 
 interface MessageRowProps {
@@ -86,6 +87,7 @@ export const MessageRow = memo(function MessageRow({
     onSelectSibling, onFork, onPrefill, onGenerate, onCompare,
     onEdit, onInspect, onBookmarkToggle, onExcludeToggle,
     onAnchorToggle, onGroupToggle, onSplitView, onComparisonPick,
+    onSummarize,
   } = actions
 
   const [showLogprobs, setShowLogprobs] = useState(false)
@@ -205,6 +207,11 @@ export const MessageRow = memo(function MessageRow({
           {onBookmarkToggle && (
             <ActionMenuItem onClick={onBookmarkToggle} active={!!node.is_bookmarked}>
               {node.is_bookmarked ? 'Marked' : 'Mark'}
+            </ActionMenuItem>
+          )}
+          {onSummarize && (
+            <ActionMenuItem onClick={onSummarize}>
+              Summarize
             </ActionMenuItem>
           )}
         </ActionMenu>

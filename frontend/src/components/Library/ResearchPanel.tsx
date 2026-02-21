@@ -3,10 +3,18 @@ import type { BookmarkResponse } from '../../api/types.ts'
 import { useTreeStore, useResearchMetadata } from '../../store/treeStore.ts'
 import './ResearchPanel.css'
 
+const SUMMARY_TYPE_LABELS: Record<string, string> = {
+  concise: 'Concise',
+  detailed: 'Detailed',
+  key_points: 'Key Points',
+  custom: 'Custom',
+}
+
 export function ResearchPanel() {
   const {
     bookmarks, bookmarksLoading,
     treeNotes, treeAnnotations,
+    treeSummaries,
     researchPaneTab,
   } = useResearchMetadata()
 
@@ -15,13 +23,14 @@ export function ResearchPanel() {
   const summarizeBookmark = useTreeStore(s => s.summarizeBookmark)
   const navigateToBookmark = useTreeStore(s => s.navigateToBookmark)
   const removeNote = useTreeStore(s => s.removeNote)
+  const removeSummary = useTreeStore(s => s.removeSummary)
   const setResearchPaneTab = useTreeStore(s => s.setResearchPaneTab)
   const currentTree = useTreeStore(s => s.currentTree)
 
   const [summarizingIds, setSummarizingIds] = useState<Set<string>>(new Set())
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
 
-  const totalCount = bookmarks.length + treeAnnotations.length + treeNotes.length
+  const totalCount = bookmarks.length + treeAnnotations.length + treeNotes.length + treeSummaries.length
 
   const handleSummarize = async (bookmark: BookmarkResponse) => {
     setSummarizingIds((prev) => new Set([...prev, bookmark.bookmark_id]))
@@ -81,6 +90,12 @@ export function ResearchPanel() {
           onClick={() => setResearchPaneTab('notes')}
         >
           Notes{treeNotes.length > 0 && <span className="tab-count">{treeNotes.length}</span>}
+        </button>
+        <button
+          className={`research-tab${researchPaneTab === 'summaries' ? ' active' : ''}`}
+          onClick={() => setResearchPaneTab('summaries')}
+        >
+          Summaries{treeSummaries.length > 0 && <span className="tab-count">{treeSummaries.length}</span>}
         </button>
       </div>
 
@@ -212,6 +227,55 @@ export function ResearchPanel() {
             {treeNotes.length === 0 && (
               <div className="research-empty">
                 No notes yet. Click "Note" on any message.
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Summaries tab */}
+        {researchPaneTab === 'summaries' && (
+          <div className="research-items">
+            {treeSummaries.map((summary) => {
+              const isExpanded = expandedIds.has(summary.summary_id)
+
+              return (
+                <div key={summary.summary_id} className="research-item">
+                  <div className="research-item-header">
+                    <button
+                      className="research-item-label"
+                      onClick={() => navigateToNode(summary.anchor_node_id)}
+                      title="Navigate to anchor message"
+                    >
+                      <span className="research-tag-chip">{summary.scope}</span>
+                      {' '}
+                      <span className="summary-type-label">
+                        {SUMMARY_TYPE_LABELS[summary.summary_type] ?? summary.summary_type}
+                      </span>
+                    </button>
+                    <button
+                      className="research-item-remove"
+                      onClick={() => removeSummary(summary.summary_id)}
+                      aria-label="Remove summary"
+                    >
+                      &times;
+                    </button>
+                  </div>
+                  <div
+                    className={`research-item-summary${isExpanded ? ' expanded' : ''}`}
+                    onClick={() => toggleExpanded(summary.summary_id)}
+                  >
+                    {summary.summary}
+                  </div>
+                  <div className="research-item-time">
+                    {summary.model} &middot; {summary.node_ids.length} nodes &middot; {formatShortTime(summary.created_at)}
+                  </div>
+                </div>
+              )
+            })}
+
+            {treeSummaries.length === 0 && (
+              <div className="research-empty">
+                No summaries yet. Click "Summarize" on any message.
               </div>
             )}
           </div>

@@ -8,6 +8,7 @@ import type {
   CreateDigressionGroupRequest,
   CreateNodeRequest,
   CreateNoteRequest,
+  CreateSummaryRequest,
   CreateTreeRequest,
   DigressionGroupResponse,
   EditHistoryResponse,
@@ -24,6 +25,7 @@ import type {
   PatchTreeRequest,
   ProviderInfo,
   SearchResponse,
+  SummaryResponse,
   TaxonomyResponse,
   TreeDetail,
   TreeSummary,
@@ -594,6 +596,31 @@ export async function executeMerge(
   }
   return res.json()
 }
+
+// -- Summaries --
+
+export function generateSummary(
+  treeId: string,
+  nodeId: string,
+  req: CreateSummaryRequest,
+): Promise<SummaryResponse> {
+  return request(`/trees/${treeId}/nodes/${nodeId}/summarize`, {
+    method: 'POST',
+    body: JSON.stringify(req),
+  })
+}
+
+export function getTreeSummaries(treeId: string): Promise<SummaryResponse[]> {
+  return request(`/trees/${treeId}/summaries`)
+}
+
+export function removeSummary(treeId: string, summaryId: string): Promise<void> {
+  return request(`/trees/${treeId}/summaries/${summaryId}`, {
+    method: 'DELETE',
+  })
+}
+
+// -- Search --
 
 export function searchNodes(params: {
   q: string

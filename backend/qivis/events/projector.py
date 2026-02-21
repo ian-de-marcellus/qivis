@@ -26,6 +26,8 @@ from qivis.models import (
     NodeUnanchoredPayload,
     NoteAddedPayload,
     NoteRemovedPayload,
+    SummaryGeneratedPayload,
+    SummaryRemovedPayload,
     TreeCreatedPayload,
     TreeMetadataUpdatedPayload,
 )
@@ -57,6 +59,8 @@ class StateProjector:
             "NodeUnanchored": self._handle_node_unanchored,
             "NoteAdded": self._handle_note_added,
             "NoteRemoved": self._handle_note_removed,
+            "SummaryGenerated": self._handle_summary_generated,
+            "SummaryRemoved": self._handle_summary_removed,
         }
 
     async def project(self, events: list[EventEnvelope]) -> None:
@@ -389,6 +393,43 @@ class StateProjector:
         await self._db.execute(
             "DELETE FROM notes WHERE note_id = ?",
             (payload.note_id,),
+        )
+
+    async def _handle_summary_generated(self, event: EventEnvelope) -> None:
+        """Project a SummaryGenerated event into the summaries table."""
+        payload = SummaryGeneratedPayload.model_validate(event.payload)
+        timestamp = (
+            event.timestamp.isoformat()
+            if hasattr(event.timestamp, "isoformat")
+            else str(event.timestamp)
+        )
+        await self._db.execute(
+            """
+            INSERT OR REPLACE INTO summaries
+                (summary_id, tree_id, anchor_node_id, scope, summary_type,
+                 summary, model, node_ids, prompt_used, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                payload.summary_id,
+                event.tree_id,
+                payload.anchor_node_id,
+                payload.scope,
+                payload.summary_type,
+                payload.summary,
+                payload.model,
+                json.dumps(payload.node_ids),
+                payload.prompt_used,
+                timestamp,
+            ),
+        )
+
+    async def _handle_summary_removed(self, event: EventEnvelope) -> None:
+        """Project a SummaryRemoved event: delete from summaries table."""
+        payload = SummaryRemovedPayload.model_validate(event.payload)
+        await self._db.execute(
+            "DELETE FROM summaries WHERE summary_id = ?",
+            (payload.summary_id,),
         )
 
     async def _handle_node_created(self, event: EventEnvelope) -> None:

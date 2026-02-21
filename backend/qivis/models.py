@@ -245,12 +245,18 @@ class DigressionGroupToggledPayload(BaseModel):
 
 class SummaryGeneratedPayload(BaseModel):
     summary_id: str
+    anchor_node_id: str
     scope: Literal["branch", "subtree", "selection"]
     node_ids: list[str]
     summary: str
     model: str
     summary_type: Literal["concise", "detailed", "key_points", "custom"]
     prompt_used: str | None = None
+
+
+class SummaryRemovedPayload(BaseModel):
+    summary_id: str
+    reason: str | None = None
 
 
 class GarbageCollectedPayload(BaseModel):
@@ -308,6 +314,7 @@ EVENT_TYPES: dict[str, type[BaseModel]] = {
     "DigressionGroupCreated": DigressionGroupCreatedPayload,
     "DigressionGroupToggled": DigressionGroupToggledPayload,
     "SummaryGenerated": SummaryGeneratedPayload,
+    "SummaryRemoved": SummaryRemovedPayload,
     "GarbageCollected": GarbageCollectedPayload,
     "GarbagePurged": GarbagePurgedPayload,
 }

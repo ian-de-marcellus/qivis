@@ -369,3 +369,24 @@ export interface MergeResult {
   matched_count: number
   node_ids: string[]
 }
+
+// -- Summaries --
+
+export interface SummaryResponse {
+  summary_id: string
+  tree_id: string
+  anchor_node_id: string
+  scope: 'branch' | 'subtree'
+  summary_type: 'concise' | 'detailed' | 'key_points' | 'custom'
+  summary: string
+  model: string
+  node_ids: string[]
+  prompt_used: string | null
+  created_at: string
+}
+
+export interface CreateSummaryRequest {
+  scope?: 'branch' | 'subtree'
+  summary_type?: 'concise' | 'detailed' | 'key_points' | 'custom'
+  custom_prompt?: string
+}

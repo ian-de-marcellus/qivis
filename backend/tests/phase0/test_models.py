@@ -218,7 +218,8 @@ class TestEventTypesRegistry:
             "NoteAdded", "NoteRemoved",
             "NodeContextExcluded", "NodeContextIncluded",
             "DigressionGroupCreated", "DigressionGroupToggled",
-            "SummaryGenerated", "GarbageCollected", "GarbagePurged",
+            "SummaryGenerated", "SummaryRemoved",
+            "GarbageCollected", "GarbagePurged",
         }
         assert set(EVENT_TYPES.keys()) == expected_types
 

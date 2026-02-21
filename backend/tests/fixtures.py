@@ -24,6 +24,8 @@ from qivis.models import (
     NodeCreatedPayload,
     NodeUnanchoredPayload,
     SamplingParams,
+    SummaryGeneratedPayload,
+    SummaryRemovedPayload,
     TreeCreatedPayload,
     TreeMetadataUpdatedPayload,
 )
@@ -489,6 +491,59 @@ def make_note_removed_envelope(
         timestamp=datetime.now(UTC),
         device_id="test",
         event_type="NoteRemoved",
+        payload=payload.model_dump(),
+    )
+
+
+def make_summary_generated_envelope(
+    tree_id: str,
+    anchor_node_id: str,
+    scope: str = "branch",
+    summary_type: str = "concise",
+    summary: str = "A test summary of the conversation.",
+    model: str = "claude-haiku-4-5-20251001",
+    node_ids: list[str] | None = None,
+    prompt_used: str | None = None,
+    summary_id: str | None = None,
+) -> EventEnvelope:
+    """Create a SummaryGenerated EventEnvelope for testing."""
+    summary_id = summary_id or str(uuid4())
+    payload = SummaryGeneratedPayload(
+        summary_id=summary_id,
+        anchor_node_id=anchor_node_id,
+        scope=scope,
+        node_ids=node_ids or [anchor_node_id],
+        summary=summary,
+        model=model,
+        summary_type=summary_type,
+        prompt_used=prompt_used,
+    )
+    return EventEnvelope(
+        event_id=str(uuid4()),
+        tree_id=tree_id,
+        timestamp=datetime.now(UTC),
+        device_id="test",
+        event_type="SummaryGenerated",
+        payload=payload.model_dump(),
+    )
+
+
+def make_summary_removed_envelope(
+    tree_id: str,
+    summary_id: str,
+    reason: str | None = None,
+) -> EventEnvelope:
+    """Create a SummaryRemoved EventEnvelope for testing."""
+    payload = SummaryRemovedPayload(
+        summary_id=summary_id,
+        reason=reason,
+    )
+    return EventEnvelope(
+        event_id=str(uuid4()),
+        tree_id=tree_id,
+        timestamp=datetime.now(UTC),
+        device_id="test",
+        event_type="SummaryRemoved",
         payload=payload.model_dump(),
     )
 

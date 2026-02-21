@@ -440,17 +440,13 @@ Merge an imported conversation file into an existing tree without duplicating al
 
 **Frontend:** `MergePanel` component with state machine (idle/previewing/preview/merging/done/error). Drag-and-drop file upload. Preview shows format badge, source title, matched/new counts, graft points with content previews, warnings. "Merge N messages" button or "Nothing to merge" state. Done state navigates to first new node. Toolbar button (merge/join icon) in TreeSettings bar.
 
-### 7.3 — Manual Summarization 🔀
+### 7.3 — Manual Summarization ✅
 
-**Tasks:**
-- Branch / subtree / selection summaries with configurable prompts and summary types (concise, detailed, key points, custom)
-- `SummaryGenerated` events, stored and searchable
-- UI: right-click or menu on node, "Summarize..." with options
-- Shares summarization infrastructure with bookmark summaries (6.2)
+General-purpose summarization system: summarize any branch or subtree with configurable summary types (concise, detailed, key_points, custom), stored as first-class research artifacts alongside bookmarks, annotations, and notes.
 
-**Blockers:** 6.2 (bookmark summary infrastructure).
+**Backend:** `SummaryGeneratedPayload` (was orphaned, now wired up) with `anchor_node_id`. Added `SummaryRemovedPayload`. `summaries` table with migrations 013-015. Projector handlers for both events. Extracted shared helpers from bookmark summary: `_build_transcript`, `_call_summary_llm`, `_resolve_summary_model`, `_walk_branch`, `_collect_subtree`. Four summary types with tuned prompts and token limits: concise (100), detailed (500), key_points (300), custom (500 + user prompt). Branch scope walks parent chain root→leaf. Subtree scope collects all descendants via BFS. Three endpoints: POST /summarize, GET /summaries, DELETE /summaries/{id}. 17 tests (3 contract + 9 integration + 5 service). 555 tests at completion.
 
-✅ Can summarize branches, subtrees, selections with various prompts.
+**Frontend:** `SummarizePanel` inline component (ForkPanel pattern) with config/generating/result states. "Summarize" item in ActionMenu research group (quill). `summarizeTargetId` state in LinearView toggles panel. ResearchPanel gets "Summaries" tab (4th tab) showing scope/type badges, expandable summary text, model attribution, navigate-to-anchor, remove button. Store: `treeSummaries` state, `fetchTreeSummaries`/`generateSummary`/`removeSummary` actions.
 
 ### 7.4 — Tree Organization 🔀
 

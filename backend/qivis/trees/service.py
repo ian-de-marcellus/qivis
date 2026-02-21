@@ -27,6 +27,8 @@ from qivis.models import (
     NodeUnanchoredPayload,
     NoteAddedPayload,
     NoteRemovedPayload,
+    SummaryGeneratedPayload,
+    SummaryRemovedPayload,
     TreeCreatedPayload,
     TreeMetadataUpdatedPayload,
 )
@@ -38,6 +40,7 @@ from qivis.trees.schemas import (
     CreateDigressionGroupRequest,
     CreateNodeRequest,
     CreateNoteRequest,
+    CreateSummaryRequest,
     CreateTreeRequest,
     DigressionGroupResponse,
     EditHistoryEntry,
@@ -50,6 +53,7 @@ from qivis.trees.schemas import (
     NoteResponse,
     PatchNodeContentRequest,
     PatchTreeRequest,
+    SummaryResponse,
     TaxonomyResponse,
     TreeDetailResponse,
     TreeSummary,
@@ -698,6 +702,78 @@ class TreeService:
             )
         return [self._bookmark_from_row(r) for r in rows]
 
+    # -- Shared summarization helpers --
+
+    @staticmethod
+    def _build_transcript(nodes: list[dict]) -> str:
+        """Build a transcript from a list of node dicts, using edited_content when present."""
+        lines = []
+        for n in nodes:
+            content = n.get("edited_content") or n["content"]
+            role = n["role"].capitalize()
+            lines.append(f"{role}: {content}")
+        return "\n".join(lines)
+
+    async def _call_summary_llm(
+        self, transcript: str, system_prompt: str, model: str, max_tokens: int,
+    ) -> tuple[str, str]:
+        """Call the summary LLM client with a transcript. Returns (summary_text, model_used)."""
+        response = await self._summary_client.messages.create(
+            model=model,
+            max_tokens=max_tokens,
+            system=system_prompt,
+            messages=[
+                {
+                    "role": "user",
+                    "content": f"Summarize this conversation:\n\n{transcript}",
+                },
+                {
+                    "role": "assistant",
+                    "content": "Summary:",
+                },
+            ],
+        )
+        return response.content[0].text, response.model
+
+    def _resolve_summary_model(self, tree: dict) -> str:
+        """Resolve the summary model from tree metadata, falling back to default."""
+        metadata = parse_json_field(tree.get("metadata")) or {}
+        eviction_raw = metadata.get("eviction_strategy")
+        if isinstance(eviction_raw, dict) and "summary_model" in eviction_raw:
+            return eviction_raw["summary_model"]
+        return "claude-haiku-4-5-20251001"
+
+    def _walk_branch(self, node_map: dict[str, dict], leaf_id: str) -> list[dict]:
+        """Walk parent chain from leaf to root, return root-first list."""
+        path: list[dict] = []
+        current = node_map.get(leaf_id)
+        while current:
+            path.append(current)
+            current = node_map.get(current["parent_id"]) if current["parent_id"] else None
+        path.reverse()
+        return path
+
+    def _collect_subtree(self, node_map: dict[str, dict], root_id: str) -> list[dict]:
+        """BFS from root collecting all descendants, ordered by created_at."""
+        children_map: dict[str, list[dict]] = {}
+        for n in node_map.values():
+            pid = n.get("parent_id")
+            if pid:
+                children_map.setdefault(pid, []).append(n)
+        collected = []
+        queue = [node_map[root_id]] if root_id in node_map else []
+        while queue:
+            node = queue.pop(0)
+            collected.append(node)
+            for child in sorted(
+                children_map.get(node["node_id"], []),
+                key=lambda n: n.get("created_at", ""),
+            ):
+                queue.append(child)
+        return collected
+
+    # -- Bookmark summary --
+
     async def generate_bookmark_summary(
         self, tree_id: str, bookmark_id: str,
     ) -> BookmarkResponse:
@@ -709,12 +785,7 @@ class TreeService:
         if tree is None:
             raise TreeNotFoundError(tree_id)
 
-        # Resolve summary model from tree's eviction strategy
-        metadata = parse_json_field(tree.get("metadata")) or {}
-        eviction_raw = metadata.get("eviction_strategy")
-        summary_model = "claude-haiku-4-5-20251001"
-        if isinstance(eviction_raw, dict) and "summary_model" in eviction_raw:
-            summary_model = eviction_raw["summary_model"]
+        summary_model = self._resolve_summary_model(tree)
 
         bm_row = await self._db.fetchone(
             "SELECT * FROM bookmarks WHERE bookmark_id = ? AND tree_id = ?",
@@ -723,54 +794,25 @@ class TreeService:
         if bm_row is None:
             raise BookmarkNotFoundError(bookmark_id)
 
-        # Get all nodes and walk parent chain from bookmarked node to root
         nodes = await self._projector.get_nodes(tree_id)
         node_map = {n["node_id"]: n for n in nodes}
 
-        path: list[dict] = []
-        current = node_map.get(bm_row["node_id"])
-        while current:
-            path.append(current)
-            current = node_map.get(current["parent_id"]) if current["parent_id"] else None
-        path.reverse()  # root -> bookmarked node
-
-        # Build conversation transcript for the prompt
-        transcript_lines = []
-        for n in path:
-            content = n.get("edited_content") or n["content"]
-            role = n["role"].capitalize()
-            transcript_lines.append(f"{role}: {content}")
-        transcript = "\n".join(transcript_lines)
-
+        path = self._walk_branch(node_map, bm_row["node_id"])
+        transcript = self._build_transcript(path)
         summarized_node_ids = [n["node_id"] for n in path]
 
-        # Call the dedicated summary client
-        response = await self._summary_client.messages.create(
-            model=summary_model,
-            max_tokens=100,
-            system=(
+        summary_text, model_used = await self._call_summary_llm(
+            transcript,
+            (
                 "You write terse research bookmark notes — like a post-it flag "
                 "in a margin. One to two plain sentences, no markdown, no bullets, "
                 "no headers. Third person. Emphasize the end of the branch — "
                 "that's where it diverges. Finish your thought — never stop mid-sentence."
             ),
-            messages=[
-                {
-                    "role": "user",
-                    "content": f"Summarize this conversation branch:\n\n{transcript}",
-                },
-                {
-                    "role": "assistant",
-                    "content": "Branch note:",
-                },
-            ],
+            summary_model,
+            100,
         )
-        summary_text = response.content[0].text
 
-        summary_text = response.content[0].text
-        model_used = response.model
-
-        # Emit BookmarkSummaryGenerated event
         now = datetime.now(UTC)
         payload = BookmarkSummaryGeneratedPayload(
             bookmark_id=bookmark_id,
@@ -790,7 +832,6 @@ class TreeService:
         await self._store.append(event)
         await self._projector.project([event])
 
-        # Read back updated bookmark
         updated_row = await self._db.fetchone(
             "SELECT * FROM bookmarks WHERE bookmark_id = ?",
             (bookmark_id,),
@@ -798,47 +839,177 @@ class TreeService:
         assert updated_row is not None
         return self._bookmark_from_row(updated_row)
 
+    # -- Manual summarization --
+
+    # System prompts by summary type
+    _SUMMARY_PROMPTS: dict[str, tuple[str, int]] = {
+        "concise": (
+            "You write terse research summaries. Aim for roughly 30-50 words — two "
+            "to three sentences. No markdown. Third person. Capture the key exchange "
+            "and outcome. Always finish your thought completely.",
+            300,
+        ),
+        "detailed": (
+            "You write thorough research summaries. Aim for roughly 150-250 words. "
+            "Cover the main points, turning points, and notable patterns. Plain "
+            "prose, no bullets, no headers. Third person. Always finish your "
+            "thought completely.",
+            1024,
+        ),
+        "key_points": (
+            "You extract key points from conversations. Return a numbered list of "
+            "the most important observations, aim for 5-8 items. Plain text, no "
+            "markdown formatting beyond numbers. Always finish your thought "
+            "completely.",
+            1024,
+        ),
+    }
+
+    async def generate_summary(
+        self,
+        tree_id: str,
+        anchor_node_id: str,
+        req: CreateSummaryRequest,
+    ) -> SummaryResponse:
+        """Generate a summary anchored at a node."""
+        if self._summary_client is None:
+            raise SummaryClientNotConfiguredError()
+
+        tree = await self._projector.get_tree(tree_id)
+        if tree is None:
+            raise TreeNotFoundError(tree_id)
+
+        nodes = await self._projector.get_nodes(tree_id)
+        node_map = {n["node_id"]: n for n in nodes}
+        if anchor_node_id not in node_map:
+            raise NodeNotFoundError(anchor_node_id)
+
+        summary_model = self._resolve_summary_model(tree)
+
+        # Collect nodes based on scope
+        if req.scope == "subtree":
+            scope_nodes = self._collect_subtree(node_map, anchor_node_id)
+        else:
+            scope_nodes = self._walk_branch(node_map, anchor_node_id)
+
+        transcript = self._build_transcript(scope_nodes)
+        node_ids = [n["node_id"] for n in scope_nodes]
+
+        # Select prompt and max_tokens
+        if req.summary_type == "custom":
+            system_prompt = req.custom_prompt or "Summarize this conversation."
+            max_tokens = 500
+        else:
+            system_prompt, max_tokens = self._SUMMARY_PROMPTS[req.summary_type]
+
+        summary_text, model_used = await self._call_summary_llm(
+            transcript, system_prompt, summary_model, max_tokens,
+        )
+
+        summary_id = str(uuid4())
+        now = datetime.now(UTC)
+        payload = SummaryGeneratedPayload(
+            summary_id=summary_id,
+            anchor_node_id=anchor_node_id,
+            scope=req.scope,
+            node_ids=node_ids,
+            summary=summary_text,
+            model=model_used,
+            summary_type=req.summary_type,
+            prompt_used=req.custom_prompt if req.summary_type == "custom" else None,
+        )
+        event = EventEnvelope(
+            event_id=str(uuid4()),
+            tree_id=tree_id,
+            timestamp=now,
+            device_id="summary",
+            event_type="SummaryGenerated",
+            payload=payload.model_dump(),
+        )
+        await self._store.append(event)
+        await self._projector.project([event])
+
+        return self._summary_from_row(
+            await self._db.fetchone(
+                "SELECT * FROM summaries WHERE summary_id = ?", (summary_id,),
+            ),
+        )
+
+    async def list_summaries(self, tree_id: str) -> list[SummaryResponse]:
+        """List all summaries for a tree."""
+        rows = await self._db.fetchall(
+            "SELECT * FROM summaries WHERE tree_id = ? ORDER BY created_at DESC",
+            (tree_id,),
+        )
+        return [self._summary_from_row(r) for r in rows]
+
+    async def remove_summary(self, tree_id: str, summary_id: str) -> None:
+        """Remove a summary by emitting a SummaryRemoved event."""
+        row = await self._db.fetchone(
+            "SELECT * FROM summaries WHERE summary_id = ? AND tree_id = ?",
+            (summary_id, tree_id),
+        )
+        if row is None:
+            raise SummaryNotFoundError(summary_id)
+
+        payload = SummaryRemovedPayload(summary_id=summary_id)
+        event = EventEnvelope(
+            event_id=str(uuid4()),
+            tree_id=tree_id,
+            timestamp=datetime.now(UTC),
+            device_id="local",
+            event_type="SummaryRemoved",
+            payload=payload.model_dump(),
+        )
+        await self._store.append(event)
+        await self._projector.project([event])
+
+    @staticmethod
+    def _summary_from_row(row) -> SummaryResponse:
+        """Convert a summaries table row to a SummaryResponse."""
+        import json as json_mod
+        raw_ids = row["node_ids"]
+        node_ids = json_mod.loads(raw_ids) if isinstance(raw_ids, str) else (raw_ids or [])
+        return SummaryResponse(
+            summary_id=row["summary_id"],
+            tree_id=row["tree_id"],
+            anchor_node_id=row["anchor_node_id"],
+            scope=row["scope"],
+            summary_type=row["summary_type"],
+            summary=row["summary"],
+            model=row["model"],
+            node_ids=node_ids,
+            prompt_used=row["prompt_used"],
+            created_at=row["created_at"],
+        )
+
+    # -- Eviction summary (ephemeral, not stored as event) --
+
     async def generate_eviction_summary(
         self,
         evicted_content: list[str],
         *,
         model: str = "claude-haiku-4-5-20251001",
     ) -> str | None:
-        """Generate a concise recap of evicted messages for context continuity.
-
-        Returns the summary text, or None if no summary client is configured.
-        """
+        """Generate a concise recap of evicted messages for context continuity."""
         if self._summary_client is None:
             return None
         if not evicted_content:
             return None
 
         transcript = "\n".join(evicted_content)
-
-        response = await self._summary_client.messages.create(
-            model=model,
-            max_tokens=200,
-            system=(
+        summary_text, _ = await self._call_summary_llm(
+            transcript,
+            (
                 "You write concise conversation recaps for context continuity. "
                 "Summarize the key points, decisions, and any important details "
                 "from the evicted messages in 2-3 sentences. No markdown, no bullets. "
                 "Write as a neutral observer."
             ),
-            messages=[
-                {
-                    "role": "user",
-                    "content": (
-                        "These messages were removed from context due to length limits. "
-                        f"Summarize them:\n\n{transcript}"
-                    ),
-                },
-                {
-                    "role": "assistant",
-                    "content": "Summary:",
-                },
-            ],
+            model,
+            200,
         )
-        return response.content[0].text
+        return summary_text
 
     # -- Context exclusion methods --
 
@@ -1382,6 +1553,12 @@ class DigressionGroupNotFoundError(Exception):
     def __init__(self, group_id: str) -> None:
         self.group_id = group_id
         super().__init__(f"Digression group not found: {group_id}")
+
+
+class SummaryNotFoundError(Exception):
+    def __init__(self, summary_id: str) -> None:
+        self.summary_id = summary_id
+        super().__init__(f"Summary not found: {summary_id}")
 
 
 class NonContiguousGroupError(Exception):

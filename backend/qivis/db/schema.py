@@ -135,6 +135,22 @@ CREATE TABLE IF NOT EXISTS notes (
 CREATE INDEX IF NOT EXISTS idx_notes_node_id ON notes(node_id);
 CREATE INDEX IF NOT EXISTS idx_notes_tree_id ON notes(tree_id);
 
+CREATE TABLE IF NOT EXISTS summaries (
+    summary_id TEXT PRIMARY KEY,
+    tree_id TEXT NOT NULL,
+    anchor_node_id TEXT NOT NULL,
+    scope TEXT NOT NULL,
+    summary_type TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    model TEXT NOT NULL,
+    node_ids TEXT NOT NULL,
+    prompt_used TEXT,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_summaries_tree_id ON summaries(tree_id);
+CREATE INDEX IF NOT EXISTS idx_summaries_anchor_node_id ON summaries(anchor_node_id);
+
 CREATE TABLE IF NOT EXISTS schema_migrations (
     name TEXT PRIMARY KEY,
     applied_at TEXT NOT NULL
@@ -198,6 +214,24 @@ _MIGRATIONS: list[tuple[str, str]] = [
      "CREATE INDEX IF NOT EXISTS idx_notes_node_id ON notes(node_id)"),
     ("012_notes_tree_id_index",
      "CREATE INDEX IF NOT EXISTS idx_notes_tree_id ON notes(tree_id)"),
+    # Phase 7.3: Manual summarization
+    ("013_create_summaries_table",
+     "CREATE TABLE IF NOT EXISTS summaries ("
+     "summary_id TEXT PRIMARY KEY, "
+     "tree_id TEXT NOT NULL, "
+     "anchor_node_id TEXT NOT NULL, "
+     "scope TEXT NOT NULL, "
+     "summary_type TEXT NOT NULL, "
+     "summary TEXT NOT NULL, "
+     "model TEXT NOT NULL, "
+     "node_ids TEXT NOT NULL, "
+     "prompt_used TEXT, "
+     "created_at TEXT NOT NULL"
+     ")"),
+    ("014_summaries_tree_id_index",
+     "CREATE INDEX IF NOT EXISTS idx_summaries_tree_id ON summaries(tree_id)"),
+    ("015_summaries_anchor_node_id_index",
+     "CREATE INDEX IF NOT EXISTS idx_summaries_anchor_node_id ON summaries(anchor_node_id)"),
 ]
 
 
