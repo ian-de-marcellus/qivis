@@ -124,6 +124,14 @@ class OpenAICompatibleProvider(LLMProvider):
             ),
         )
 
+    async def discover_models(self) -> list[str]:
+        """List available models from the API. Returns empty list on failure."""
+        try:
+            response = await self._client.models.list()
+            return sorted(m.id for m in response.data)
+        except Exception:
+            return []
+
     @staticmethod
     def _extract_reasoning_tokens(usage: Any) -> int | None:
         """Extract reasoning_tokens from OpenAI usage if available."""

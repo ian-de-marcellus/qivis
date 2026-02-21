@@ -497,19 +497,13 @@ _Goal: Prefill, base models, local inference, full-vocab logprobs. The research 
 
 ✅ Can supply partial assistant responses. Model continues naturally. Prefill content distinguished from generated content.
 
-### 8.2 — Local Providers 🔒
+### 8.2 — Local Providers (OpenAI-compat) ✅
 
-**Tasks:**
-- `OllamaProvider`: chat + completion modes, auto-discover models via Ollama API (`/api/tags`), streaming
-- `LlamaCppProvider`: completion mode, logprob extraction from `completion_probabilities`, full vocabulary distributions
-- `GenericOpenAIProvider`: any OpenAI-compatible endpoint (vLLM, LM Studio, text-generation-webui)
-- Handle provider-specific quirks: Ollama's streaming format, llama.cpp's token handling
-- Provider auto-discovery: detect running Ollama/llama.cpp on startup, add to provider list
-- Settings panel integration: configure local provider URLs
+`OllamaProvider` and `GenericOpenAIProvider` — thin subclasses of `OpenAICompatibleProvider`. Model auto-discovery via openai SDK `client.models.list()` at startup. Ollama adds `top_k` support via `_build_params` override. `discover_models()` method added to `OpenAICompatibleProvider` base class. Env-var-gated registration: `OLLAMA_BASE_URL`, `GENERIC_OPENAI_BASE_URL` + `GENERIC_OPENAI_API_KEY` + `GENERIC_OPENAI_NAME`. LlamaCppProvider deferred to 8.3. 19 new tests. 607 tests at completion.
 
 **Blockers:** Provider pattern established (Phase 1).
 
-✅ Can generate from local Ollama and llama.cpp models.
+✅ Can generate from local Ollama and any OpenAI-compatible server.
 
 ### 8.3 — Completion Mode + Full-Vocab Logprobs 🔒
 

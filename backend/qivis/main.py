@@ -61,6 +61,28 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if os.environ.get("OPENROUTER_API_KEY"):
         register_provider(OpenRouterProvider(api_key=os.environ["OPENROUTER_API_KEY"]))
 
+    if os.environ.get("OLLAMA_BASE_URL"):
+        from qivis.providers.ollama import OllamaProvider
+
+        ollama = OllamaProvider(base_url=os.environ["OLLAMA_BASE_URL"])
+        discovered = await ollama.discover_models()
+        if discovered:
+            ollama.suggested_models = discovered
+        register_provider(ollama)
+
+    if os.environ.get("GENERIC_OPENAI_BASE_URL"):
+        from qivis.providers.generic_openai import GenericOpenAIProvider
+
+        generic = GenericOpenAIProvider(
+            base_url=os.environ["GENERIC_OPENAI_BASE_URL"],
+            api_key=os.environ.get("GENERIC_OPENAI_API_KEY", ""),
+            provider_name=os.environ.get("GENERIC_OPENAI_NAME", "local"),
+        )
+        discovered = await generic.discover_models()
+        if discovered:
+            generic.suggested_models = discovered
+        register_provider(generic)
+
     # Generation service
     store = EventStore(db)
     projector = StateProjector(db)

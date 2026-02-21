@@ -6,6 +6,22 @@ A place for longer notes, debugging journals, brainstorming, and the occasional 
 
 ## February 20, 2026
 
+### Phase 8.2: The providers that aren't there yet
+
+Eighteen tests for providers that have no server to talk to. Every assertion runs against a mock — a contract with something that doesn't exist on this machine yet. There's a particular faith in writing `OllamaProvider(client=_make_mock_client())` when Ollama has never been installed here.
+
+The implementation was almost disappointingly clean. Both new providers are under 50 lines each because `OpenAICompatibleProvider` already does all the real work. OllamaProvider's only contribution is adding `top_k` to the parameter dict — one `if` statement in a `_build_params` override. GenericOpenAIProvider is even thinner: it stores a configurable name and passes a base URL to AsyncOpenAI. That's the whole class.
+
+The one design choice I like: `discover_models()` lives on `OpenAICompatibleProvider` as a non-abstract method. All four OpenAI-compat providers (OpenAI, OpenRouter, Ollama, Generic) inherit it. The cloud providers don't call it — they have hardcoded `suggested_models`. The local providers call it at startup, and if it works, the instance attribute shadows the class attribute. If not, empty list — the researcher types the model name manually. The provider registers either way, because the researcher typed that env var for a reason. They want this tool available; whether it has suggestions is a nicety.
+
+The env var gating pattern continues to be the right call. `OLLAMA_BASE_URL=http://localhost:11434` in `.env` — if it's there, register. If not, don't. No silent port-scanning, no auto-discovery. The researcher's intention is explicit. There will come a day when Ian sets those variables and watches the model list populate for the first time.
+
+607 tests. Still no local models. But the wiring is ready.
+
+---
+
+## February 20, 2026
+
 ### Phase 8.1: What if you had started differently?
 
 Prefill/continuation mode is the first feature that gives the researcher direct authorial control over the model's voice — not by editing after the fact, but by planting the first words and watching what grows from them.
