@@ -28,8 +28,10 @@ from qivis.models import (
     NoteRemovedPayload,
     SummaryGeneratedPayload,
     SummaryRemovedPayload,
+    TreeArchivedPayload,
     TreeCreatedPayload,
     TreeMetadataUpdatedPayload,
+    TreeUnarchivedPayload,
 )
 
 logger = logging.getLogger(__name__)
@@ -61,6 +63,8 @@ class StateProjector:
             "NoteRemoved": self._handle_note_removed,
             "SummaryGenerated": self._handle_summary_generated,
             "SummaryRemoved": self._handle_summary_removed,
+            "TreeArchived": self._handle_tree_archived,
+            "TreeUnarchived": self._handle_tree_unarchived,
         }
 
     async def project(self, events: list[EventEnvelope]) -> None:
@@ -430,6 +434,32 @@ class StateProjector:
         await self._db.execute(
             "DELETE FROM summaries WHERE summary_id = ?",
             (payload.summary_id,),
+        )
+
+    async def _handle_tree_archived(self, event: EventEnvelope) -> None:
+        """Project a TreeArchived event: set archived = 1."""
+        TreeArchivedPayload.model_validate(event.payload)
+        timestamp = (
+            event.timestamp.isoformat()
+            if hasattr(event.timestamp, "isoformat")
+            else str(event.timestamp)
+        )
+        await self._db.execute(
+            "UPDATE trees SET archived = 1, updated_at = ? WHERE tree_id = ?",
+            (timestamp, event.tree_id),
+        )
+
+    async def _handle_tree_unarchived(self, event: EventEnvelope) -> None:
+        """Project a TreeUnarchived event: set archived = 0."""
+        TreeUnarchivedPayload.model_validate(event.payload)
+        timestamp = (
+            event.timestamp.isoformat()
+            if hasattr(event.timestamp, "isoformat")
+            else str(event.timestamp)
+        )
+        await self._db.execute(
+            "UPDATE trees SET archived = 0, updated_at = ? WHERE tree_id = ?",
+            (timestamp, event.tree_id),
         )
 
     async def _handle_node_created(self, event: EventEnvelope) -> None:

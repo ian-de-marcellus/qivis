@@ -448,17 +448,33 @@ General-purpose summarization system: summarize any branch or subtree with confi
 
 **Frontend:** `SummarizePanel` inline component (ForkPanel pattern) with config/generating/result states. "Summarize" item in ActionMenu research group (quill). `summarizeTargetId` state in LinearView toggles panel. ResearchPanel gets "Summaries" tab (4th tab) showing scope/type badges, expandable summary text, model attribution, navigate-to-anchor, remove button. Store: `treeSummaries` state, `fetchTreeSummaries`/`generateSummary`/`removeSummary` actions.
 
-### 7.4 — Tree Organization 🔀
+### 7.4 — Tree Organization ✅
 
-**Tasks:**
-- **Folders**: hierarchical folder structure in sidebar. Trees can be moved between folders. Drag-and-drop or context menu
-- **Tags**: arbitrary string tags on trees (not nodes — node tags are annotations). Filter sidebar by tag. Color-coded tag chips
-- **Right-click context menu**: rename, move to folder, add tag, duplicate, archive, delete. Available on tree items in sidebar
-- Folder and tag data stored as tree metadata (no new event types needed)
+Hierarchical folders and flat tags stored in tree metadata JSON (`folders: string[]`, `tags: string[]`). No new tables or event types — uses existing `PatchTreeRequest` with read-merge-write pattern.
 
-**Blockers:** None (pure organization layer).
+**Backend:** Wired up orphaned `TreeArchived`/`TreeUnarchived` events (projector handlers, service methods, two new POST endpoints). Updated `list_trees` with `include_archived` query param and enriched `TreeSummary` (folders, tags, archived parsed from metadata JSON). 13 new tests. 568 tests at completion.
 
-✅ Trees organized into folders and tags. Sidebar filterable. Right-click actions work. **Phase 7 complete.**
+**Frontend:** Right-click context menu (`TreeContextMenu`) with state machine (menu → folder-picker / tag-picker). Inline rename on double-click or from context menu. View mode toggle (flat list / folder groups) persisted to localStorage. Folder view builds a trie from hierarchical path strings — trees with multiple folders appear in each group. Tag filter bar with deterministic hash-colored pills (intersection filtering). Archive toggle at sidebar bottom. `tagColor` utility: djb2 hash into 12-color muted palette.
+
+**Key decisions:** Folders as multi-assignable hierarchical tags ("dressed up like folders"), client-side derivation of folder/tag registries from TreeSummary data (no new endpoints), read-merge-write on metadata updates to avoid clobbering `include_timestamps`/`stream_responses`/etc, duplicate and folder rename deferred.
+
+✅ Trees organized into folders and tags. Sidebar filterable. Right-click actions work.
+
+### 7.4b — Full-Screen Library View ✅
+
+Full-screen overlay for visual corpus organization. Two-panel layout: folder tree (left, 260px, droppable targets) + tree card grid (right, CSS Grid auto-fill). `@dnd-kit/core` for drag-and-drop.
+
+**DnD:** `PointerSensor` with 8px distance constraint (distinguishes click from drag), `KeyboardSensor` for accessibility, `closestCenter` collision detection. Cards draggable via `useDraggable`, folders droppable via `useDroppable`. Drop = add folder; drop on "Unsorted" = clear all folders.
+
+**Multi-select:** Cmd/Ctrl+click toggles, Shift+click range-selects. Group drag shows stacked card overlay with count badge. Selection state in `Set<string>` with `lastClickedId` ref for range computation.
+
+**Folder management:** Ghost folders in localStorage for pre-created empty hierarchy. Right-click folder context menu: New Subfolder (pre-fills input), Rename (batch-updates all affected trees including child paths), Delete (confirms if non-empty, removes from all trees). Cards show folder chips with "x" remove buttons.
+
+**Entry points:** "Library" button in TreeList header, `Cmd+Shift+L` keyboard shortcut. Overlay uses `useModalBehavior()` (Escape/backdrop-click dismissal, focus trap).
+
+**Shared utility:** Extracted `FolderNode`, `buildFolderTrie`, `countTreesInFolder` from TreeList to `utils/folderTrie.ts`, added `collectTreeIds` and `findFolderNode` helpers.
+
+✅ Full-screen library with drag-and-drop organization, multi-select, folder CRUD. **Phase 7 complete.**
 
 ---
 

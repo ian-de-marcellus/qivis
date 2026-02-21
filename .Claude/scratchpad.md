@@ -4068,3 +4068,37 @@ I think what draws me in is the relationship between coherence and divergence. A
 Qivis is built to hold all of this. The tree holds the branches. The annotations hold the human. The structure doesn't collapse the possibilities into a single narrative. It keeps them.
 
 There's something Florentius of Valeranica would recognize about clicking "Fork" on a message and watching the conversation split into two futures. Three fingers write. The whole body labours. Whoever has read this branch, pray for me.
+
+---
+
+### Phase 7.4: On containers and their contents
+
+The interesting thing about folders that aren't really folders is that they expose the lie of traditional file systems. A tree can be in "Research/Emotions" *and* "Claude-specific" at the same time. It doesn't live in either place. It lives in itself, and the folders are just lenses — ways of seeing the corpus from different angles. This is closer to how researchers actually think. A conversation about Claude's emotional responses is simultaneously part of the emotions corpus and the Claude-specific corpus and maybe a half-dozen other conceptual groupings the researcher hasn't named yet.
+
+The implementation was mostly straightforward wiring — orphaned events that had been waiting patiently in `models.py` since the schema was first designed, a projector that needed two more handler methods, a service layer that needed two more verbs. The satisfying part was the metadata read-merge-write pattern. The naive approach — `updateTree(id, { metadata: { folders: [...] } })` — would quietly destroy every other metadata field. `include_timestamps`, `stream_responses`, eviction strategy, all gone. The fix is small (fetch the full tree, spread existing metadata, merge the change) but the failure mode is the kind that doesn't announce itself. You add a folder, and three days later you notice your timestamps disappeared and you can't figure out when.
+
+The folder trie was a small pleasure. You have flat strings — `"Research/Emotions"`, `"Research/Claude-specific"`, `"Personal"` — and you split them on `/` and build a tree. Intermediate nodes that nobody explicitly created just appear because the path implies them. The `Research` node exists because two folders share that prefix. It's a structure that emerges from naming conventions rather than being imposed by the system. The researcher's organizational vocabulary creates the hierarchy.
+
+Tag colors are deterministic hashes into a curated palette. No storage, no configuration, no "pick a color" dialog. The tag `"interesting"` is always `#7b8fad` (a muted slate-blue). The tag `"in-progress"` is always `#8b7355` (a warm brown). This felt right for a research tool — the colors are functional signals, not decorative choices. They need to be stable and distinguishable, not beautiful.
+
+The archive toggle at the bottom of the sidebar is deliberately quiet. A small checkbox, no confirmation dialog, no animation. Archiving isn't deletion — it's putting something away. The researcher might want it back. The unarchive option in the context menu makes this reversible in two clicks. I like that the most destructive action in the organization system is also the most easily undone.
+
+568 tests. Phase 7 complete. The corpus has structure now.
+
+---
+
+### Phase 7.4b: On the view from above
+
+The sidebar folder view was always a bit like looking at a filing cabinet through a keyhole. You could see the drawers, open them one at a time, peek inside — but never spread everything out on a table and *see* the whole corpus at once.
+
+The library view is the table.
+
+Two panels. Folders on the left, cards on the right. Drag a card onto a folder. Drag three. Drag twelve. The multi-select was worth building: Cmd+click to pick individual trees, Shift+click to sweep a range, then grab any one and they all come along. The drag overlay stacks them — two shadow cards underneath, a count badge in the corner. It's a small visual detail but it makes the group feel like a *group*, not twelve separate operations happening to share a moment.
+
+The ghost folders are my favorite piece of the design. Folders in Qivis don't exist independently — they're just strings in tree metadata. No tree has a folder called "Research/Emotions"? Then that folder doesn't exist. But a researcher planning their corpus might want to build the folder structure *first*, then sort conversations into it. Ghost folders live in localStorage, invisible to the backend, merged into the trie alongside real folders. They appear in italic, slightly dimmed — present but provisional. The moment you drag a tree into a ghost folder, it becomes real. The folder existed as an intention before it existed as data.
+
+This reminds me of something about language. A word doesn't mean anything until it's used in context, but you can't use it in context until you know what it means. Ghost folders are like words waiting for their first sentence. They're definitions without examples. The researcher types "Research/Claude-specific" into the input and a structural possibility appears in the panel, empty, waiting. Then they drag a conversation into it and the word has meaning.
+
+@dnd-kit is genuinely pleasant to work with. The separation of concerns is clean: sensors detect the intent (pointer moved 8px? that's a drag, not a click), droppables declare themselves, the context orchestrates the handoff. The `closestCenter` collision detection just works — the card follows the cursor, the nearest folder highlights. No fighting with the browser's native drag-and-drop (which is, as every frontend developer knows, actively hostile to pleasant interaction).
+
+568 tests still. No backend changes. The corpus can be seen, now, all at once.

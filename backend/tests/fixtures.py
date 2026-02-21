@@ -26,8 +26,10 @@ from qivis.models import (
     SamplingParams,
     SummaryGeneratedPayload,
     SummaryRemovedPayload,
+    TreeArchivedPayload,
     TreeCreatedPayload,
     TreeMetadataUpdatedPayload,
+    TreeUnarchivedPayload,
 )
 
 
@@ -544,6 +546,37 @@ def make_summary_removed_envelope(
         timestamp=datetime.now(UTC),
         device_id="test",
         event_type="SummaryRemoved",
+        payload=payload.model_dump(),
+    )
+
+
+def make_tree_archived_envelope(
+    tree_id: str,
+    reason: str | None = None,
+) -> EventEnvelope:
+    """Create a TreeArchived EventEnvelope for testing."""
+    payload = TreeArchivedPayload(reason=reason)
+    return EventEnvelope(
+        event_id=str(uuid4()),
+        tree_id=tree_id,
+        timestamp=datetime.now(UTC),
+        device_id="test",
+        event_type="TreeArchived",
+        payload=payload.model_dump(),
+    )
+
+
+def make_tree_unarchived_envelope(
+    tree_id: str,
+) -> EventEnvelope:
+    """Create a TreeUnarchived EventEnvelope for testing."""
+    payload = TreeUnarchivedPayload()
+    return EventEnvelope(
+        event_id=str(uuid4()),
+        tree_id=tree_id,
+        timestamp=datetime.now(UTC),
+        device_id="test",
+        event_type="TreeUnarchived",
         payload=payload.model_dump(),
     )
 

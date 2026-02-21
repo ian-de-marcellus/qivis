@@ -29,8 +29,10 @@ from qivis.models import (
     NoteRemovedPayload,
     SummaryGeneratedPayload,
     SummaryRemovedPayload,
+    TreeArchivedPayload,
     TreeCreatedPayload,
     TreeMetadataUpdatedPayload,
+    TreeUnarchivedPayload,
 )
 from qivis.trees.schemas import (
     AddAnnotationRequest,
@@ -219,22 +221,80 @@ class TreeService:
             edit_counts=edit_counts,
         )
 
-    async def list_trees(self) -> list[TreeSummary]:
-        """List all non-archived trees."""
+    async def list_trees(self, include_archived: bool = False) -> list[TreeSummary]:
+        """List trees, optionally including archived ones."""
+        condition = "" if include_archived else "WHERE archived = 0"
         rows = await self._db.fetchall(
-            "SELECT tree_id, title, conversation_mode, created_at, updated_at "
-            "FROM trees WHERE archived = 0 ORDER BY created_at DESC"
+            f"SELECT tree_id, title, metadata, conversation_mode, "
+            f"created_at, updated_at, archived "
+            f"FROM trees {condition} ORDER BY created_at DESC"
         )
-        return [
-            TreeSummary(
+        results = []
+        for row in rows:
+            meta = parse_json_field(row["metadata"]) or {}
+            results.append(TreeSummary(
                 tree_id=row["tree_id"],
                 title=row["title"],
                 conversation_mode=row["conversation_mode"],
                 created_at=row["created_at"],
                 updated_at=row["updated_at"],
-            )
-            for row in rows
-        ]
+                folders=meta.get("folders", []),
+                tags=meta.get("tags", []),
+                archived=row["archived"],
+            ))
+        return results
+
+    async def archive_tree(
+        self, tree_id: str, reason: str | None = None,
+    ) -> TreeDetailResponse:
+        """Archive a tree. Emits TreeArchived, projects, returns detail."""
+        tree = await self._projector.get_tree(tree_id)
+        if tree is None:
+            raise TreeNotFoundError(tree_id)
+
+        now = datetime.now(UTC)
+        payload = TreeArchivedPayload(reason=reason)
+        event = EventEnvelope(
+            event_id=str(uuid4()),
+            tree_id=tree_id,
+            timestamp=now,
+            device_id="local",
+            event_type="TreeArchived",
+            payload=payload.model_dump(),
+        )
+
+        await self._store.append(event)
+        await self._projector.project([event])
+
+        updated = await self._projector.get_tree(tree_id)
+        assert updated is not None
+        nodes = await self._projector.get_nodes(tree_id)
+        return self._tree_detail_from_row(updated, nodes)
+
+    async def unarchive_tree(self, tree_id: str) -> TreeDetailResponse:
+        """Unarchive a tree. Emits TreeUnarchived, projects, returns detail."""
+        tree = await self._projector.get_tree(tree_id)
+        if tree is None:
+            raise TreeNotFoundError(tree_id)
+
+        now = datetime.now(UTC)
+        payload = TreeUnarchivedPayload()
+        event = EventEnvelope(
+            event_id=str(uuid4()),
+            tree_id=tree_id,
+            timestamp=now,
+            device_id="local",
+            event_type="TreeUnarchived",
+            payload=payload.model_dump(),
+        )
+
+        await self._store.append(event)
+        await self._projector.project([event])
+
+        updated = await self._projector.get_tree(tree_id)
+        assert updated is not None
+        nodes = await self._projector.get_nodes(tree_id)
+        return self._tree_detail_from_row(updated, nodes)
 
     async def create_node(
         self, tree_id: str, request: CreateNodeRequest

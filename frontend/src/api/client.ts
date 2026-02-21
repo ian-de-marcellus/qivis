@@ -58,8 +58,17 @@ export function getProviders(): Promise<ProviderInfo[]> {
 
 // -- Tree CRUD --
 
-export function listTrees(): Promise<TreeSummary[]> {
-  return request('/trees')
+export function listTrees(includeArchived?: boolean): Promise<TreeSummary[]> {
+  const params = includeArchived ? '?include_archived=true' : ''
+  return request(`/trees${params}`)
+}
+
+export function archiveTree(treeId: string): Promise<TreeDetail> {
+  return request(`/trees/${treeId}/archive`, { method: 'POST' })
+}
+
+export function unarchiveTree(treeId: string): Promise<TreeDetail> {
+  return request(`/trees/${treeId}/unarchive`, { method: 'POST' })
 }
 
 export function createTree(req: CreateTreeRequest): Promise<TreeDetail> {

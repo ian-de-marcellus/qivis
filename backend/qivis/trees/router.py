@@ -78,9 +78,10 @@ async def create_tree(
 
 @router.get("")
 async def list_trees(
+    include_archived: bool = False,
     service: TreeService = Depends(get_tree_service),
 ) -> list[TreeSummary]:
-    return await service.list_trees()
+    return await service.list_trees(include_archived=include_archived)
 
 
 @router.get("/{tree_id}")
@@ -102,6 +103,28 @@ async def update_tree(
 ) -> TreeDetailResponse:
     try:
         return await service.update_tree(tree_id, request)
+    except TreeNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Tree not found: {tree_id}")
+
+
+@router.post("/{tree_id}/archive")
+async def archive_tree(
+    tree_id: str,
+    service: TreeService = Depends(get_tree_service),
+) -> TreeDetailResponse:
+    try:
+        return await service.archive_tree(tree_id)
+    except TreeNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Tree not found: {tree_id}")
+
+
+@router.post("/{tree_id}/unarchive")
+async def unarchive_tree(
+    tree_id: str,
+    service: TreeService = Depends(get_tree_service),
+) -> TreeDetailResponse:
+    try:
+        return await service.unarchive_tree(tree_id)
     except TreeNotFoundError:
         raise HTTPException(status_code=404, detail=f"Tree not found: {tree_id}")
 

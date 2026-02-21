@@ -24,6 +24,9 @@ export interface TreeSummary {
   conversation_mode: string
   created_at: string
   updated_at: string
+  folders: string[]
+  tags: string[]
+  archived: number
 }
 
 export interface NodeResponse {

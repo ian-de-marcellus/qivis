@@ -126,6 +126,9 @@ class TreeSummary(BaseModel):
     conversation_mode: str = "single"
     created_at: str
     updated_at: str
+    folders: list[str] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
+    archived: int = 0
 
 
 class AddAnnotationRequest(BaseModel):

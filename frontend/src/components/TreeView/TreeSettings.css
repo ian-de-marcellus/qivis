@@ -15,6 +15,39 @@
   box-sizing: border-box;
 }
 
+/* Archive button — matches icon-toggle-btn sizing but acts as action */
+
+.tree-archive-btn {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.tree-archive-btn:hover {
+  color: var(--text-secondary);
+  border-color: var(--border);
+}
+
+.tree-archive-btn.archived {
+  color: var(--text-accent);
+  border-color: var(--accent);
+  background: var(--accent-muted);
+}
+
+.tree-archive-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
 .tree-title-display {
   flex: 1;
   min-width: 0;

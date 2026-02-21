@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import type { EvictionStrategy, PatchTreeRequest, SamplingParams } from '../../api/types.ts'
 import { exportTree } from '../../api/client.ts'
 import { useTreeStore, useTreeData, useRightPane } from '../../store/treeStore.ts'
@@ -14,6 +14,9 @@ export function TreeSettings() {
   const fetchProviders = useTreeStore(s => s.fetchProviders)
   const setCanvasOpen = useTreeStore(s => s.setCanvasOpen)
   const setRightPaneMode = useTreeStore(s => s.setRightPaneMode)
+  const archiveTree = useTreeStore(s => s.archiveTree)
+  const unarchiveTree = useTreeStore(s => s.unarchiveTree)
+  const fetchTrees = useTreeStore(s => s.fetchTrees)
 
   const [isOpen, setIsOpen] = useState(false)
   const [mergeOpen, setMergeOpen] = useState(false)
@@ -222,6 +225,16 @@ export function TreeSettings() {
   }
 
   const graphOpen = rightPaneMode === 'graph'
+  const isArchived = currentTree.archived === 1
+
+  const handleToggleArchive = useCallback(async () => {
+    if (isArchived) {
+      await unarchiveTree(currentTree.tree_id)
+    } else {
+      await archiveTree(currentTree.tree_id)
+    }
+    await fetchTrees(true)
+  }, [isArchived, currentTree.tree_id, archiveTree, unarchiveTree, fetchTrees])
 
   return (
     <div className="tree-settings">
@@ -312,6 +325,17 @@ export function TreeSettings() {
             <path d="M15 8 Q15 12 10 12" />
           </svg>
         </IconToggleButton>
+        <button
+          className={`tree-archive-btn${isArchived ? ' archived' : ''}`}
+          onClick={handleToggleArchive}
+          title={isArchived ? 'Unarchive this tree' : 'Archive this tree'}
+        >
+          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="2" y="3" width="16" height="4" rx="1" />
+            <path d="M3 7v8a2 2 0 002 2h10a2 2 0 002-2V7" />
+            <line x1="8" y1="11" x2="12" y2="11" />
+          </svg>
+        </button>
         <IconToggleButton
           active={isOpen}
           onClick={() => setIsOpen(!isOpen)}

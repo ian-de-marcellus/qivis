@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { CanvasView } from './components/CanvasView/CanvasView.tsx'
+import { LibraryView } from './components/Library/LibraryView.tsx'
 import { GraphView } from './components/GraphView/GraphView.tsx'
 import { ResearchPanel } from './components/Library/ResearchPanel.tsx'
 import { SearchPanel } from './components/Library/SearchPanel.tsx'
@@ -40,11 +41,12 @@ function applyTheme(mode: ThemeMode) {
 function App() {
   const { currentTree, error } = useTreeData()
   const { branchSelections } = useNavigation()
-  const { rightPaneMode, canvasOpen } = useRightPane()
+  const { rightPaneMode, canvasOpen, libraryOpen } = useRightPane()
   const searchQuery = useTreeStore(s => s.searchQuery)
   const fetchTrees = useTreeStore(s => s.fetchTrees)
   const clearError = useTreeStore(s => s.clearError)
   const setCanvasOpen = useTreeStore(s => s.setCanvasOpen)
+  const setLibraryOpen = useTreeStore(s => s.setLibraryOpen)
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [theme, setTheme] = useState<ThemeMode>(getInitialTheme)
@@ -94,6 +96,18 @@ function App() {
   useEffect(() => {
     fetchTrees()
   }, [fetchTrees])
+
+  // Cmd+Shift+L toggles the library view
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'l') {
+        e.preventDefault()
+        setLibraryOpen(!libraryOpen)
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [libraryOpen, setLibraryOpen])
 
   return (
     <div className="app">
@@ -171,6 +185,10 @@ function App() {
             treeDefaults={getTreeDefaults(currentTree)}
             onDismiss={() => setCanvasOpen(false)}
           />
+        )}
+
+        {libraryOpen && (
+          <LibraryView onDismiss={() => setLibraryOpen(false)} />
         )}
       </main>
     </div>

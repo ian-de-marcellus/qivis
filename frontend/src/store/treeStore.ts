@@ -57,6 +57,7 @@ interface TreeStore {
   inspectedNodeId: string | null
   splitViewNodeId: string | null
   canvasOpen: boolean
+  libraryOpen: boolean
   nodeAnnotations: Record<string, AnnotationResponse[]>
   taxonomy: TaxonomyResponse | null
   bookmarks: BookmarkResponse[]
@@ -80,7 +81,7 @@ interface TreeStore {
   scrollToNodeId: string | null
 
   // Actions
-  fetchTrees: () => Promise<void>
+  fetchTrees: (includeArchived?: boolean) => Promise<void>
   fetchProviders: () => Promise<void>
   selectTree: (treeId: string) => Promise<void>
   createTree: (title: string, opts?: {
@@ -105,6 +106,7 @@ interface TreeStore {
   setInspectedNodeId: (nodeId: string | null) => void
   setSplitViewNodeId: (nodeId: string | null) => void
   setCanvasOpen: (open: boolean) => void
+  setLibraryOpen: (open: boolean) => void
   forkAndGenerate: (
     parentId: string,
     content: string,
@@ -150,6 +152,8 @@ interface TreeStore {
   clearSearch: () => void
   navigateToSearchResult: (treeId: string, nodeId: string) => Promise<void>
   clearScrollToNode: () => void
+  archiveTree: (treeId: string) => Promise<void>
+  unarchiveTree: (treeId: string) => Promise<void>
   fetchTreeSummaries: () => Promise<void>
   generateSummary: (nodeId: string, req: CreateSummaryRequest) => Promise<SummaryResponse | null>
   removeSummary: (summaryId: string) => Promise<void>
@@ -307,6 +311,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
   inspectedNodeId: null,
   splitViewNodeId: null,
   canvasOpen: false,
+  libraryOpen: false,
   nodeAnnotations: {},
   taxonomy: null,
   bookmarks: [],
@@ -329,10 +334,10 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
   searchLoading: false,
   scrollToNodeId: null,
 
-  fetchTrees: async () => {
+  fetchTrees: async (includeArchived?: boolean) => {
     set({ isLoading: true, error: null })
     try {
-      const trees = await api.listTrees()
+      const trees = await api.listTrees(includeArchived)
       set({ trees, isLoading: false })
     } catch (e) {
       set({ error: String(e), isLoading: false })
@@ -360,6 +365,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
       inspectedNodeId: null,
       splitViewNodeId: null,
       canvasOpen: false,
+      libraryOpen: false,
       nodeAnnotations: {},
       taxonomy: null,
       bookmarks: [],
@@ -439,11 +445,18 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
     set({ error: null })
     try {
       const updated = await api.updateTree(treeId, req)
+      const meta = updated.metadata ?? {}
       set((state) => ({
         currentTree: state.currentTree?.tree_id === treeId ? updated : state.currentTree,
         trees: state.trees.map((t) =>
           t.tree_id === treeId
-            ? { ...t, title: updated.title, updated_at: updated.updated_at }
+            ? {
+                ...t,
+                title: updated.title,
+                updated_at: updated.updated_at,
+                folders: (meta.folders as string[]) ?? [],
+                tags: (meta.tags as string[]) ?? [],
+              }
             : t,
         ),
       }))
@@ -661,6 +674,10 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
 
   setCanvasOpen: (open: boolean) => {
     set({ canvasOpen: open })
+  },
+
+  setLibraryOpen: (open: boolean) => {
+    set({ libraryOpen: open })
   },
 
   forkAndGenerate: async (parentId: string, content: string, overrides: GenerateRequest) => {
@@ -1364,6 +1381,30 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
     set({ scrollToNodeId: null })
   },
 
+  archiveTree: async (treeId: string) => {
+    try {
+      await api.archiveTree(treeId)
+      set((state) => ({
+        trees: state.trees.filter((t) => t.tree_id !== treeId),
+        selectedTreeId: state.selectedTreeId === treeId ? null : state.selectedTreeId,
+        currentTree: state.selectedTreeId === treeId ? null : state.currentTree,
+      }))
+    } catch (e) {
+      set({ error: String(e) })
+    }
+  },
+
+  unarchiveTree: async (treeId: string) => {
+    try {
+      await api.unarchiveTree(treeId)
+      set((state) => ({
+        trees: state.trees.filter((t) => t.tree_id !== treeId),
+      }))
+    } catch (e) {
+      set({ error: String(e) })
+    }
+  },
+
   fetchTreeSummaries: async () => {
     const { currentTree } = get()
     if (!currentTree) return
@@ -1468,4 +1509,5 @@ export const useResearchMetadata = () => useTreeStore(useShallow(s => ({
 export const useRightPane = () => useTreeStore(useShallow(s => ({
   rightPaneMode: s.rightPaneMode,
   canvasOpen: s.canvasOpen,
+  libraryOpen: s.libraryOpen,
 })))
