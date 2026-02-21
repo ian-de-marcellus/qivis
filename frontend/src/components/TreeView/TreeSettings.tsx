@@ -4,6 +4,7 @@ import { exportTree } from '../../api/client.ts'
 import { useTreeStore, useTreeData, useRightPane } from '../../store/treeStore.ts'
 import { SamplingParamsPanel, type SamplingParamValues } from '../shared/SamplingParamsPanel.tsx'
 import { IconToggleButton } from '../shared/IconToggleButton.tsx'
+import { MergePanel } from './MergePanel.tsx'
 import './TreeSettings.css'
 
 export function TreeSettings() {
@@ -15,6 +16,7 @@ export function TreeSettings() {
   const setRightPaneMode = useTreeStore(s => s.setRightPaneMode)
 
   const [isOpen, setIsOpen] = useState(false)
+  const [mergeOpen, setMergeOpen] = useState(false)
   const [isEditingTitle, setIsEditingTitle] = useState(false)
 
   // Local form state (synced from tree on open/switch)
@@ -296,6 +298,21 @@ export function TreeSettings() {
           </svg>
         </IconToggleButton>
         <IconToggleButton
+          active={mergeOpen}
+          onClick={() => setMergeOpen(!mergeOpen)}
+          activeLabel="Close merge panel"
+          inactiveLabel="Merge conversation"
+          title={mergeOpen ? 'Close merge' : 'Merge conversation'}
+        >
+          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+            <line x1="10" y1="18" x2="10" y2="8" />
+            <line x1="5" y1="2" x2="5" y2="8" />
+            <line x1="15" y1="2" x2="15" y2="8" />
+            <path d="M5 8 Q5 12 10 12" />
+            <path d="M15 8 Q15 12 10 12" />
+          </svg>
+        </IconToggleButton>
+        <IconToggleButton
           active={isOpen}
           onClick={() => setIsOpen(!isOpen)}
           activeLabel="Close settings"
@@ -310,6 +327,13 @@ export function TreeSettings() {
           </svg>
         </IconToggleButton>
       </div>
+
+      {mergeOpen && (
+        <MergePanel
+          treeId={currentTree.tree_id}
+          onClose={() => setMergeOpen(false)}
+        />
+      )}
 
       {isOpen && (
         <div className="tree-settings-panel">

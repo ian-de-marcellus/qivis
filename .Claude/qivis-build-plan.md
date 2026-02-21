@@ -430,6 +430,16 @@ Importer package (`qivis.importer`) with intermediate representation (`ImportedN
 
 **Key decisions:** `mode="chat"` (not `"manual"` — avoids "researcher authored" overlay), system messages extracted to tree property only (not as nodes), import provenance via `metadata.imported=True` + `device_id="import"` (not new event types). Tree merge/reconciliation deferred to 7.2b.
 
+### 7.2b — Tree Merge ✅
+
+Merge an imported conversation file into an existing tree without duplicating already-present messages. Tree-local workflow: toolbar button opens merge panel, upload file, preview match results, merge. Reuses import parsers and topological sort from 7.2.
+
+**Matching algorithm:** "Longest common prefix" match on each branch. Index existing nodes by `(parent_id, role, normalized_content.strip())`. Walk imported nodes in topological order — if parent matched, try to match this node; if parent is new, this node is new. Matches against `edited_content` if set (what the researcher sees). Naturally handles extend (add suffix), diverge (fork at mismatch), no overlap (all new), full overlap (nothing to merge), and branching imports.
+
+**Backend:** `MergeService` in `qivis.importer.merge` with `_compute_merge_plan` (pure function, tested in isolation), `preview_merge`, `execute_merge`. `MergePlan` dataclass tracks matched/new/graft_map/warnings. Two endpoints: `POST /api/trees/{tree_id}/merge/preview` and `POST /api/trees/{tree_id}/merge`. New nodes emitted as `NodeCreated` events with `device_id="merge"`. 15 tests (8 contract + 7 integration). 538 tests at completion.
+
+**Frontend:** `MergePanel` component with state machine (idle/previewing/preview/merging/done/error). Drag-and-drop file upload. Preview shows format badge, source title, matched/new counts, graft points with content previews, warnings. "Merge N messages" button or "Nothing to merge" state. Done state navigates to first new node. Toolbar button (merge/join icon) in TreeSettings bar.
+
 ### 7.3 — Manual Summarization 🔀
 
 **Tasks:**

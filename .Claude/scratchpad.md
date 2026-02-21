@@ -6,6 +6,18 @@ A place for longer notes, debugging journals, brainstorming, and the occasional 
 
 ## February 20, 2026
 
+### Phase 7.2b: Tree Merge
+
+The merge algorithm has an elegant simplicity I wasn't expecting. Index existing nodes by a triple — `(parent_id, role, content.strip())` — then walk imported nodes topologically. If your parent matched, try to match yourself. If your parent didn't match, you're new too. That's it. The "longest common prefix on each branch" falls out naturally from this rule, and it handles every case: linear extensions, diverging branches, no overlap, full overlap, branching imports with partial overlap.
+
+What makes it work for a research tool specifically: matching against `edited_content` when it exists. If the researcher corrected a typo or refined a question after importing, the merge should match against what they *see*, not the original import artifact. This is a small detail in code (one conditional) but it's the difference between "merge as data operation" and "merge as research workflow."
+
+The graft point calculation was the trickiest part. When you have a chain of new nodes (say X→Y→Z), the graft point isn't X's immediate parent — it's the nearest *matched* ancestor, the place where the new branch actually joins the existing tree. `_graft_root` walks up through new nodes to find that junction. Without this, the preview would show misleading graft information.
+
+The `_compute_merge_plan` function is pure — no I/O, no database, just data in and plan out. Eight contract tests exercise it directly without spinning up any infrastructure. The integration tests then verify the full round-trip: upload file, preview, merge, verify events and tree structure. Fifteen tests total, clean separation between algorithm correctness and system integration.
+
+The frontend merge panel lives in the toolbar next to settings — it's a tree-local operation, not a sidebar-level one. Upload, preview, merge, navigate to new messages. The state machine (`idle → previewing → preview → merging → done | error`) mirrors ImportWizard but is simpler: one file, one tree, no conversation selection needed.
+
 ### Interlude 2, Chunk 3: Component Extraction
 
 The IconToggleButton is the kind of extraction that feels obvious in hindsight. Five buttons, identical structure, two CSS blocks that were copy-pasted and renamed. The component itself is simple — 30 lines of TSX, 30 lines of CSS — but the real win is that those five buttons in TreeSettings now declare *what* they are (active state, labels, icon) rather than *how* to render themselves. The accessibility pattern (aria-label ternary) is guaranteed consistent instead of relying on each button remembering to do it.

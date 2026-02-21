@@ -15,6 +15,8 @@ import type {
   ImportPreviewResponse,
   ImportResponse,
   InterventionTimelineResponse,
+  MergePreviewResponse,
+  MergeResult,
   MessageStopEvent,
   NodeExclusionResponse,
   NodeResponse,
@@ -552,6 +554,43 @@ export async function importConversations(
   if (!res.ok) {
     const text = await res.text()
     throw new Error(`Import failed: ${res.status}: ${text}`)
+  }
+  return res.json()
+}
+
+// -- Merge --
+
+export async function previewMerge(treeId: string, file: File): Promise<MergePreviewResponse> {
+  const formData = new FormData()
+  formData.append('file', file)
+  const res = await fetch(`${BASE}/trees/${treeId}/merge/preview`, {
+    method: 'POST',
+    body: formData,
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`Merge preview failed: ${res.status}: ${text}`)
+  }
+  return res.json()
+}
+
+export async function executeMerge(
+  treeId: string,
+  file: File,
+  conversationIndex?: number,
+): Promise<MergeResult> {
+  const params = new URLSearchParams()
+  if (conversationIndex != null) params.set('conversation_index', String(conversationIndex))
+  const qs = params.toString() ? `?${params}` : ''
+  const formData = new FormData()
+  formData.append('file', file)
+  const res = await fetch(`${BASE}/trees/${treeId}/merge${qs}`, {
+    method: 'POST',
+    body: formData,
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`Merge failed: ${res.status}: ${text}`)
   }
   return res.json()
 }

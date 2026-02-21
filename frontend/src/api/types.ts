@@ -344,3 +344,28 @@ export interface ImportResult {
 export interface ImportResponse {
   results: ImportResult[]
 }
+
+// -- Merge --
+
+export interface GraftPoint {
+  parent_node_id: string | null
+  parent_content_preview: string | null
+  new_node_count: number
+}
+
+export interface MergePreviewResponse {
+  source_format: string
+  source_title: string | null
+  conversation_count: number
+  total_imported: number
+  matched_count: number
+  new_count: number
+  graft_points: GraftPoint[]
+  warnings: string[]
+}
+
+export interface MergeResult {
+  created_count: number
+  matched_count: number
+  node_ids: string[]
+}

@@ -21,6 +21,9 @@ from qivis.providers.registry import clear_providers, get_all_providers, registe
 from qivis.export.router import get_export_service
 from qivis.export.router import router as export_router
 from qivis.export.service import ExportService
+from qivis.importer.merge import MergeService
+from qivis.importer.merge_router import get_merge_service
+from qivis.importer.merge_router import router as merge_router
 from qivis.importer.router import get_import_service
 from qivis.importer.router import router as import_router
 from qivis.importer.service import ImportService
@@ -76,6 +79,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     import_svc = ImportService(db, store, projector)
     app.dependency_overrides[get_import_service] = lambda: import_svc
 
+    # Merge service
+    merge_svc = MergeService(db, store, projector)
+    app.dependency_overrides[get_merge_service] = lambda: merge_svc
+
     app.state.db = db
     yield
 
@@ -104,6 +111,7 @@ app.include_router(trees_router)
 app.include_router(export_router)
 app.include_router(search_router)
 app.include_router(import_router)
+app.include_router(merge_router)
 
 
 @app.get("/api/health")
