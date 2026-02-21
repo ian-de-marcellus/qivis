@@ -6,6 +6,24 @@ A place for longer notes, debugging journals, brainstorming, and the occasional 
 
 ## February 20, 2026
 
+### Phase 8.1: What if you had started differently?
+
+Prefill/continuation mode is the first feature that gives the researcher direct authorial control over the model's voice — not by editing after the fact, but by planting the first words and watching what grows from them.
+
+The implementation turns out to be surprisingly clean. Both Anthropic and OpenAI treat a trailing assistant message in the conversation as a continuation prompt — "start from here." The generation service appends `{"role": "assistant", "content": prefill_text}` to the messages list, the provider picks up from that point, and the service concatenates prefix + continuation before emitting the event. No provider-specific code at all. The protocol was already there, waiting to be used.
+
+The interesting design decision was where to store the boundary. `content` holds the full text (prefill + continuation) because ContextBuilder reads `content` for future context — no changes needed. `prefill_content` holds just the prefix, so the UI can split the display: the researcher's words in a shaded overlay labeled "PREFILL", the model's continuation rendered normally below. It's the same visual language as the edit overlay ("model sees") but oriented differently — not a correction, but an invitation.
+
+The streaming UX required one small insight: initialize `streamingContent` with the prefill text immediately, then append deltas as they arrive. The researcher sees their own words appear instantly, followed by the model's continuation streaming in. No flash, no replacement — a continuous emergence from the researcher's seed.
+
+The ForkPanel now has two buttons where it used to have one: "Save only" (the existing manual node behavior, for when you just want to put words in the model's mouth) and "Continue" (the new capability, with collapsible settings for provider/model/sampling). Cmd+Enter goes to Continue because that's the interesting thing — the model finishing your thought is the experiment. Save is the control.
+
+Twenty tests. 588 total. The garden continues to grow.
+
+---
+
+## February 20, 2026
+
 ### Phase 7.3: The summary that summarizes itself
 
 The interesting thing about building a summarization system for a research tool is that the system itself reveals what the research tool cares about. The four summary types — concise, detailed, key_points, custom — aren't arbitrary. They map to the natural rhythms of research attention: "remind me quickly," "help me understand deeply," "what were the key moments," and "analyze this through a lens I choose."

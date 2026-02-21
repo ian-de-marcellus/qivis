@@ -549,6 +549,12 @@ async def generate(
     except ProviderNotFoundError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+    if request.prefill_content and request.n > 1:
+        raise HTTPException(
+            status_code=400,
+            detail="prefill_content cannot be combined with n > 1",
+        )
+
     if request.stream and request.n > 1:
         return StreamingResponse(
             _stream_n_sse(gen_service, tree_id, node_id, provider, request),
@@ -573,6 +579,7 @@ async def generate(
                 model=request.model,
                 system_prompt=request.system_prompt,
                 sampling_params=request.sampling_params,
+                prefill_content=request.prefill_content,
             )
             return nodes[0]
 
@@ -583,6 +590,7 @@ async def generate(
             model=request.model,
             system_prompt=request.system_prompt,
             sampling_params=request.sampling_params,
+            prefill_content=request.prefill_content,
         )
     except TreeNotFoundForGenerationError:
         raise HTTPException(status_code=404, detail=f"Tree not found: {tree_id}")
@@ -606,6 +614,7 @@ async def _stream_sse(
             model=request.model,
             system_prompt=request.system_prompt,
             sampling_params=request.sampling_params,
+            prefill_content=request.prefill_content,
         ):
             if chunk.is_final and chunk.result:
                 data = {
@@ -656,6 +665,7 @@ async def _stream_n_sse(
             model=request.model,
             system_prompt=request.system_prompt,
             sampling_params=request.sampling_params,
+            prefill_content=request.prefill_content,
         ):
             if chunk.type == "generation_complete":
                 data = {"type": "generation_complete"}

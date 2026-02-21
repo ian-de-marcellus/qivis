@@ -117,6 +117,7 @@ interface TreeStore {
     overrides: GenerateRequest,
   ) => Promise<void>
   prefillAssistant: (parentId: string, content: string) => Promise<void>
+  prefillAndGenerate: (parentId: string, prefillContent: string, overrides: GenerateRequest) => Promise<void>
   addAnnotation: (nodeId: string, tag: string, value?: unknown, notes?: string) => Promise<void>
   removeAnnotation: (nodeId: string, annotationId: string) => Promise<void>
   fetchNodeAnnotations: (nodeId: string) => Promise<void>
@@ -960,6 +961,75 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
       }))
     } catch (err: unknown) {
       set({ error: err instanceof Error ? err.message : String(err) })
+    }
+  },
+
+  prefillAndGenerate: async (parentId: string, prefillContent: string, overrides: GenerateRequest) => {
+    const { currentTree } = get()
+    if (!currentTree) return
+
+    const treeId = currentTree.tree_id
+    set({ error: null, generationError: null })
+
+    const shouldStream = overrides.stream !== false
+    const reqWithPrefill: GenerateRequest = { ...overrides, prefill_content: prefillContent }
+
+    try {
+      if (shouldStream) {
+        // Initialize streaming content with the prefill text so it appears immediately
+        set({ ...STREAMING_RESET, isGenerating: true, streamingContent: prefillContent })
+        await api.generateStream(
+          treeId,
+          parentId,
+          { ...reqWithPrefill, stream: true },
+          (text) => {
+            set((state) => ({ streamingContent: state.streamingContent + text }))
+          },
+          () => {
+            set({ ...STREAMING_RESET })
+            refreshTreeSelectNewest(treeId, parentId, set)
+          },
+          (error) => {
+            set({
+              ...STREAMING_RESET,
+              error: String(error),
+              generationError: {
+                parentNodeId: parentId,
+                provider: overrides.provider ?? 'anthropic',
+                model: overrides.model ?? null,
+                systemPrompt: overrides.system_prompt ?? null,
+                errorMessage: String(error),
+              },
+            })
+          },
+          (thinking) => {
+            set((state) => ({
+              streamingThinkingContent: state.streamingThinkingContent + thinking,
+            }))
+          },
+        )
+      } else {
+        set({ ...STREAMING_RESET, isGenerating: true })
+        try {
+          await api.generate(treeId, parentId, reqWithPrefill)
+          set({ ...STREAMING_RESET })
+          refreshTreeSelectNewest(treeId, parentId, set)
+        } catch (error) {
+          set({
+            ...STREAMING_RESET,
+            error: String(error),
+            generationError: {
+              parentNodeId: parentId,
+              provider: overrides.provider ?? 'anthropic',
+              model: overrides.model ?? null,
+              systemPrompt: overrides.system_prompt ?? null,
+              errorMessage: String(error),
+            },
+          })
+        }
+      }
+    } catch (e) {
+      set({ ...STREAMING_RESET, error: String(e) })
     }
   },
 

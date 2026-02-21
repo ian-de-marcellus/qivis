@@ -52,6 +52,7 @@ CREATE TABLE IF NOT EXISTS nodes (
     edited_content TEXT,
     include_thinking_in_context INTEGER NOT NULL DEFAULT 0,
     include_timestamps INTEGER NOT NULL DEFAULT 0,
+    prefill_content TEXT,
     created_at TEXT NOT NULL,
     archived INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY (tree_id) REFERENCES trees(tree_id)
@@ -232,6 +233,9 @@ _MIGRATIONS: list[tuple[str, str]] = [
      "CREATE INDEX IF NOT EXISTS idx_summaries_tree_id ON summaries(tree_id)"),
     ("015_summaries_anchor_node_id_index",
      "CREATE INDEX IF NOT EXISTS idx_summaries_anchor_node_id ON summaries(anchor_node_id)"),
+    # Phase 8.1: Prefill/continuation mode
+    ("016_add_prefill_content",
+     "ALTER TABLE nodes ADD COLUMN prefill_content TEXT"),
 ]
 
 

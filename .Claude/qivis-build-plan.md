@@ -482,7 +482,7 @@ Full-screen overlay for visual corpus organization. Two-panel layout: folder tre
 
 _Goal: Prefill, base models, local inference, full-vocab logprobs. The research capabilities that require non-standard generation._
 
-### 8.1 — Prefill / Continuation Mode 🔒
+### 8.1 — Prefill / Continuation Mode ✅
 
 **Tasks:**
 - Researcher writes a partial assistant response; model continues from there

@@ -40,6 +40,7 @@ export interface NodeResponse {
   system_prompt: string | null
   sampling_params: SamplingParams | null
   mode: string | null
+  prefill_content: string | null
   usage: Record<string, number> | null
   latency_ms: number | null
   finish_reason: string | null
@@ -259,6 +260,7 @@ export interface GenerateRequest {
   sampling_params?: SamplingParams
   stream?: boolean
   n?: number
+  prefill_content?: string
 }
 
 // -- SSE events --
@@ -283,6 +285,7 @@ export interface MessageStopEvent {
   latency_ms: number | null
   node_id: string | null
   thinking_content: string | null
+  prefill_content?: string | null
   completion_index?: number
 }
 

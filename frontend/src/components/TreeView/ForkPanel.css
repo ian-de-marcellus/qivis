@@ -253,3 +253,23 @@
   opacity: 0.35;
   cursor: not-allowed;
 }
+
+/* ---- Prefill mode: two-button layout ---- */
+.fork-panel-actions {
+  display: flex;
+  gap: var(--space-sm);
+  justify-content: flex-end;
+}
+
+.fork-submit-secondary {
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+}
+
+.fork-submit-secondary:hover:not(:disabled) {
+  background: var(--bg-tertiary, var(--bg-secondary));
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+  opacity: 1;
+}

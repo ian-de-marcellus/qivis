@@ -94,6 +94,7 @@ class GenerationService:
         model: str | None = None,
         system_prompt: str | None = None,
         sampling_params: SamplingParams | None = None,
+        prefill_content: str | None = None,
     ) -> NodeResponse:
         """Generate a non-streaming response and store as a new node."""
         (tree, nodes, resolved_model, resolved_prompt, resolved_params,
@@ -118,11 +119,17 @@ class GenerationService:
         messages, context_usage = await self._maybe_inject_summary(
             messages, context_usage, eviction_report,
         )
+
+        if prefill_content:
+            messages.append({"role": "assistant", "content": prefill_content})
+
         generation_id = str(uuid4())
+        mode = "prefill" if prefill_content else "chat"
 
         await self._emit_generation_started(
             tree_id, generation_id, node_id,
             resolved_model, provider.name, resolved_prompt, resolved_params,
+            mode=mode, prefill_content=prefill_content,
         )
 
         request = GenerationRequest(
@@ -133,12 +140,16 @@ class GenerationService:
         )
         result = await provider.generate(request)
 
+        if prefill_content:
+            result.content = prefill_content + result.content
+
         return await self._emit_node_created(
             tree_id, generation_id, node_id, result,
             provider.name, resolved_prompt, resolved_params,
             context_usage=context_usage,
             include_thinking_in_context=include_think,
             include_timestamps=include_ts,
+            mode=mode, prefill_content=prefill_content,
         )
 
     async def generate_n(
@@ -151,6 +162,7 @@ class GenerationService:
         model: str | None = None,
         system_prompt: str | None = None,
         sampling_params: SamplingParams | None = None,
+        prefill_content: str | None = None,
     ) -> list[NodeResponse]:
         """Generate N responses in parallel and store as sibling nodes."""
         (tree, nodes, resolved_model, resolved_prompt, resolved_params,
@@ -175,12 +187,17 @@ class GenerationService:
         messages, context_usage = await self._maybe_inject_summary(
             messages, context_usage, eviction_report,
         )
+
+        if prefill_content:
+            messages.append({"role": "assistant", "content": prefill_content})
+
         generation_id = str(uuid4())
+        mode = "prefill" if prefill_content else "chat"
 
         await self._emit_generation_started(
             tree_id, generation_id, node_id,
             resolved_model, provider.name, resolved_prompt, resolved_params,
-            n=n,
+            n=n, mode=mode, prefill_content=prefill_content,
         )
 
         request = GenerationRequest(
@@ -193,12 +210,15 @@ class GenerationService:
 
         created: list[NodeResponse] = []
         for result in results:
+            if prefill_content:
+                result.content = prefill_content + result.content
             node = await self._emit_node_created(
                 tree_id, generation_id, node_id, result,
                 provider.name, resolved_prompt, resolved_params,
                 context_usage=context_usage,
                 include_thinking_in_context=include_think,
                 include_timestamps=include_ts,
+                mode=mode, prefill_content=prefill_content,
             )
             created.append(node)
         return created
@@ -213,6 +233,7 @@ class GenerationService:
         model: str | None = None,
         system_prompt: str | None = None,
         sampling_params: SamplingParams | None = None,
+        prefill_content: str | None = None,
     ) -> AsyncIterator[StreamChunk]:
         """Stream N responses simultaneously, yielding tagged chunks."""
         (tree, nodes, resolved_model, resolved_prompt, resolved_params,
@@ -241,13 +262,18 @@ class GenerationService:
         messages, context_usage = await self._maybe_inject_summary(
             messages, context_usage, eviction_report,
         )
+
+        if prefill_content:
+            messages.append({"role": "assistant", "content": prefill_content})
+
         generation_id = str(uuid4())
+        mode = "prefill" if prefill_content else "chat"
 
         await self._emit_generation_started(
             tree_id, generation_id, node_id,
             resolved_model, provider.name,
             resolved_prompt, resolved_params,
-            n=n,
+            n=n, mode=mode, prefill_content=prefill_content,
         )
 
         request = GenerationRequest(
@@ -267,6 +293,8 @@ class GenerationService:
             try:
                 async for chunk in provider.generate_stream(request):
                     if chunk.is_final and chunk.result is not None:
+                        if prefill_content:
+                            chunk.result.content = prefill_content + chunk.result.content
                         node = await self._emit_node_created(
                             tree_id, generation_id, node_id,
                             chunk.result, provider.name,
@@ -274,6 +302,7 @@ class GenerationService:
                             context_usage=context_usage,
                             include_thinking_in_context=include_think,
                             include_timestamps=include_ts,
+                            mode=mode, prefill_content=prefill_content,
                         )
                         tagged = StreamChunk(
                             type=chunk.type,
@@ -340,6 +369,7 @@ class GenerationService:
         model: str | None = None,
         system_prompt: str | None = None,
         sampling_params: SamplingParams | None = None,
+        prefill_content: str | None = None,
     ) -> AsyncIterator[StreamChunk]:
         """Generate a streaming response, yielding chunks."""
         (tree, nodes, resolved_model, resolved_prompt, resolved_params,
@@ -364,11 +394,17 @@ class GenerationService:
         messages, context_usage = await self._maybe_inject_summary(
             messages, context_usage, eviction_report,
         )
+
+        if prefill_content:
+            messages.append({"role": "assistant", "content": prefill_content})
+
         generation_id = str(uuid4())
+        mode = "prefill" if prefill_content else "chat"
 
         await self._emit_generation_started(
             tree_id, generation_id, node_id,
             resolved_model, provider.name, resolved_prompt, resolved_params,
+            mode=mode, prefill_content=prefill_content,
         )
 
         request = GenerationRequest(
@@ -380,12 +416,15 @@ class GenerationService:
 
         async for chunk in provider.generate_stream(request):
             if chunk.is_final and chunk.result is not None:
+                if prefill_content:
+                    chunk.result.content = prefill_content + chunk.result.content
                 node = await self._emit_node_created(
                     tree_id, generation_id, node_id, chunk.result,
                     provider.name, resolved_prompt, resolved_params,
                     context_usage=context_usage,
                     include_thinking_in_context=include_think,
                     include_timestamps=include_ts,
+                    mode=mode, prefill_content=prefill_content,
                 )
                 # Attach node_id to the final chunk for the SSE handler
                 chunk = StreamChunk(
@@ -553,6 +592,8 @@ class GenerationService:
         sampling_params: SamplingParams,
         *,
         n: int = 1,
+        mode: str = "chat",
+        prefill_content: str | None = None,
     ) -> None:
         payload = GenerationStartedPayload(
             generation_id=generation_id,
@@ -562,6 +603,8 @@ class GenerationService:
             system_prompt=system_prompt,
             sampling_params=sampling_params,
             n=n,
+            mode=mode,
+            prefill_content=prefill_content,
         )
         event = EventEnvelope(
             event_id=str(uuid4()),
@@ -587,6 +630,8 @@ class GenerationService:
         context_usage: ContextUsage | None = None,
         include_thinking_in_context: bool = False,
         include_timestamps: bool = False,
+        mode: str = "chat",
+        prefill_content: str | None = None,
     ) -> NodeResponse:
         node_id = str(uuid4())
         payload = NodeCreatedPayload(
@@ -599,7 +644,8 @@ class GenerationService:
             provider=provider_name,
             system_prompt=system_prompt,
             sampling_params=sampling_params,
-            mode="chat",
+            mode=mode,
+            prefill_content=prefill_content,
             usage=result.usage,
             latency_ms=result.latency_ms,
             finish_reason=result.finish_reason,

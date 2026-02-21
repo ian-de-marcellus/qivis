@@ -50,6 +50,7 @@ class GenerateRequest(BaseModel):
     sampling_params: SamplingParams | None = None
     stream: bool = False
     n: int = Field(default=1, ge=1, le=10)
+    prefill_content: str | None = None
 
 
 # -- Responses --
@@ -66,6 +67,7 @@ class NodeResponse(BaseModel):
     system_prompt: str | None = None
     sampling_params: dict | None = None
     mode: str | None = None
+    prefill_content: str | None = None
     usage: dict | None = None
     latency_ms: int | None = None
     finish_reason: str | None = None

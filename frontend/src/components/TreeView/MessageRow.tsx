@@ -106,6 +106,7 @@ export const MessageRow = memo(function MessageRow({
   const avgCertainty = logprobs ? averageCertainty(logprobs) : null
 
   const isManual = node.role === 'assistant' && node.mode === 'manual'
+  const isPrefill = node.mode === 'prefill' && node.prefill_content != null
   const hasEdit = node.edited_content != null
   const hasEditHistory = hasEdit || node.edit_count > 0 || (editHistoryCache[node.node_id]?.length ?? 0) > 0
   const inPickingMode = comparisonPickable != null
@@ -299,6 +300,29 @@ export const MessageRow = memo(function MessageRow({
                   </ReactMarkdown>
                 </div>
             </div>
+          ) : isPrefill ? (
+            /* Prefill node — show researcher's prefix and model's continuation separately */
+            <>
+              <div className="prefill-overlay">
+                <div className="prefill-overlay-label">prefill</div>
+                <div className="prefill-overlay-content">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    {node.prefill_content!}
+                  </ReactMarkdown>
+                </div>
+              </div>
+              <div className="message-content">
+                {showLogprobs && logprobs ? (
+                  <LogprobOverlay logprobs={logprobs} />
+                ) : showLogprobs ? (
+                  <span className="raw-text">{node.content.slice(node.prefill_content!.length)}</span>
+                ) : (
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    {node.content.slice(node.prefill_content!.length)}
+                  </ReactMarkdown>
+                )}
+              </div>
+            </>
           ) : (
             <>
               {/* Original content — always primary, always the truth */}

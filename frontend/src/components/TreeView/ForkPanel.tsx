@@ -8,6 +8,7 @@ interface ForkPanelProps {
   onForkSubmit: (content: string, overrides: GenerateRequest) => void
   onRegenerateSubmit: (overrides: GenerateRequest) => void
   onPrefillSubmit?: (content: string) => void
+  onPrefillContinue?: (content: string, overrides: GenerateRequest) => void
   onCancel: () => void
   isGenerating: boolean
   providers: ProviderInfo[]
@@ -25,6 +26,7 @@ export function ForkPanel({
   onForkSubmit,
   onRegenerateSubmit,
   onPrefillSubmit,
+  onPrefillContinue,
   onCancel,
   isGenerating,
   providers,
@@ -66,6 +68,7 @@ export function ForkPanel({
 
   const [count, setCount] = useState('1')
   const [stream, setStream] = useState(streamDefault)
+  const [showPrefillSettings, setShowPrefillSettings] = useState(false)
 
   const panelRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -77,12 +80,37 @@ export function ForkPanel({
       ? !isGenerating
       : content.trim().length > 0 && !isGenerating
 
-  // Prefill mode: simple submit, no generation
+  // Prefill mode: Save (manual node) or Continue (generate with prefill)
   if (mode === 'prefill') {
+    const handlePrefillContinue = () => {
+      if (!content.trim() || !onPrefillContinue) return
+
+      const samplingParams: SamplingParams = {}
+      if (samplingValues.temperature) samplingParams.temperature = parseFloat(samplingValues.temperature)
+      if (samplingValues.topP) samplingParams.top_p = parseFloat(samplingValues.topP)
+      if (samplingValues.topK) samplingParams.top_k = parseInt(samplingValues.topK, 10)
+      if (samplingValues.maxTokens) samplingParams.max_tokens = parseInt(samplingValues.maxTokens, 10)
+      if (samplingValues.frequencyPenalty) samplingParams.frequency_penalty = parseFloat(samplingValues.frequencyPenalty)
+      if (samplingValues.presencePenalty) samplingParams.presence_penalty = parseFloat(samplingValues.presencePenalty)
+      samplingParams.extended_thinking = samplingValues.useThinking
+      if (samplingValues.useThinking) {
+        samplingParams.thinking_budget = parseInt(samplingValues.thinkingBudget, 10) || 10000
+      }
+
+      const overrides: GenerateRequest = {
+        provider: provider || undefined,
+        model: model || undefined,
+        system_prompt: systemPrompt || undefined,
+        sampling_params: Object.keys(samplingParams).length > 0 ? samplingParams : undefined,
+        stream,
+      }
+      onPrefillContinue(content.trim(), overrides)
+    }
+
     const handlePrefillKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
       if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
         e.preventDefault()
-        if (content.trim()) onPrefillSubmit?.(content.trim())
+        handlePrefillContinue()
       } else if (e.key === 'Escape') {
         onCancel()
       }
@@ -102,19 +130,107 @@ export function ForkPanel({
             value={content}
             onChange={(e) => setContent(e.target.value)}
             onKeyDown={handlePrefillKeyDown}
-            placeholder="Write the assistant's response..."
+            placeholder="Write the beginning of the assistant's response..."
             rows={3}
             autoFocus
           />
-          <span className="fork-panel-hint">Cmd+Enter to save, Esc to cancel</span>
+
+          {onPrefillContinue && (
+            <button
+              className="fork-settings-toggle"
+              onClick={() => setShowPrefillSettings(!showPrefillSettings)}
+            >
+              <span className={`toggle-arrow ${showPrefillSettings ? 'expanded' : ''}`}>
+                &#9654;
+              </span>
+              Settings
+            </button>
+          )}
+
+          {onPrefillContinue && showPrefillSettings && (
+            <div className="fork-settings">
+              <div className="fork-setting-row">
+                <label>Provider</label>
+                {providers.length > 0 ? (
+                  <select
+                    value={provider}
+                    onChange={(e) => {
+                      setProvider(e.target.value)
+                      setModel('')
+                    }}
+                  >
+                    {providers.map((p) => (
+                      <option key={p.name} value={p.name}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <select disabled>
+                    <option>No providers available</option>
+                  </select>
+                )}
+              </div>
+              <div className="fork-setting-row">
+                <label>Model</label>
+                <input
+                  type="text"
+                  value={model}
+                  onChange={(e) => setModel(e.target.value)}
+                  placeholder={suggestedModels[0] ?? 'default'}
+                  list="prefill-model-suggestions"
+                />
+                <datalist id="prefill-model-suggestions">
+                  {suggestedModels.map((m) => (
+                    <option key={m} value={m} />
+                  ))}
+                </datalist>
+              </div>
+
+              <div className="fork-settings-divider" />
+
+              <SamplingParamsPanel
+                values={samplingValues}
+                onChange={handleSamplingChange}
+                supportedParams={supportedParams}
+                providerName={provider}
+              />
+
+              <div className="fork-settings-divider" />
+
+              <div className="fork-setting-row fork-setting-toggle">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={stream}
+                    onChange={(e) => setStream(e.target.checked)}
+                  />
+                  Stream
+                </label>
+              </div>
+            </div>
+          )}
+
+          <span className="fork-panel-hint">Cmd+Enter to continue, Esc to cancel</span>
           <span className="fork-panel-kindness">You're writing the model's memory. Be kind.</span>
-          <button
-            className="fork-submit-btn"
-            onClick={() => content.trim() && onPrefillSubmit?.(content.trim())}
-            disabled={!content.trim()}
-          >
-            Save
-          </button>
+          <div className="fork-panel-actions">
+            <button
+              className="fork-submit-btn fork-submit-secondary"
+              onClick={() => content.trim() && onPrefillSubmit?.(content.trim())}
+              disabled={!content.trim()}
+            >
+              Save only
+            </button>
+            {onPrefillContinue && (
+              <button
+                className="fork-submit-btn"
+                onClick={handlePrefillContinue}
+                disabled={!content.trim() || isGenerating}
+              >
+                {isGenerating ? 'Generating...' : 'Continue'}
+              </button>
+            )}
+          </div>
         </div>
       </div>
     )

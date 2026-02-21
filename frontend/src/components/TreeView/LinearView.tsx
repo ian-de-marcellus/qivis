@@ -48,6 +48,7 @@ export function LinearView() {
   const forkAndGenerate = useTreeStore(s => s.forkAndGenerate)
   const regenerate = useTreeStore(s => s.regenerate)
   const prefillAssistant = useTreeStore(s => s.prefillAssistant)
+  const prefillAndGenerate = useTreeStore(s => s.prefillAndGenerate)
   const clearGenerationError = useTreeStore(s => s.clearGenerationError)
   const fetchProviders = useTreeStore(s => s.fetchProviders)
   const setInspectedNodeId = useTreeStore(s => s.setInspectedNodeId)
@@ -297,6 +298,13 @@ export function LinearView() {
     }
   }
 
+  const handlePrefillContinue = (content: string, overrides: GenerateRequest) => {
+    if (forkTarget != null) {
+      prefillAndGenerate(forkTarget.parentId, content, overrides)
+      setForkTarget(null)
+    }
+  }
+
   // In picking mode, determine which nodes are pickable (non-manual assistant nodes, excluding source)
   const pickableNodeIds = useMemo(() => {
     if (!comparisonPickingMode) return null
@@ -422,6 +430,7 @@ export function LinearView() {
                   onForkSubmit={handleForkSubmit}
                   onRegenerateSubmit={handleRegenerateSubmit}
                   onPrefillSubmit={handlePrefillSubmit}
+                  onPrefillContinue={handlePrefillContinue}
                   onCancel={() => setForkTarget(null)}
                   isGenerating={isGenerating}
                   providers={providers}
