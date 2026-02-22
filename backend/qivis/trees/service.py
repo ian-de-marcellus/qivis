@@ -1545,6 +1545,7 @@ class TreeService:
             sampling_params=parse_json_or_none(row["sampling_params"]),
             mode=row["mode"],
             prefill_content=row.get("prefill_content"),
+            prompt_text=row.get("prompt_text"),
             usage=parse_json_or_none(row["usage"]),
             latency_ms=row["latency_ms"],
             finish_reason=row["finish_reason"],

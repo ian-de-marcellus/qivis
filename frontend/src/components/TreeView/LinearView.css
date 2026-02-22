@@ -271,6 +271,31 @@
   text-align: center;
 }
 
+/* ---- Stop generation button ---- */
+.stop-generation-row {
+  display: flex;
+  justify-content: center;
+  padding: var(--space-sm) 0;
+}
+
+.stop-generation-btn {
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  padding: var(--space-xs) var(--space-md);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.stop-generation-btn:hover {
+  color: var(--text-primary);
+  border-color: var(--text-tertiary);
+  background: var(--bg-tertiary);
+}
+
 /* ---- Generation error panel ---- */
 .generation-error-panel {
   margin: var(--space-md) 0;

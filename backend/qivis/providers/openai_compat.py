@@ -23,6 +23,7 @@ from qivis.providers.base import (
 class OpenAICompatibleProvider(LLMProvider):
     """Base provider for any API that speaks the OpenAI chat completions protocol."""
 
+    supported_modes = ["chat", "completion"]
     supported_params = [
         "temperature", "top_p", "max_tokens", "stop_sequences",
         "frequency_penalty", "presence_penalty", "logprobs", "top_logprobs",
@@ -32,6 +33,11 @@ class OpenAICompatibleProvider(LLMProvider):
         self._client = client
 
     async def generate(self, request: GenerationRequest) -> GenerationResult:
+        if request.prompt_text is not None:
+            return await self._generate_completion(request)
+        return await self._generate_chat(request)
+
+    async def _generate_chat(self, request: GenerationRequest) -> GenerationResult:
         params = self._build_params(request)
         start = time.monotonic()
         response = await self._client.chat.completions.create(**params)
@@ -63,7 +69,38 @@ class OpenAICompatibleProvider(LLMProvider):
             raw_response=response.model_dump(),
         )
 
+    async def _generate_completion(self, request: GenerationRequest) -> GenerationResult:
+        params = self._build_completion_params(request)
+        start = time.monotonic()
+        response = await self._client.completions.create(**params)
+        latency_ms = int((time.monotonic() - start) * 1000)
+
+        choice = response.choices[0]
+        logprobs = LogprobNormalizer.from_openai_completion(choice.logprobs)
+
+        return GenerationResult(
+            content=choice.text,
+            model=response.model,
+            finish_reason=choice.finish_reason,
+            usage={
+                "input_tokens": response.usage.prompt_tokens,
+                "output_tokens": response.usage.completion_tokens,
+            },
+            latency_ms=latency_ms,
+            logprobs=logprobs,
+        )
+
     async def generate_stream(
+        self, request: GenerationRequest
+    ) -> AsyncIterator[StreamChunk]:
+        if request.prompt_text is not None:
+            async for chunk in self._generate_completion_stream(request):
+                yield chunk
+            return
+        async for chunk in self._generate_chat_stream(request):
+            yield chunk
+
+    async def _generate_chat_stream(
         self, request: GenerationRequest
     ) -> AsyncIterator[StreamChunk]:
         params = self._build_params(request)
@@ -124,6 +161,50 @@ class OpenAICompatibleProvider(LLMProvider):
             ),
         )
 
+    async def _generate_completion_stream(
+        self, request: GenerationRequest
+    ) -> AsyncIterator[StreamChunk]:
+        params = self._build_completion_params(request)
+        params["stream"] = True
+
+        start = time.monotonic()
+        accumulated_text = ""
+        finish_reason: str | None = None
+        model = request.model
+        input_tokens = 0
+        output_tokens = 0
+
+        stream = await self._client.completions.create(**params)
+        async for chunk in stream:
+            if chunk.model:
+                model = chunk.model
+
+            if chunk.choices:
+                choice = chunk.choices[0]
+                text = choice.text
+                if text:
+                    accumulated_text += text
+                    yield StreamChunk(type="text_delta", text=text)
+                if choice.finish_reason:
+                    finish_reason = choice.finish_reason
+
+            if chunk.usage:
+                input_tokens = chunk.usage.prompt_tokens
+                output_tokens = chunk.usage.completion_tokens
+
+        latency_ms = int((time.monotonic() - start) * 1000)
+        yield StreamChunk(
+            type="message_stop",
+            is_final=True,
+            result=GenerationResult(
+                content=accumulated_text,
+                model=model,
+                finish_reason=finish_reason,
+                usage={"input_tokens": input_tokens, "output_tokens": output_tokens},
+                latency_ms=latency_ms,
+            ),
+        )
+
     async def discover_models(self) -> list[str]:
         """List available models from the API. Returns empty list on failure."""
         try:
@@ -181,5 +262,30 @@ class OpenAICompatibleProvider(LLMProvider):
             params["logprobs"] = True
             if sp.top_logprobs is not None:
                 params["top_logprobs"] = sp.top_logprobs
+
+        return params
+
+    @staticmethod
+    def _build_completion_params(request: GenerationRequest) -> dict[str, Any]:
+        """Build kwargs dict for client.completions.create().
+
+        The completions API takes `prompt` (str) instead of `messages`,
+        and `logprobs` is an int (number of top tokens) instead of bool.
+        """
+        sp = request.sampling_params
+        params: dict[str, Any] = {
+            "model": request.model,
+            "prompt": request.prompt_text or "",
+            "max_tokens": sp.max_tokens,
+        }
+
+        if sp.temperature is not None:
+            params["temperature"] = sp.temperature
+        if sp.top_p is not None:
+            params["top_p"] = sp.top_p
+        if sp.stop_sequences:
+            params["stop"] = sp.stop_sequences
+        if sp.logprobs and sp.top_logprobs is not None:
+            params["logprobs"] = sp.top_logprobs
 
         return params

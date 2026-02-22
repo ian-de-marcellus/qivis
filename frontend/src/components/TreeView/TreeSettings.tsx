@@ -47,6 +47,8 @@ export function TreeSettings() {
   const [includeTimestamps, setIncludeTimestamps] = useState(false)
   const [streamResponses, setStreamResponses] = useState(true)
   const [includeThinking, setIncludeThinking] = useState(false)
+  const [generationMode, setGenerationMode] = useState('chat')
+  const [promptTemplate, setPromptTemplate] = useState('raw')
   const [debugContextLimit, setDebugContextLimit] = useState('')
 
   // Eviction strategy state
@@ -84,6 +86,8 @@ export function TreeSettings() {
       setIncludeTimestamps(!!meta?.include_timestamps)
       setStreamResponses(meta?.stream_responses !== false)
       setIncludeThinking(!!meta?.include_thinking_in_context)
+      setGenerationMode((meta?.generation_mode as string) ?? 'chat')
+      setPromptTemplate((meta?.prompt_template as string) ?? 'raw')
       setDebugContextLimit(meta?.debug_context_limit != null ? String(meta.debug_context_limit) : '')
 
       // Eviction strategy from metadata
@@ -135,6 +139,8 @@ export function TreeSettings() {
     includeTimestamps !== !!currentMeta.include_timestamps ||
     streamResponses !== (currentMeta.stream_responses !== false) ||
     includeThinking !== !!currentMeta.include_thinking_in_context ||
+    generationMode !== ((currentMeta.generation_mode as string) ?? 'chat') ||
+    promptTemplate !== ((currentMeta.prompt_template as string) ?? 'raw') ||
     debugContextLimit !== (currentMeta.debug_context_limit != null ? String(currentMeta.debug_context_limit) : '') ||
     evictionMode !== (currentEs?.mode ?? 'smart') ||
     (evictionMode === 'smart' && (
@@ -181,6 +187,8 @@ export function TreeSettings() {
       newMeta.include_timestamps = includeTimestamps
       newMeta.stream_responses = streamResponses
       newMeta.include_thinking_in_context = includeThinking
+      newMeta.generation_mode = generationMode
+      newMeta.prompt_template = promptTemplate
       newMeta.debug_context_limit = debugContextLimit
         ? (parseInt(debugContextLimit, 10) || null)
         : null
@@ -460,6 +468,44 @@ export function TreeSettings() {
                 Feed reasoning traces back into subsequent context. Uses significant tokens.
               </span>
             </div>
+
+            {selectedProvider?.supported_modes?.includes('completion') &&
+             selectedProvider?.supported_modes?.includes('chat') && (
+              <div className="tree-settings-field">
+                <label>Generation mode</label>
+                <select
+                  value={generationMode}
+                  onChange={(e) => setGenerationMode(e.target.value)}
+                >
+                  <option value="chat">Chat (instruct models)</option>
+                  <option value="completion">Completion (base models)</option>
+                </select>
+                <span className="tree-settings-note">
+                  Chat sends structured messages. Completion renders a text prompt from a template.
+                </span>
+              </div>
+            )}
+
+            {(generationMode === 'completion' ||
+              (selectedProvider?.supported_modes?.includes('completion') &&
+               !selectedProvider?.supported_modes?.includes('chat'))) && (
+              <div className="tree-settings-field">
+                <label>Prompt template</label>
+                <select
+                  value={promptTemplate}
+                  onChange={(e) => setPromptTemplate(e.target.value)}
+                >
+                  <option value="raw">Raw (no template)</option>
+                  <option value="alpaca">Alpaca</option>
+                  <option value="chatml">ChatML</option>
+                  <option value="llama3">Llama 3 (local only)</option>
+                </select>
+                <span className="tree-settings-note">
+                  Raw sends plain text — best for base models on remote APIs.
+                  Llama 3 uses special tokens that only work with local servers.
+                </span>
+              </div>
+            )}
 
             <div className="tree-settings-divider" />
 

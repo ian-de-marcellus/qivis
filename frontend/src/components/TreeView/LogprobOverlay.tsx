@@ -33,21 +33,29 @@ function formatProb(linearProb: number): string {
 }
 
 function TokenTooltip({ token }: { token: TokenLogprob }) {
+  const altCount = token.top_alternatives.length
+  const isLargeSet = altCount > 10
+
   return (
-    <div className="token-tooltip">
+    <div className={`token-tooltip${isLargeSet ? ' token-tooltip-scrollable' : ''}`}>
       <div className="token-tooltip-chosen">
         <span className="token-tooltip-token">{JSON.stringify(token.token)}</span>
         <span className="token-tooltip-prob">{formatProb(token.linear_prob)}</span>
       </div>
-      {token.top_alternatives.length > 0 && (
-        <div className="token-tooltip-alts">
-          {token.top_alternatives.map((alt, i) => (
-            <div key={i} className="token-tooltip-alt">
-              <span className="token-tooltip-token">{JSON.stringify(alt.token)}</span>
-              <span className="token-tooltip-prob">{formatProb(alt.linear_prob)}</span>
-            </div>
-          ))}
-        </div>
+      {altCount > 0 && (
+        <>
+          {isLargeSet && (
+            <div className="token-tooltip-count">{altCount} alternatives</div>
+          )}
+          <div className={`token-tooltip-alts${isLargeSet ? ' token-tooltip-alts-scroll' : ''}`}>
+            {token.top_alternatives.map((alt, i) => (
+              <div key={i} className="token-tooltip-alt">
+                <span className="token-tooltip-token">{JSON.stringify(alt.token)}</span>
+                <span className="token-tooltip-prob">{formatProb(alt.linear_prob)}</span>
+              </div>
+            ))}
+          </div>
+        </>
       )}
     </div>
   )

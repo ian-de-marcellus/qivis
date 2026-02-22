@@ -505,19 +505,33 @@ _Goal: Prefill, base models, local inference, full-vocab logprobs. The research 
 
 ✅ Can generate from local Ollama and any OpenAI-compatible server.
 
-### 8.3 — Completion Mode + Full-Vocab Logprobs 🔒
+### 8.3 — Completion Mode + Full-Vocab Logprobs ✅
 
-**Tasks:**
-- `mode: "completion"` support: full conversation rendered as a single text prompt via configurable prompt templates
-- Prompt template system: Alpaca, ChatML, Llama, custom. Stored per tree or per participant
-- `prompt_text` stored on `NodeCreated` — the exact string sent to the model
-- `LLMProvider.supports_mode()` validation
-- `LogprobNormalizer.from_llamacpp()` — full vocabulary distributions (thousands of alternatives per token, not just top-5)
-- Enriches Phase 3 logprob visualization with complete alternative data: full probability distributions, entropy computation, token-level surprise metrics
+Completion mode renders conversations as text prompts for `/completion` endpoints. Three prompt templates (ChatML, Alpaca, Llama3) as pure functions in `generation/templates.py`, selected via tree metadata `prompt_template`. `LLMProvider.supported_modes` class attribute (`["chat"]` default) for mode detection. Two normalizers: `LogprobNormalizer.from_llamacpp()` (linear prob → logprob, `full_vocab_available` when >100 alternatives) and `from_openai_completion()` (completions API dict format).
+
+`LlamaCppProvider` — native httpx client for llama.cpp `/completion` API. Streaming via SSE, model discovery via `/props`. OpenAI-compatible providers (OpenAI, OpenRouter, GenericOpenAI) dispatch to `client.completions.create()` when `prompt_text` is set, stay on chat path when None. Ollama stays chat-only.
+
+Generation service: `_prepare_completion_mode()` renders messages via template, merges stop tokens, sets `prompt_text` on request. Prefill + completion: prefill appended to prompt text. `prompt_text` stored on node via migration 017, threaded through projector/schemas/service.
+
+Frontend: `full_vocab_available` on `LogprobData`, `prompt_text` on `NodeResponse`, `supported_modes` on `ProviderInfo`. Scrollable tooltip for >10 alternatives. "FULL VOCAB" badge on messages with full-vocab logprobs. Prompt template dropdown in TreeSettings (visible when completion-capable providers registered). 56 new tests. 663 tests at completion.
 
 **Blockers:** 8.2 (local providers).
 
+Also: "raw" template (plain text, no special tokens) as default for remote APIs where special tokens are literal text. OpenRouter completion mode uses httpx directly (SDK requires `messages`), with HTTP-200 error body handling. Stop generation button (AbortController → signal through fetch). 676 tests at completion.
+
 ✅ Completion mode works. Full-vocab logprobs from local models enrich visualization. **Phase 8 complete.**
+
+### 8.4 — Generation View Abstraction (planned)
+
+The current UI treats all generation as chat: user message → assistant response in a linear thread. Base models in completion mode and multi-agent conversations need fundamentally different views:
+
+- **Base model / completion view**: single text pane (not turn-based), prompt template visible, raw token stream, logprob overlay is primary rather than secondary
+- **Multi-agent view**: multiple participants, turn order controls, per-participant context — shared infrastructure with Phase 10
+- **Chat view**: current UI, the default for instruct models
+
+Refactor LinearView into a view abstraction where the generation mode (chat/completion/multi-agent) selects the appropriate view component. Shared infrastructure: stop button, streaming state, branch navigation. Mode-specific: layout, input affordances, metadata display.
+
+**Blockers:** 8.3 (completion mode must work first), informs Phase 10 design.
 
 ---
 

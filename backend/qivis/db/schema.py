@@ -53,6 +53,7 @@ CREATE TABLE IF NOT EXISTS nodes (
     include_thinking_in_context INTEGER NOT NULL DEFAULT 0,
     include_timestamps INTEGER NOT NULL DEFAULT 0,
     prefill_content TEXT,
+    prompt_text TEXT,
     created_at TEXT NOT NULL,
     archived INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY (tree_id) REFERENCES trees(tree_id)
@@ -236,6 +237,9 @@ _MIGRATIONS: list[tuple[str, str]] = [
     # Phase 8.1: Prefill/continuation mode
     ("016_add_prefill_content",
      "ALTER TABLE nodes ADD COLUMN prefill_content TEXT"),
+    # Phase 8.3: Completion mode prompt text
+    ("017_add_prompt_text",
+     "ALTER TABLE nodes ADD COLUMN prompt_text TEXT"),
 ]
 
 

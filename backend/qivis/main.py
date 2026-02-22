@@ -83,6 +83,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             generic.suggested_models = discovered
         register_provider(generic)
 
+    if os.environ.get("LLAMACPP_BASE_URL"):
+        from qivis.providers.llamacpp import LlamaCppProvider
+
+        llamacpp = LlamaCppProvider(base_url=os.environ["LLAMACPP_BASE_URL"])
+        discovered = await llamacpp.discover_models()
+        if discovered:
+            llamacpp.suggested_models = discovered
+        register_provider(llamacpp)
+
     # Generation service
     store = EventStore(db)
     projector = StateProjector(db)
@@ -144,6 +153,6 @@ async def health() -> dict:
 @app.get("/api/providers")
 async def providers() -> list[dict]:
     return [
-        {"name": p.name, "available": True, "models": p.suggested_models, "supported_params": p.supported_params}
+        {"name": p.name, "available": True, "models": p.suggested_models, "supported_params": p.supported_params, "supported_modes": p.supported_modes}
         for p in get_all_providers()
     ]

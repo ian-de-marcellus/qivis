@@ -68,6 +68,7 @@ class NodeResponse(BaseModel):
     sampling_params: dict | None = None
     mode: str | None = None
     prefill_content: str | None = None
+    prompt_text: str | None = None
     usage: dict | None = None
     latency_ms: int | None = None
     finish_reason: str | None = None

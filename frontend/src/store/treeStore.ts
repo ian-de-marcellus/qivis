@@ -39,6 +39,7 @@ interface TreeStore {
   providers: ProviderInfo[]
   isLoading: boolean
   isGenerating: boolean
+  _abortController: AbortController | null
   streamingContent: string
   streamingThinkingContent: string
   streamingContents: Record<number, string>
@@ -93,6 +94,7 @@ interface TreeStore {
   updateTree: (treeId: string, req: PatchTreeRequest) => Promise<void>
   sendMessage: (content: string) => Promise<void>
   sendMessageOnly: (content: string) => Promise<void>
+  stopGeneration: () => void
   setSystemPromptOverride: (prompt: string | null) => void
   clearError: () => void
   clearGenerationError: () => void
@@ -212,6 +214,7 @@ const STREAMING_RESET = {
   isGenerating: false,
   streamingContent: '',
   streamingThinkingContent: '',
+  _abortController: null,
 } as const
 
 const MULTI_STREAMING_RESET = {
@@ -294,6 +297,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
   providers: [],
   isLoading: false,
   isGenerating: false,
+  _abortController: null,
   streamingContent: '',
   streamingThinkingContent: '',
   streamingContents: {},
@@ -334,6 +338,19 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
   searchResults: [],
   searchLoading: false,
   scrollToNodeId: null,
+
+  stopGeneration: () => {
+    const { _abortController } = get()
+    if (_abortController) {
+      _abortController.abort()
+      set({ _abortController: null })
+    }
+    // Streaming reset + tree refresh happen in the abort error handler
+    // of each generation method, but force reset here as a safety net
+    set({ ...STREAMING_RESET, regeneratingParentId: null })
+    const { currentTree } = get()
+    if (currentTree) refreshTree(currentTree.tree_id, set)
+  },
 
   fetchTrees: async (includeArchived?: boolean) => {
     set({ isLoading: true, error: null })
@@ -493,7 +510,8 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
           : null,
       }))
 
-      set({ ...STREAMING_RESET, isGenerating: true })
+      const ac = new AbortController()
+      set({ ...STREAMING_RESET, isGenerating: true, _abortController: ac })
 
       // Branch-local defaults: prefer last assistant's provider/model over tree defaults
       const lastAssistant = [...activePath].reverse().find((n) => n.role === 'assistant')
@@ -525,13 +543,13 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
           (error) => {
             set({
               ...STREAMING_RESET,
-              error: String(error),
+              error: error instanceof Error ? error.message : String(error),
               generationError: {
                 parentNodeId: userNode.node_id,
                 provider: resolvedProvider ?? 'anthropic',
                 model: resolvedModel ?? null,
                 systemPrompt: systemPromptOverride ?? null,
-                errorMessage: String(error),
+                errorMessage: error instanceof Error ? error.message : String(error),
               },
             })
           },
@@ -540,6 +558,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
               streamingThinkingContent: state.streamingThinkingContent + thinking,
             }))
           },
+          ac.signal,
         )
       } else {
         try {
@@ -549,13 +568,13 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
         } catch (error) {
           set({
             ...STREAMING_RESET,
-            error: String(error),
+            error: error instanceof Error ? error.message : String(error),
             generationError: {
               parentNodeId: userNode.node_id,
               provider: resolvedProvider ?? 'anthropic',
               model: resolvedModel ?? null,
               systemPrompt: systemPromptOverride ?? null,
-              errorMessage: String(error),
+              errorMessage: error instanceof Error ? error.message : String(error),
             },
           })
         }
@@ -710,8 +729,10 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
       const n = overrides.n ?? 1
       const shouldStream = overrides.stream !== false
 
+      const ac = new AbortController()
+
       if (shouldStream && n > 1) {
-        set({ ...MULTI_STREAMING_RESET, isGenerating: true, streamingTotal: n })
+        set({ ...MULTI_STREAMING_RESET, isGenerating: true, streamingTotal: n, _abortController: ac })
         await api.generateMultiStream(
           treeId,
           userNode.node_id,
@@ -741,13 +762,13 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
           (error) => {
             set({
               ...MULTI_STREAMING_RESET,
-              error: String(error),
+              error: error instanceof Error ? error.message : String(error),
               generationError: {
                 parentNodeId: userNode.node_id,
                 provider: overrides.provider ?? 'anthropic',
                 model: overrides.model ?? null,
                 systemPrompt: overrides.system_prompt ?? null,
-                errorMessage: String(error),
+                errorMessage: error instanceof Error ? error.message : String(error),
               },
             })
           },
@@ -759,9 +780,10 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
               },
             }))
           },
+          ac.signal,
         )
       } else if (shouldStream) {
-        set({ ...STREAMING_RESET, isGenerating: true })
+        set({ ...STREAMING_RESET, isGenerating: true, _abortController: ac })
         await api.generateStream(
           treeId,
           userNode.node_id,
@@ -776,13 +798,13 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
           (error) => {
             set({
               ...STREAMING_RESET,
-              error: String(error),
+              error: error instanceof Error ? error.message : String(error),
               generationError: {
                 parentNodeId: userNode.node_id,
                 provider: overrides.provider ?? 'anthropic',
                 model: overrides.model ?? null,
                 systemPrompt: overrides.system_prompt ?? null,
-                errorMessage: String(error),
+                errorMessage: error instanceof Error ? error.message : String(error),
               },
             })
           },
@@ -791,6 +813,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
               streamingThinkingContent: state.streamingThinkingContent + thinking,
             }))
           },
+          ac.signal,
         )
       } else {
         set({ ...STREAMING_RESET, isGenerating: true })
@@ -801,13 +824,13 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
         } catch (error) {
           set({
             ...STREAMING_RESET,
-            error: String(error),
+            error: error instanceof Error ? error.message : String(error),
             generationError: {
               parentNodeId: userNode.node_id,
               provider: overrides.provider ?? 'anthropic',
               model: overrides.model ?? null,
               systemPrompt: overrides.system_prompt ?? null,
-              errorMessage: String(error),
+              errorMessage: error instanceof Error ? error.message : String(error),
             },
           })
         }
@@ -822,9 +845,11 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
     if (!currentTree) return
 
     const treeId = currentTree.tree_id
+    const ac = new AbortController()
     set({
       error: null, generationError: null,
       ...STREAMING_RESET, isGenerating: true,
+      _abortController: ac,
       regeneratingParentId: parentNodeId,
     })
 
@@ -835,7 +860,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
       provider: overrides.provider ?? 'anthropic',
       model: overrides.model ?? null,
       systemPrompt: overrides.system_prompt ?? null,
-      errorMessage: String(error),
+      errorMessage: error instanceof Error ? error.message : String(error),
     })
 
     try {
@@ -877,7 +902,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
             set({
               ...MULTI_STREAMING_RESET,
               regeneratingParentId: null,
-              error: String(error),
+              error: error instanceof Error ? error.message : String(error),
               generationError: regenError(error),
             })
           },
@@ -889,6 +914,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
               },
             }))
           },
+          ac.signal,
         )
       } else if (shouldStream) {
         await api.generateStream(
@@ -906,7 +932,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
             set({
               ...STREAMING_RESET,
               regeneratingParentId: null,
-              error: String(error),
+              error: error instanceof Error ? error.message : String(error),
               generationError: regenError(error),
             })
           },
@@ -915,6 +941,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
               streamingThinkingContent: state.streamingThinkingContent + thinking,
             }))
           },
+          ac.signal,
         )
       } else {
         try {
@@ -925,7 +952,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
           set({
             ...STREAMING_RESET,
             regeneratingParentId: null,
-            error: String(error),
+            error: error instanceof Error ? error.message : String(error),
             generationError: regenError(error),
           })
         }
@@ -974,10 +1001,12 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
     const shouldStream = overrides.stream !== false
     const reqWithPrefill: GenerateRequest = { ...overrides, prefill_content: prefillContent }
 
+    const ac = new AbortController()
+
     try {
       if (shouldStream) {
         // Initialize streaming content with the prefill text so it appears immediately
-        set({ ...STREAMING_RESET, isGenerating: true, streamingContent: prefillContent })
+        set({ ...STREAMING_RESET, isGenerating: true, streamingContent: prefillContent, _abortController: ac })
         await api.generateStream(
           treeId,
           parentId,
@@ -992,13 +1021,13 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
           (error) => {
             set({
               ...STREAMING_RESET,
-              error: String(error),
+              error: error instanceof Error ? error.message : String(error),
               generationError: {
                 parentNodeId: parentId,
                 provider: overrides.provider ?? 'anthropic',
                 model: overrides.model ?? null,
                 systemPrompt: overrides.system_prompt ?? null,
-                errorMessage: String(error),
+                errorMessage: error instanceof Error ? error.message : String(error),
               },
             })
           },
@@ -1007,6 +1036,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
               streamingThinkingContent: state.streamingThinkingContent + thinking,
             }))
           },
+          ac.signal,
         )
       } else {
         set({ ...STREAMING_RESET, isGenerating: true })
@@ -1017,13 +1047,13 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
         } catch (error) {
           set({
             ...STREAMING_RESET,
-            error: String(error),
+            error: error instanceof Error ? error.message : String(error),
             generationError: {
               parentNodeId: parentId,
               provider: overrides.provider ?? 'anthropic',
               model: overrides.model ?? null,
               systemPrompt: overrides.system_prompt ?? null,
-              errorMessage: String(error),
+              errorMessage: error instanceof Error ? error.message : String(error),
             },
           })
         }
@@ -1540,6 +1570,7 @@ export const useStreamingState = () => useTreeStore(useShallow(s => ({
   activeStreamIndex: s.activeStreamIndex,
   regeneratingParentId: s.regeneratingParentId,
   generationError: s.generationError,
+  stopGeneration: s.stopGeneration,
 })))
 
 export const useNavigation = () => useTreeStore(useShallow(s => ({

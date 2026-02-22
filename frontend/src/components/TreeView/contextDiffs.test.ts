@@ -23,6 +23,7 @@ function makeNode(overrides: Partial<NodeResponse> & { node_id: string; role: st
     sampling_params: overrides.sampling_params ?? null,
     mode: overrides.mode ?? 'chat',
     prefill_content: overrides.prefill_content ?? null,
+    prompt_text: overrides.prompt_text ?? null,
     usage: overrides.usage ?? null,
     latency_ms: overrides.latency_ms ?? null,
     finish_reason: overrides.finish_reason ?? null,

@@ -33,6 +33,7 @@ export function LinearView() {
     isGenerating, streamingContent, streamingThinkingContent,
     streamingContents, streamingThinkingContents, streamingNodeIds,
     streamingTotal, activeStreamIndex, regeneratingParentId, generationError,
+    stopGeneration,
   } = useStreamingState()
   const { branchSelections } = useNavigation()
   const {
@@ -526,6 +527,14 @@ export function LinearView() {
           <div className="message-row assistant">
             <div className="message-role">assistant</div>
             <div className="message-content thinking">Thinking...</div>
+          </div>
+        )}
+
+        {isGenerating && (
+          <div className="stop-generation-row">
+            <button className="stop-generation-btn" onClick={stopGeneration}>
+              Stop generating
+            </button>
           </div>
         )}
 

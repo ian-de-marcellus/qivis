@@ -17,6 +17,7 @@ class GenerationRequest(BaseModel):
     messages: list[dict[str, str]]
     system_prompt: str | None = None
     sampling_params: SamplingParams = Field(default_factory=SamplingParams)
+    prompt_text: str | None = None  # Set for completion mode (replaces messages)
 
 
 class GenerationResult(BaseModel):
@@ -48,6 +49,7 @@ class LLMProvider(ABC):
 
     suggested_models: list[str] = []
     supported_params: list[str] = []
+    supported_modes: list[str] = ["chat"]
 
     @property
     @abstractmethod
@@ -117,6 +119,113 @@ class LogprobNormalizer:
                 TokenLogprob(
                     token=entry.token,
                     logprob=logprob,
+                    linear_prob=linear_prob,
+                    top_alternatives=alternatives,
+                )
+            )
+
+        return LogprobData(
+            tokens=tokens,
+            provider_format="openai",
+            top_k_available=max_alts,
+        )
+
+    @staticmethod
+    def from_llamacpp(completion_probabilities: Any) -> LogprobData | None:
+        """Convert llama.cpp completion_probabilities to canonical format.
+
+        llama.cpp returns {content, probs: [{tok_str, prob}, ...]} per token.
+        The first entry in probs is the chosen token. prob is linear (0-1).
+        """
+        if not completion_probabilities:
+            return None
+
+        tokens: list[TokenLogprob] = []
+        max_alts = 0
+
+        for entry in completion_probabilities:
+            all_probs = entry.get("probs", [])
+            if not all_probs:
+                continue
+
+            chosen = all_probs[0]
+            chosen_prob = chosen["prob"]
+            chosen_logprob = math.log(chosen_prob) if chosen_prob > 0 else float("-inf")
+
+            alternatives: list[AlternativeToken] = []
+            for p in all_probs[1:]:
+                prob = p["prob"]
+                alternatives.append(
+                    AlternativeToken(
+                        token=p["tok_str"],
+                        logprob=math.log(prob) if prob > 0 else float("-inf"),
+                        linear_prob=prob,
+                    )
+                )
+
+            max_alts = max(max_alts, len(all_probs))
+
+            tokens.append(
+                TokenLogprob(
+                    token=chosen["tok_str"],
+                    logprob=chosen_logprob,
+                    linear_prob=chosen_prob,
+                    top_alternatives=alternatives,
+                )
+            )
+
+        return LogprobData(
+            tokens=tokens,
+            provider_format="llamacpp",
+            top_k_available=max_alts,
+            full_vocab_available=max_alts > 100,
+        )
+
+    @staticmethod
+    def from_openai_completion(logprobs: Any) -> LogprobData | None:
+        """Convert OpenAI text completions logprobs to canonical format.
+
+        Completions API returns a different structure from chat completions:
+        logprobs.tokens (list[str]), logprobs.token_logprobs (list[float]),
+        logprobs.top_logprobs (list[dict[str, float]]).
+        """
+        if logprobs is None:
+            return None
+
+        token_list = getattr(logprobs, "tokens", None)
+        logprob_list = getattr(logprobs, "token_logprobs", None)
+        top_list = getattr(logprobs, "top_logprobs", None)
+
+        if not token_list or not logprob_list:
+            return None
+
+        tokens: list[TokenLogprob] = []
+        max_alts = 0
+
+        for i, token_str in enumerate(token_list):
+            lp = logprob_list[i]
+            if lp is None:
+                continue
+            linear_prob = math.exp(lp)
+
+            alternatives: list[AlternativeToken] = []
+            if top_list and i < len(top_list) and top_list[i]:
+                top_dict = top_list[i]
+                max_alts = max(max_alts, len(top_dict))
+                for alt_token, alt_lp in top_dict.items():
+                    if alt_token != token_str:
+                        alternatives.append(
+                            AlternativeToken(
+                                token=alt_token,
+                                logprob=alt_lp,
+                                linear_prob=math.exp(alt_lp),
+                            )
+                        )
+
+            tokens.append(
+                TokenLogprob(
+                    token=token_str,
+                    logprob=lp,
                     linear_prob=linear_prob,
                     top_alternatives=alternatives,
                 )

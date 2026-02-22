@@ -15,6 +15,7 @@ from qivis.providers.openai_compat import OpenAICompatibleProvider
 class OllamaProvider(OpenAICompatibleProvider):
     """LLM provider backed by a local Ollama instance."""
 
+    supported_modes = ["chat"]
     supported_params = [
         "temperature", "top_p", "top_k", "max_tokens", "stop_sequences",
         "frequency_penalty", "presence_penalty", "logprobs", "top_logprobs",

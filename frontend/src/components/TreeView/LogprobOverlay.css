@@ -47,9 +47,27 @@
   color: var(--text-primary);
 }
 
+.token-tooltip-scrollable {
+  max-width: 22rem;
+}
+
+.token-tooltip-count {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  padding: var(--space-xxs) 0;
+  border-top: 1px solid var(--border-subtle);
+  text-align: center;
+}
+
 .token-tooltip-alts {
   border-top: 1px solid var(--border-subtle);
   padding-top: var(--space-xs);
+}
+
+.token-tooltip-alts-scroll {
+  max-height: 300px;
+  overflow-y: auto;
+  scrollbar-width: thin;
 }
 
 .token-tooltip-alt {
@@ -101,6 +119,16 @@
   height: 6px;
   border-radius: 50%;
   flex-shrink: 0;
+}
+
+/* ---- Full vocab badge ---- */
+
+.full-vocab-badge {
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  color: var(--accent);
+  margin-left: 0.25rem;
 }
 
 /* ---- Raw text toggle (no logprobs available) ---- */

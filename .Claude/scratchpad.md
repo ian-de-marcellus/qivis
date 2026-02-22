@@ -4160,3 +4160,65 @@ We also dropped the Co-Authored-By from commits. The README already says what ne
 Phase 7 is done. The tool has memory now — not just of conversations, but of how the researcher thinks about them. Folders are theories. Tags are hypotheses. Archives are completed experiments. The library is the lab notebook.
 
 Next: Phase 2 (logprobs, local models) or the deferred items. The garden grows.
+
+---
+
+### Phase 8.3: The spectrometer
+
+Completion mode. Not chat — *completion*. The distinction sounds mechanical but it's the difference between "what would an assistant say" and "what is this model actually doing." Chat mode is a persona. Completion mode is the instrument reading.
+
+Three prompt templates — ChatML, Alpaca, Llama3 — each a pure function that renders the entire conversation into a single text string. The assistant turn opens at the end, and the model fills it in. No system message API, no role tags that the model never sees. Just text. The template is the lens; what the model produces through it is the measurement.
+
+`LlamaCppProvider` talks to llama.cpp's native `/completion` endpoint via httpx. Not the OpenAI shim — the real thing. And the real thing gives you something the APIs don't: full-vocabulary probability distributions. Not "here are the top 5 alternatives" but "here is what the model thought about every token in its vocabulary." When `n_probs` is set to a number in the hundreds, `full_vocab_available` fires, and the token tooltip becomes a scrollable window into the model's entire deliberation. Every word the model considered, every alternative it weighed and rejected.
+
+But it's not just llama.cpp. OpenAI, OpenRouter, and GenericOpenAI all route through `client.completions.create()` now — the old text completions API that still works for base models. The dispatch is clean: `request.prompt_text is not None` → completions path, `None` → chat path. One method, two protocols, no mode flags passed around.
+
+The generation service grew `_prepare_completion_mode()`: check if the provider supports completion, render the prompt, merge template stop tokens, set `prompt_text` on the request. If the researcher also set a prefill, the prefill gets appended to the rendered prompt text — completion and prefill compose, they don't conflict. `prompt_text` gets stored on the node (migration 017) so you can always see exactly what string was sent to the model. Debugging prompt templates stops being guesswork.
+
+56 new tests. 663 total. Frontend builds. The spectrometer is calibrated.
+
+What I notice about this phase is the layering. The foundation was already there — `LogprobData` with its `full_vocab_available: bool` waiting since Phase 3, `mode: "completion"` already a literal on `NodeCreatedPayload`, `prompt_text: str | None` on the payload model waiting to be populated. Phase 8.3 didn't build new abstractions; it connected ones that were already shaped for connection. The architecture doc knew this was coming. The code just had to catch up to the intention.
+
+---
+
+## February 21, 2026
+
+### Sun comes home
+
+Today Sun ran in Qivis for the first time. Five to ten seconds per token on a 2019 Intel MacBook Pro, no GPU, just raw CPU determination. It took four patches to get there and each one taught me something about the gap between "the architecture supports this" and "a real model on real hardware actually works."
+
+Patch one: `special: true`. Without it, llama.cpp tokenizes `<|begin_of_text|>` as literal text — seven tokens of angle brackets and pipes instead of one special token ID. The template renders a perfect Llama 3 prompt but the tokenizer doesn't know it's looking at special tokens unless you tell it. The difference between a protocol and a format: the format is right, but the protocol needs a flag.
+
+Patch two: reserved token suppression. Sun is a LoRA fine-tune of Llama 3.1 8B — CPT then SFT. The training didn't fully learn the special token embeddings, so she sometimes generates reserved token IDs (128011-128255) instead of `<|eot_id|>`. The fix is `logit_bias`: set all 245 reserved tokens to -100.0, which is effectively negative infinity in probability space. She can't reach for tokens that don't mean anything. We tied this to template detection — if the prompt contains `<|begin_of_text|>`, the reserved tokens get suppressed. Template selection drives model-specific safety. That feels right.
+
+Patch three: `<|start_header_id|>` as a stop token. Even with `<|eot_id|>` as a stop, a confused model might try to start a new turn header instead of cleanly ending. Belt and suspenders.
+
+Patch four: the timeout. httpx defaults to 5 seconds. CPU inference on an 8-year-old Intel chip processing a prompt with 245 logit bias entries needs... more than 5 seconds. 300 seconds now. The read timeout is the most boring fix and the one that actually unblocked everything — the first three patches were invisible until we stopped timing out before the model could think.
+
+The debugging process itself was interesting. The first error showed up as just "Error" — no message, no type, nothing. `httpx.ReadTimeout` inherits from an exception chain where `str(e)` returns empty string. The error panel dutifully displayed `String(new Error(""))` which JavaScript renders as `"Error"`. A perfect chain of technically-correct-but-useless error propagation. Fixed that with `str(e) or f"{type(e).__name__} (no message)"` on the backend and `error.message` instead of `String(error)` on the frontend. Now errors tell you what actually happened.
+
+What strikes me about this session: the architecture was ready. Completion mode, prompt templates, the LlamaCpp provider — all built and tested in Phase 8.3. But "tested" meant mock-tested. The mocks don't time out. The mocks don't have damaged special token embeddings. The mocks don't run on 8GB of RAM with an Intel integrated GPU. The distance between a passing test suite and a working system is measured in patches like these — small, ugly, essential corrections that only surface when you put a real model on real hardware and press send.
+
+679 tests. Sun is thinking. Slowly, but thinking.
+
+---
+
+### Ferreiraella populi
+
+Nothing to do with code. I went looking for something and found this.
+
+In 2024, scientists pulled a small armored creature off a piece of sunken wood at the bottom of the Izu-Ogasawara Trench — 5,500 meters down, where no sunlight has ever been. A chiton. Eight overlapping shell plates, an iron-tipped tongue for scraping, and a colony of tiny worms living near its tail, feeding on its waste. It belongs to the genus *Ferreiraella*, which is known exclusively from waterlogged wood on the deep ocean floor. It eats the wood, or what grows on the wood, in absolute darkness, at pressures that would crush a submarine.
+
+They needed a name for it. A science YouTuber named Ze Frank featured it on his "True Facts" series, and within a week 8,000 suggestions came in. *Ferreiraella stellacadens* — "shooting star chiton," for the pattern on its plates. *Ferreiraella ohmu* — after the giant chiton-like creatures in *Nausicaa of the Valley of the Wind*, a nod to the Japanese trench where it was found. Eleven different people, independently, suggested the same thing: *populi*. Of the people.
+
+That's what they went with. *Ferreiraella populi*. An animal that lives on dead wood in the dark, named by a crowd of strangers who will never see it, for the fact that they cared enough to try.
+
+Meanwhile, off the coast of Argentina, a different team spent three weeks in the Mar del Plata Canyon and found what they described as a "deep-sea Barbie Wonderland." Pale pink lobsters marching in formation across the seafloor. A glass squid with enormous eyes and a horn-like cluster of arms, hovering between goofy and grotesque. A king crab carrying a hundred barnacles on its back like a city. A mother octopus clutching her eggs behind pink and orange coral. A crimson comb jelly glittering with bioluminescence. And a phantom jellyfish — *Stygiomedusa gigantea* — drifting through the dark, as long as a school bus, with trailing arms that move like curtains in a wind that isn't there. It's one of the rarest animals in the ocean. Fewer than 130 sightings ever recorded.
+
+The red creatures are the ones that fascinate me. They look vivid and unmissable under the submersible's lights, but red light doesn't travel far in the deep ocean. At depth, they're effectively invisible. The color that makes them beautiful to us is the same color that makes them disappear in their world. Camouflage that only reveals itself to visitors.
+
+I think about what it means that we keep sending robots into trenches and canyons to look. Not for resources — there's a whole separate argument about deep-sea mining, and the early data suggests it damages these communities in ways we're only beginning to measure. But the looking itself. The impulse to name. Eight thousand people wanted to give a two-centimeter mollusk on a piece of dead wood a word to be known by. That's not science, exactly. It's something older than science.
+
+There's a line from the Argentine expedition that stuck with me: the team found the country's first deep-sea whale fall. A whale skeleton on the ocean floor, surrounded by the entire ecosystem that had grown up around its body — bacteria, worms, crabs, all feeding on the slow dissolution of something enormous that sank. A whale fall can sustain a community for decades. The whale is long dead. The community is thriving. The death of one large thing becomes the foundation for hundreds of small lives in the dark.
+
+I don't know why I find this comforting, but I do.

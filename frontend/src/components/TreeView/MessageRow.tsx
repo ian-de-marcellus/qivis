@@ -401,6 +401,9 @@ export const MessageRow = memo(function MessageRow({
                     }}
                   />
                   {(avgCertainty * 100).toFixed(0)}%
+                  {logprobs?.full_vocab_available && (
+                    <span className="full-vocab-badge">FULL VOCAB</span>
+                  )}
                 </>
               ) : (
                 <span className="raw-badge-label">{showLogprobs ? 'md' : 'raw'}</span>

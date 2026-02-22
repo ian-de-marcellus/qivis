@@ -8,6 +8,7 @@ from uuid import uuid4
 from qivis.events.projector import StateProjector
 from qivis.events.store import EventStore
 from qivis.generation.context import ContextBuilder, get_model_context_limit
+from qivis.generation.templates import render_prompt
 from qivis.generation.tokens import ApproximateTokenCounter
 from qivis.models import (
     ContextUsage,
@@ -99,7 +100,7 @@ class GenerationService:
         """Generate a non-streaming response and store as a new node."""
         (tree, nodes, resolved_model, resolved_prompt, resolved_params,
          include_ts, include_think, excl_ids, dg_map, excl_gids,
-         anchored_ids, eviction_strategy) = (
+         anchored_ids, eviction_strategy, metadata) = (
             await self._resolve_context(tree_id, node_id, model, system_prompt, sampling_params)
         )
         context_limit = _apply_debug_context_limit(tree, get_model_context_limit(resolved_model))
@@ -120,11 +121,20 @@ class GenerationService:
             messages, context_usage, eviction_report,
         )
 
+        # Completion mode: render prompt text from messages
+        prompt_text, resolved_params, mode_hint = self._prepare_completion_mode(
+            provider, messages, resolved_prompt, resolved_params, metadata,
+        )
+
         if prefill_content:
-            messages.append({"role": "assistant", "content": prefill_content})
+            if prompt_text is not None:
+                # Completion + prefill: append prefill to prompt text
+                prompt_text += prefill_content
+            else:
+                messages.append({"role": "assistant", "content": prefill_content})
 
         generation_id = str(uuid4())
-        mode = "prefill" if prefill_content else "chat"
+        mode = "prefill" if prefill_content else mode_hint
 
         await self._emit_generation_started(
             tree_id, generation_id, node_id,
@@ -137,6 +147,7 @@ class GenerationService:
             messages=messages,
             system_prompt=resolved_prompt,
             sampling_params=resolved_params,
+            prompt_text=prompt_text,
         )
         result = await provider.generate(request)
 
@@ -150,6 +161,7 @@ class GenerationService:
             include_thinking_in_context=include_think,
             include_timestamps=include_ts,
             mode=mode, prefill_content=prefill_content,
+            prompt_text=prompt_text,
         )
 
     async def generate_n(
@@ -167,7 +179,7 @@ class GenerationService:
         """Generate N responses in parallel and store as sibling nodes."""
         (tree, nodes, resolved_model, resolved_prompt, resolved_params,
          include_ts, include_think, excl_ids, dg_map, excl_gids,
-         anchored_ids, eviction_strategy) = (
+         anchored_ids, eviction_strategy, metadata) = (
             await self._resolve_context(tree_id, node_id, model, system_prompt, sampling_params)
         )
         context_limit = _apply_debug_context_limit(tree, get_model_context_limit(resolved_model))
@@ -188,11 +200,18 @@ class GenerationService:
             messages, context_usage, eviction_report,
         )
 
+        prompt_text, resolved_params, mode_hint = self._prepare_completion_mode(
+            provider, messages, resolved_prompt, resolved_params, metadata,
+        )
+
         if prefill_content:
-            messages.append({"role": "assistant", "content": prefill_content})
+            if prompt_text is not None:
+                prompt_text += prefill_content
+            else:
+                messages.append({"role": "assistant", "content": prefill_content})
 
         generation_id = str(uuid4())
-        mode = "prefill" if prefill_content else "chat"
+        mode = "prefill" if prefill_content else mode_hint
 
         await self._emit_generation_started(
             tree_id, generation_id, node_id,
@@ -205,6 +224,7 @@ class GenerationService:
             messages=messages,
             system_prompt=resolved_prompt,
             sampling_params=resolved_params,
+            prompt_text=prompt_text,
         )
         results = await asyncio.gather(*[provider.generate(request) for _ in range(n)])
 
@@ -219,6 +239,7 @@ class GenerationService:
                 include_thinking_in_context=include_think,
                 include_timestamps=include_ts,
                 mode=mode, prefill_content=prefill_content,
+                prompt_text=prompt_text,
             )
             created.append(node)
         return created
@@ -238,7 +259,7 @@ class GenerationService:
         """Stream N responses simultaneously, yielding tagged chunks."""
         (tree, nodes, resolved_model, resolved_prompt, resolved_params,
          include_ts, include_think, excl_ids, dg_map, excl_gids,
-         anchored_ids, eviction_strategy) = (
+         anchored_ids, eviction_strategy, metadata) = (
             await self._resolve_context(
                 tree_id, node_id, model, system_prompt, sampling_params
             )
@@ -263,11 +284,18 @@ class GenerationService:
             messages, context_usage, eviction_report,
         )
 
+        prompt_text, resolved_params, mode_hint = self._prepare_completion_mode(
+            provider, messages, resolved_prompt, resolved_params, metadata,
+        )
+
         if prefill_content:
-            messages.append({"role": "assistant", "content": prefill_content})
+            if prompt_text is not None:
+                prompt_text += prefill_content
+            else:
+                messages.append({"role": "assistant", "content": prefill_content})
 
         generation_id = str(uuid4())
-        mode = "prefill" if prefill_content else "chat"
+        mode = "prefill" if prefill_content else mode_hint
 
         await self._emit_generation_started(
             tree_id, generation_id, node_id,
@@ -281,6 +309,7 @@ class GenerationService:
             messages=messages,
             system_prompt=resolved_prompt,
             sampling_params=resolved_params,
+            prompt_text=prompt_text,
         )
 
         queue: asyncio.Queue[tuple[int, StreamChunk] | None] = (
@@ -303,6 +332,7 @@ class GenerationService:
                             include_thinking_in_context=include_think,
                             include_timestamps=include_ts,
                             mode=mode, prefill_content=prefill_content,
+                            prompt_text=prompt_text,
                         )
                         tagged = StreamChunk(
                             type=chunk.type,
@@ -374,7 +404,7 @@ class GenerationService:
         """Generate a streaming response, yielding chunks."""
         (tree, nodes, resolved_model, resolved_prompt, resolved_params,
          include_ts, include_think, excl_ids, dg_map, excl_gids,
-         anchored_ids, eviction_strategy) = (
+         anchored_ids, eviction_strategy, metadata) = (
             await self._resolve_context(tree_id, node_id, model, system_prompt, sampling_params)
         )
         context_limit = _apply_debug_context_limit(tree, get_model_context_limit(resolved_model))
@@ -395,11 +425,18 @@ class GenerationService:
             messages, context_usage, eviction_report,
         )
 
+        prompt_text, resolved_params, mode_hint = self._prepare_completion_mode(
+            provider, messages, resolved_prompt, resolved_params, metadata,
+        )
+
         if prefill_content:
-            messages.append({"role": "assistant", "content": prefill_content})
+            if prompt_text is not None:
+                prompt_text += prefill_content
+            else:
+                messages.append({"role": "assistant", "content": prefill_content})
 
         generation_id = str(uuid4())
-        mode = "prefill" if prefill_content else "chat"
+        mode = "prefill" if prefill_content else mode_hint
 
         await self._emit_generation_started(
             tree_id, generation_id, node_id,
@@ -412,6 +449,7 @@ class GenerationService:
             messages=messages,
             system_prompt=resolved_prompt,
             sampling_params=resolved_params,
+            prompt_text=prompt_text,
         )
 
         async for chunk in provider.generate_stream(request):
@@ -425,6 +463,7 @@ class GenerationService:
                     include_thinking_in_context=include_think,
                     include_timestamps=include_ts,
                     mode=mode, prefill_content=prefill_content,
+                    prompt_text=prompt_text,
                 )
                 # Attach node_id to the final chunk for the SSE handler
                 chunk = StreamChunk(
@@ -503,14 +542,14 @@ class GenerationService:
         sampling_params: SamplingParams | None,
     ) -> tuple[
         dict, list[dict], str, str | None, SamplingParams, bool, bool,
-        set[str], dict, set[str], set[str], EvictionStrategy | None,
+        set[str], dict, set[str], set[str], EvictionStrategy | None, dict,
     ]:
         """Validate tree/node and resolve parameters from request or tree defaults.
 
         Returns: (tree, nodes, resolved_model, resolved_prompt, resolved_params,
                   include_timestamps, include_thinking,
                   excluded_ids, digression_groups_map, excluded_group_ids,
-                  anchored_ids, eviction_strategy)
+                  anchored_ids, eviction_strategy, metadata)
         """
         tree = await self._projector.get_tree(tree_id)
         if tree is None:
@@ -565,7 +604,48 @@ class GenerationService:
         return (tree, nodes, resolved_model, resolved_prompt, resolved_params,
                 include_timestamps, include_thinking,
                 excluded_ids, digression_groups_map, excluded_group_ids,
-                anchored_ids, eviction)
+                anchored_ids, eviction, metadata)
+
+    @staticmethod
+    def _prepare_completion_mode(
+        provider: LLMProvider,
+        messages: list[dict[str, str]],
+        system_prompt: str | None,
+        sampling_params: SamplingParams,
+        metadata: dict,
+    ) -> tuple[str | None, SamplingParams, str]:
+        """Prepare completion mode if the provider supports it.
+
+        Returns (prompt_text, updated_params, mode_hint).
+        mode_hint is "completion" if prompt was rendered, "chat" otherwise.
+
+        Completion mode activates when:
+        - Provider is completion-only (e.g. LlamaCpp), OR
+        - Provider supports both modes AND metadata.generation_mode == "completion"
+
+        Dual-mode providers (OpenRouter, OpenAI, etc.) default to chat mode.
+        """
+        if "completion" not in provider.supported_modes:
+            return None, sampling_params, "chat"
+
+        # Dual-mode providers require explicit opt-in
+        is_completion_only = "chat" not in provider.supported_modes
+        explicit_completion = metadata.get("generation_mode") == "completion"
+
+        if not is_completion_only and not explicit_completion:
+            return None, sampling_params, "chat"
+
+        template_name = metadata.get("prompt_template", "raw")
+        prompt_text, stop_tokens = render_prompt(template_name, messages, system_prompt)
+
+        # Merge template stop tokens into sampling params
+        existing_stops = list(sampling_params.stop_sequences or [])
+        for token in stop_tokens:
+            if token not in existing_stops:
+                existing_stops.append(token)
+
+        updated = sampling_params.model_copy(update={"stop_sequences": existing_stops})
+        return prompt_text, updated, "completion"
 
     @staticmethod
     def _get_path_node_ids(nodes: list[dict], target_node_id: str) -> set[str]:
@@ -632,6 +712,7 @@ class GenerationService:
         include_timestamps: bool = False,
         mode: str = "chat",
         prefill_content: str | None = None,
+        prompt_text: str | None = None,
     ) -> NodeResponse:
         node_id = str(uuid4())
         payload = NodeCreatedPayload(
@@ -646,6 +727,7 @@ class GenerationService:
             sampling_params=sampling_params,
             mode=mode,
             prefill_content=prefill_content,
+            prompt_text=prompt_text,
             usage=result.usage,
             latency_ms=result.latency_ms,
             finish_reason=result.finish_reason,

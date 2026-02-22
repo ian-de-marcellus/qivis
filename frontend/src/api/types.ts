@@ -41,6 +41,7 @@ export interface NodeResponse {
   sampling_params: SamplingParams | null
   mode: string | null
   prefill_content: string | null
+  prompt_text: string | null
   usage: Record<string, number> | null
   latency_ms: number | null
   finish_reason: string | null
@@ -100,6 +101,7 @@ export interface LogprobData {
   tokens: TokenLogprob[]
   provider_format: string
   top_k_available: number
+  full_vocab_available?: boolean
 }
 
 export interface TreeDetail {
@@ -122,6 +124,7 @@ export interface ProviderInfo {
   available: boolean
   models: string[]
   supported_params: string[]
+  supported_modes: string[]
 }
 
 export interface EditHistoryEntry {

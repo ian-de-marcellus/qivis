@@ -1,6 +1,7 @@
 """FastAPI routes for tree and node CRUD, and generation."""
 
 import json as json_module
+import logging
 from collections.abc import AsyncIterator
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -54,6 +55,8 @@ from qivis.trees.service import (
     TreeNotFoundError,
     TreeService,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/trees", tags=["trees"])
 
@@ -596,6 +599,8 @@ async def generate(
         raise HTTPException(status_code=404, detail=f"Tree not found: {tree_id}")
     except NodeNotFoundForGenerationError:
         raise HTTPException(status_code=404, detail=f"Node not found: {node_id}")
+    except (RuntimeError, Exception) as e:
+        raise HTTPException(status_code=502, detail=str(e))
 
 
 async def _stream_sse(
@@ -644,7 +649,9 @@ async def _stream_sse(
         error = {"error": f"Node not found: {node_id}"}
         yield f"event: error\ndata: {json_module.dumps(error)}\n\n"
     except Exception as e:
-        error = {"error": str(e)}
+        detail = str(e) or f"{type(e).__name__} (no message)"
+        logger.exception("Streaming generation error")
+        error = {"error": detail}
         yield f"event: error\ndata: {json_module.dumps(error)}\n\n"
 
 
@@ -728,5 +735,7 @@ async def _stream_n_sse(
         error = {"error": f"Node not found: {node_id}"}
         yield f"event: error\ndata: {json_module.dumps(error)}\n\n"
     except Exception as e:
-        error = {"error": str(e)}
+        detail = str(e) or f"{type(e).__name__} (no message)"
+        logger.exception("Streaming generation error (n>1)")
+        error = {"error": detail}
         yield f"event: error\ndata: {json_module.dumps(error)}\n\n"
