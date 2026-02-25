@@ -35,7 +35,9 @@ export function TreeList() {
   const fetchProviders = useTreeStore(s => s.fetchProviders)
   const [isCreating, setIsCreating] = useState(false)
   const [newTitle, setNewTitle] = useState('')
+  const [newGenerationMode, setNewGenerationMode] = useState<'chat' | 'completion'>('chat')
   const [newSystemPrompt, setNewSystemPrompt] = useState('')
+  const [newPromptTemplate, setNewPromptTemplate] = useState('raw')
   const [showSettings, setShowSettings] = useState(false)
   const [newProvider, setNewProvider] = useState('')
   const [newModel, setNewModel] = useState('')
@@ -110,16 +112,20 @@ export function TreeList() {
   const handleCreate = async () => {
     if (!newTitle.trim()) return
     await createTree(newTitle.trim(), {
-      systemPrompt: newSystemPrompt.trim() || undefined,
+      systemPrompt: newGenerationMode === 'chat' ? (newSystemPrompt.trim() || undefined) : undefined,
       defaultProvider: newProvider || undefined,
       defaultModel: newModel || undefined,
       metadata: {
-        include_timestamps: newIncludeTimestamps,
+        generation_mode: newGenerationMode,
+        ...(newGenerationMode === 'completion' && { prompt_template: newPromptTemplate }),
+        include_timestamps: newGenerationMode === 'chat' && newIncludeTimestamps,
         stream_responses: newStreamResponses,
       },
     })
     setNewTitle('')
+    setNewGenerationMode('chat')
     setNewSystemPrompt('')
+    setNewPromptTemplate('raw')
     setNewProvider('')
     setNewModel('')
     setNewIncludeTimestamps(true)
@@ -328,12 +334,32 @@ export function TreeList() {
             onKeyDown={handleKeyDown}
             autoFocus
           />
-          <textarea
-            placeholder="System prompt (optional)..."
-            value={newSystemPrompt}
-            onChange={(e) => setNewSystemPrompt(e.target.value)}
-            rows={2}
-          />
+
+          <div className="mode-selector">
+            <button
+              type="button"
+              className={`mode-selector-btn ${newGenerationMode === 'chat' ? 'active' : ''}`}
+              onClick={() => setNewGenerationMode('chat')}
+            >
+              Chat
+            </button>
+            <button
+              type="button"
+              className={`mode-selector-btn ${newGenerationMode === 'completion' ? 'active' : ''}`}
+              onClick={() => setNewGenerationMode('completion')}
+            >
+              Completion
+            </button>
+          </div>
+
+          {newGenerationMode === 'chat' && (
+            <textarea
+              placeholder="System prompt (optional)..."
+              value={newSystemPrompt}
+              onChange={(e) => setNewSystemPrompt(e.target.value)}
+              rows={2}
+            />
+          )}
 
           <button
             type="button"
@@ -384,16 +410,32 @@ export function TreeList() {
                   ))}
                 </datalist>
               </div>
-              <div className="create-setting-toggle">
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={newIncludeTimestamps}
-                    onChange={(e) => setNewIncludeTimestamps(e.target.checked)}
-                  />
-                  Include timestamps in context
-                </label>
-              </div>
+              {newGenerationMode === 'completion' && (
+                <div className="create-setting-row">
+                  <label>Prompt template</label>
+                  <select
+                    value={newPromptTemplate}
+                    onChange={(e) => setNewPromptTemplate(e.target.value)}
+                  >
+                    <option value="raw">Raw (no template)</option>
+                    <option value="alpaca">Alpaca</option>
+                    <option value="chatml">ChatML</option>
+                    <option value="llama3">Llama 3</option>
+                  </select>
+                </div>
+              )}
+              {newGenerationMode === 'chat' && (
+                <div className="create-setting-toggle">
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={newIncludeTimestamps}
+                      onChange={(e) => setNewIncludeTimestamps(e.target.checked)}
+                    />
+                    Include timestamps in context
+                  </label>
+                </div>
+              )}
               <div className="create-setting-toggle">
                 <label>
                   <input

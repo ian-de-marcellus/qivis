@@ -7,7 +7,8 @@ import { SearchPanel } from './components/Library/SearchPanel.tsx'
 import { TreeList } from './components/Library/TreeList.tsx'
 import { getTreeDefaults } from './components/TreeView/contextDiffs.ts'
 import { DigressionSidePanel } from './components/TreeView/DigressionPanel.tsx'
-import { LinearView } from './components/TreeView/LinearView.tsx'
+import { ChatView } from './components/TreeView/ChatView.tsx'
+import { CompletionView } from './components/TreeView/CompletionView.tsx'
 import { MessageInput } from './components/TreeView/MessageInput.tsx'
 import { SystemPromptInput } from './components/TreeView/SystemPromptInput.tsx'
 import { TreeSettings } from './components/TreeView/TreeSettings.tsx'
@@ -146,8 +147,11 @@ function App() {
             <div className="split-layout">
               <div className="linear-pane">
                 <TreeSettings />
-                <SystemPromptInput />
-                <LinearView />
+                {(currentTree.metadata?.generation_mode as string) !== 'completion' && <SystemPromptInput />}
+                {(currentTree.metadata?.generation_mode as string) === 'completion'
+                  ? <CompletionView />
+                  : <ChatView />
+                }
                 <MessageInput />
               </div>
               <div
@@ -166,8 +170,11 @@ function App() {
           ) : (
             <>
               <TreeSettings />
-              <SystemPromptInput />
-              <LinearView />
+              {(currentTree.metadata?.generation_mode as string) !== 'completion' && <SystemPromptInput />}
+              {(currentTree.metadata?.generation_mode as string) === 'completion'
+                ? <CompletionView />
+                : <ChatView />
+              }
               <MessageInput />
             </>
           )

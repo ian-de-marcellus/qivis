@@ -1,6 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { GenerateRequest, NodeResponse } from '../../api/types.ts'
-import { getActivePath, useTreeStore, useTreeData, useStreamingState, useNavigation, useComparison, useDigressionState, useResearchMetadata } from '../../store/treeStore.ts'
+import { useTreeStore, useTreeData, useStreamingState, useComparison, useDigressionState, useResearchMetadata } from '../../store/treeStore.ts'
 import { ComparisonView } from '../ComparisonView/ComparisonView.tsx'
 import { ComparisonPickerBanner } from './ComparisonPickerBanner.tsx'
 import { ContextModal } from './ContextModal.tsx'
@@ -16,26 +15,22 @@ import {
 import type { DiffSummary } from './contextDiffs.ts'
 import { DigressionCreator } from './DigressionPanel.tsx'
 import { ForkPanel } from './ForkPanel.tsx'
+import { GenerationErrorPanel } from './GenerationErrorPanel.tsx'
 import { MessageRow } from './MessageRow.tsx'
+import { StreamingDisplay } from './StreamingDisplay.tsx'
 import { SummarizePanel } from './SummarizePanel.tsx'
-import { ThinkingSection } from './ThinkingSection.tsx'
+import { useActivePath, useAutoScroll, useScrollToNode, useBranchDefaults, useForkPanel } from './useViewShared.ts'
 import './DigressionPanel.css'
-import './LinearView.css'
+import './ChatView.css'
 
-interface ForkTarget {
-  parentId: string
-  mode: 'fork' | 'regenerate' | 'prefill' | 'generate'
-}
-
-export function LinearView() {
+export function ChatView() {
   const { currentTree, providers } = useTreeData()
   const {
     isGenerating, streamingContent, streamingThinkingContent,
     streamingContents, streamingThinkingContents, streamingNodeIds,
-    streamingTotal, activeStreamIndex, regeneratingParentId, generationError,
+    streamingTotal, activeStreamIndex, generationError,
     stopGeneration,
   } = useStreamingState()
-  const { branchSelections } = useNavigation()
   const {
     splitViewNodeId, comparisonNodeId, comparisonPickingMode,
     comparisonPickingSourceId, inspectedNodeId,
@@ -46,10 +41,7 @@ export function LinearView() {
   const selectBranch = useTreeStore(s => s.selectBranch)
   const editNodeContent = useTreeStore(s => s.editNodeContent)
   const setActiveStreamIndex = useTreeStore(s => s.setActiveStreamIndex)
-  const forkAndGenerate = useTreeStore(s => s.forkAndGenerate)
   const regenerate = useTreeStore(s => s.regenerate)
-  const prefillAssistant = useTreeStore(s => s.prefillAssistant)
-  const prefillAndGenerate = useTreeStore(s => s.prefillAndGenerate)
   const clearGenerationError = useTreeStore(s => s.clearGenerationError)
   const fetchProviders = useTreeStore(s => s.fetchProviders)
   const setInspectedNodeId = useTreeStore(s => s.setInspectedNodeId)
@@ -66,63 +58,26 @@ export function LinearView() {
   const enterComparisonPicking = useTreeStore(s => s.enterComparisonPicking)
   const pickComparisonTarget = useTreeStore(s => s.pickComparisonTarget)
   const cancelComparisonPicking = useTreeStore(s => s.cancelComparisonPicking)
-  const scrollToNodeId = useTreeStore(s => s.scrollToNodeId)
-  const clearScrollToNode = useTreeStore(s => s.clearScrollToNode)
 
   const bottomRef = useRef<HTMLDivElement>(null)
-  const [forkTarget, setForkTarget] = useState<ForkTarget | null>(null)
   const [comparingAtParent, setComparingAtParent] = useState<string | null>(null)
   const [summarizeTargetId, setSummarizeTargetId] = useState<string | null>(null)
+
+  // Shared hooks
+  const { nodes, path, childMap, leafNodeId } = useActivePath()
+  useAutoScroll(bottomRef)
+  useScrollToNode()
+  const branchDefaults = useBranchDefaults(path)
+  const {
+    forkTarget, setForkTarget,
+    handleFork, handleForkSubmit, handleRegenerateSubmit,
+    handlePrefillSubmit, handlePrefillContinue,
+  } = useForkPanel()
 
   // Fetch providers once on mount
   useEffect(() => {
     fetchProviders()
   }, [fetchProviders])
-
-  // Scroll to a specific node (e.g., from search result navigation)
-  useEffect(() => {
-    if (!scrollToNodeId) return
-    // Defer to next frame so the DOM has updated with the new path
-    requestAnimationFrame(() => {
-      const el = document.querySelector(`[data-node-id="${scrollToNodeId}"]`)
-      if (el) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'center' })
-      }
-      clearScrollToNode()
-    })
-  }, [scrollToNodeId, clearScrollToNode])
-
-  const nodes = currentTree?.nodes ?? []
-  let path = getActivePath(nodes, branchSelections)
-
-  // Build childMap for sibling lookups
-  const childMap = new Map<string | null, NodeResponse[]>()
-  for (const node of nodes) {
-    const children = childMap.get(node.parent_id) ?? []
-    children.push(node)
-    childMap.set(node.parent_id, children)
-  }
-
-  // When regenerating, truncate the path at the regeneration point
-  // so the old assistant message (and everything below it) disappears
-  if (regeneratingParentId != null) {
-    const cutIndex = path.findIndex((n) => n.parent_id === regeneratingParentId)
-    if (cutIndex !== -1) {
-      path = path.slice(0, cutIndex)
-    }
-  }
-
-  // Auto-scroll only when path grows or streaming content arrives
-  const activeMultiContent = streamingContents[activeStreamIndex]
-  const prevPathLenRef = useRef(path.length)
-  useEffect(() => {
-    const pathGrew = path.length > prevPathLenRef.current
-    prevPathLenRef.current = path.length
-    const hasStreamContent = !!streamingContent || !!streamingThinkingContent || !!activeMultiContent
-    if (pathGrew || hasStreamContent) {
-      bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-    }
-  }, [path.length, streamingContent, streamingThinkingContent, activeMultiContent])
 
   // Esc key cancels comparison picking mode
   useEffect(() => {
@@ -138,16 +93,6 @@ export function LinearView() {
   }, [comparisonPickingMode, cancelComparisonPicking])
 
   if (!currentTree) return null
-
-  const leafNodeId = path.length > 0 ? path[path.length - 1].node_id : null
-
-  // Branch-local defaults: use last assistant node's provider/model from active path
-  const lastAssistant = [...path].reverse().find((n) => n.role === 'assistant')
-  const branchDefaults = {
-    provider: lastAssistant?.provider ?? currentTree.default_provider,
-    model: lastAssistant?.model ?? currentTree.default_model,
-    systemPrompt: currentTree.default_system_prompt,
-  }
 
   // Compute highlight classes when an edit version is selected
   const highlights = useMemo(() => {
@@ -267,43 +212,6 @@ export function LinearView() {
 
   const handleSelectSibling = (parentId: string, siblingId: string) => {
     selectBranch(parentId, siblingId)
-  }
-
-  const handleFork = (parentId: string, role: string) => {
-    const mode = role === 'assistant' ? 'regenerate' : 'fork'
-    if (forkTarget?.parentId === parentId && forkTarget.mode === mode) {
-      setForkTarget(null)
-    } else {
-      setForkTarget({ parentId, mode })
-    }
-  }
-
-  const handleForkSubmit = (content: string, overrides: GenerateRequest) => {
-    if (forkTarget != null) {
-      forkAndGenerate(forkTarget.parentId, content, overrides)
-      setForkTarget(null)
-    }
-  }
-
-  const handleRegenerateSubmit = (overrides: GenerateRequest) => {
-    if (forkTarget != null) {
-      regenerate(forkTarget.parentId, overrides)
-      setForkTarget(null)
-    }
-  }
-
-  const handlePrefillSubmit = (content: string) => {
-    if (forkTarget != null) {
-      prefillAssistant(forkTarget.parentId, content)
-      setForkTarget(null)
-    }
-  }
-
-  const handlePrefillContinue = (content: string, overrides: GenerateRequest) => {
-    if (forkTarget != null) {
-      prefillAndGenerate(forkTarget.parentId, content, overrides)
-      setForkTarget(null)
-    }
   }
 
   // In picking mode, determine which nodes are pickable (non-manual assistant nodes, excluding source)
@@ -450,125 +358,27 @@ export function LinearView() {
           )
         })}
 
-        {isGenerating && streamingTotal > 1 && (
-          <div className="message-row assistant">
-            <div className="message-header-row">
-              <div className="message-role">assistant</div>
-              <div className="streaming-branch-nav">
-                <button
-                  className="streaming-nav-arrow"
-                  onClick={() => setActiveStreamIndex(activeStreamIndex - 1)}
-                  disabled={activeStreamIndex <= 0}
-                >
-                  &#8249;
-                </button>
-                <span className="streaming-nav-label">
-                  {activeStreamIndex + 1} of {streamingTotal}
-                </span>
-                <button
-                  className="streaming-nav-arrow"
-                  onClick={() => setActiveStreamIndex(activeStreamIndex + 1)}
-                  disabled={activeStreamIndex >= streamingTotal - 1}
-                >
-                  &#8250;
-                </button>
-              </div>
-            </div>
-            {streamingThinkingContents[activeStreamIndex] && (
-              <ThinkingSection
-                thinkingContent={streamingThinkingContents[activeStreamIndex]}
-                isStreaming={!streamingContents[activeStreamIndex]}
-              />
-            )}
-            <div className="message-content">
-              {streamingContents[activeStreamIndex]
-                ? (
-                  <>
-                    {streamingContents[activeStreamIndex]}
-                    {!streamingNodeIds[activeStreamIndex] && (
-                      <span className="streaming-cursor" />
-                    )}
-                  </>
-                )
-                : streamingThinkingContents[activeStreamIndex]
-                  ? null
-                  : <span className="thinking">Thinking...</span>
-              }
-            </div>
-          </div>
-        )}
+        <StreamingDisplay
+          isGenerating={isGenerating}
+          streamingContent={streamingContent}
+          streamingThinkingContent={streamingThinkingContent}
+          streamingContents={streamingContents}
+          streamingThinkingContents={streamingThinkingContents}
+          streamingNodeIds={streamingNodeIds}
+          streamingTotal={streamingTotal}
+          activeStreamIndex={activeStreamIndex}
+          setActiveStreamIndex={setActiveStreamIndex}
+          stopGeneration={stopGeneration}
+        />
 
-        {isGenerating && streamingTotal <= 1 && (streamingContent || streamingThinkingContent) && (
-          <div className="message-row assistant">
-            <div className="message-role">assistant</div>
-            {streamingThinkingContent && (
-              <ThinkingSection
-                thinkingContent={streamingThinkingContent}
-                isStreaming={!streamingContent}
-              />
-            )}
-            <div className="message-content">
-              {streamingContent
-                ? (
-                  <>
-                    {streamingContent}
-                    <span className="streaming-cursor" />
-                  </>
-                )
-                : streamingThinkingContent
-                  ? null
-                  : <span className="thinking">Thinking...</span>
-              }
-            </div>
-          </div>
-        )}
-
-        {isGenerating && streamingTotal <= 1 && !streamingContent && !streamingThinkingContent && (
-          <div className="message-row assistant">
-            <div className="message-role">assistant</div>
-            <div className="message-content thinking">Thinking...</div>
-          </div>
-        )}
-
-        {isGenerating && (
-          <div className="stop-generation-row">
-            <button className="stop-generation-btn" onClick={stopGeneration}>
-              Stop generating
-            </button>
-          </div>
-        )}
-
-        {!isGenerating && generationError && leafNodeId === generationError.parentNodeId && (
-          <div className="generation-error-panel">
-            <div className="generation-error-header">Generation failed</div>
-            <div className="generation-error-message">{generationError.errorMessage}</div>
-            <div className="generation-error-actions">
-              <button
-                className="generation-error-retry"
-                onClick={() => {
-                  regenerate(generationError.parentNodeId, {
-                    provider: generationError.provider,
-                    model: generationError.model ?? undefined,
-                    system_prompt: generationError.systemPrompt ?? undefined,
-                  })
-                }}
-              >
-                Retry
-              </button>
-              <button
-                className="generation-error-settings"
-                onClick={() => {
-                  clearGenerationError()
-                  setForkTarget({ parentId: generationError.parentNodeId, mode: 'regenerate' })
-                }}
-              >
-                Change settings
-              </button>
-              <button className="generation-error-dismiss" onClick={clearGenerationError}>
-                Dismiss
-              </button>
-            </div>
-          </div>
+        {!isGenerating && generationError && (
+          <GenerationErrorPanel
+            generationError={generationError}
+            leafNodeId={leafNodeId}
+            onRetry={regenerate}
+            onChangeSettings={setForkTarget}
+            onDismiss={clearGenerationError}
+          />
         )}
 
         <div ref={bottomRef} />

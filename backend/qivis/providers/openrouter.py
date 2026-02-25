@@ -10,9 +10,16 @@ completion mode, we bypass the SDK and use httpx directly to send `prompt`
 
 Note: OpenRouter sometimes returns errors with HTTP 200 status. Both
 completion methods check for `error` in the response body.
+
+Retry: Upstream providers behind OpenRouter (e.g. Hyperbolic) often return 429
+on cold-start — the first request after inactivity triggers model warm-up but
+gets rejected. We retry 429s with exponential backoff so the user doesn't have
+to manually retry.
 """
 
+import asyncio
 import json
+import logging
 import time
 from collections.abc import AsyncIterator
 
@@ -26,6 +33,23 @@ from qivis.providers.base import (
     StreamChunk,
 )
 from qivis.providers.openai_compat import OpenAICompatibleProvider
+
+logger = logging.getLogger(__name__)
+
+# Retry config for 429 (upstream cold-start / rate-limit)
+_MAX_RETRIES_429 = 2
+_RETRY_BACKOFF_BASE = 2.0  # seconds
+
+
+def _retry_delay(resp: httpx.Response, attempt: int) -> float:
+    """Compute retry delay, respecting Retry-After header if present."""
+    retry_after = resp.headers.get("retry-after")
+    if retry_after:
+        try:
+            return min(float(retry_after), 10.0)
+        except ValueError:
+            pass
+    return _RETRY_BACKOFF_BASE * (2 ** attempt)
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
@@ -91,13 +115,56 @@ class OpenRouterProvider(OpenAICompatibleProvider):
 
     async def _generate_completion(self, request: GenerationRequest) -> GenerationResult:
         body = self._build_completion_body(request)
+
+        # Retry loop for 429 (upstream cold-start)
         start = time.monotonic()
-        resp = await self._http.post(
-            f"{OPENROUTER_BASE_URL}/completions",
-            json=body,
-            headers=self._completion_headers,
-        )
-        resp.raise_for_status()
+        resp: httpx.Response | None = None
+        for attempt in range(1 + _MAX_RETRIES_429):
+            resp = await self._http.post(
+                f"{OPENROUTER_BASE_URL}/completions",
+                json=body,
+                headers=self._completion_headers,
+            )
+            if resp.status_code == 429 and attempt < _MAX_RETRIES_429:
+                delay = _retry_delay(resp, attempt)
+                logger.info(
+                    "OpenRouter 429 for %s, retrying in %.1fs (%d/%d)",
+                    request.model, delay, attempt + 1, _MAX_RETRIES_429,
+                )
+                await asyncio.sleep(delay)
+                continue
+            break
+        assert resp is not None
+
+        if resp.status_code >= 400:
+            # Read the full body — OpenRouter nests details in error.metadata,
+            # provider_errors, etc.
+            detail = resp.text
+            try:
+                err_data = resp.json()
+                if "error" in err_data:
+                    err = err_data["error"]
+                    if isinstance(err, dict):
+                        # Prefer the most specific message available
+                        parts = []
+                        if err.get("message"):
+                            parts.append(err["message"])
+                        # metadata.raw often has the upstream provider error
+                        meta = err.get("metadata", {})
+                        if isinstance(meta, dict) and meta.get("raw"):
+                            parts.append(f"[upstream: {meta['raw']}]")
+                        detail = " ".join(parts) if parts else str(err)
+                    else:
+                        detail = str(err)
+            except Exception:
+                pass
+            logger.warning(
+                "OpenRouter /completions %d for model %s: %s",
+                resp.status_code, request.model, resp.text,
+            )
+            raise RuntimeError(
+                f"OpenRouter completion error ({resp.status_code}): {detail}"
+            )
         latency_ms = int((time.monotonic() - start) * 1000)
         data = resp.json()
 
@@ -132,6 +199,7 @@ class OpenRouterProvider(OpenAICompatibleProvider):
     ) -> AsyncIterator[StreamChunk]:
         body = self._build_completion_body(request)
         body["stream"] = True
+        logger.info("OpenRouter completion stream request: model=%s body=%s", request.model, body)
 
         start = time.monotonic()
         accumulated = ""
@@ -140,13 +208,60 @@ class OpenRouterProvider(OpenAICompatibleProvider):
         input_tokens = 0
         output_tokens = 0
 
-        async with self._http.stream(
-            "POST",
-            f"{OPENROUTER_BASE_URL}/completions",
-            json=body,
-            headers=self._completion_headers,
-        ) as resp:
-            resp.raise_for_status()
+        # Retry loop for 429 (upstream cold-start). Each attempt opens a new
+        # stream; we close it cleanly before retrying.
+        stream_cm = None
+        resp = None
+        for attempt in range(1 + _MAX_RETRIES_429):
+            stream_cm = self._http.stream(
+                "POST",
+                f"{OPENROUTER_BASE_URL}/completions",
+                json=body,
+                headers=self._completion_headers,
+            )
+            resp = await stream_cm.__aenter__()
+            if resp.status_code == 429 and attempt < _MAX_RETRIES_429:
+                await resp.aread()
+                await stream_cm.__aexit__(None, None, None)
+                stream_cm = None
+                delay = _retry_delay(resp, attempt)
+                logger.info(
+                    "OpenRouter 429 stream for %s, retrying in %.1fs (%d/%d)",
+                    request.model, delay, attempt + 1, _MAX_RETRIES_429,
+                )
+                await asyncio.sleep(delay)
+                continue
+            break
+        assert resp is not None and stream_cm is not None
+
+        try:
+            if resp.status_code >= 400:
+                body_bytes = await resp.aread()
+                raw = body_bytes.decode(errors="replace")
+                detail = raw
+                try:
+                    err_data = json.loads(raw)
+                    if "error" in err_data:
+                        err = err_data["error"]
+                        if isinstance(err, dict):
+                            parts = []
+                            if err.get("message"):
+                                parts.append(err["message"])
+                            meta = err.get("metadata", {})
+                            if isinstance(meta, dict) and meta.get("raw"):
+                                parts.append(f"[upstream: {meta['raw']}]")
+                            detail = " ".join(parts) if parts else str(err)
+                        else:
+                            detail = str(err)
+                except Exception:
+                    pass
+                logger.warning(
+                    "OpenRouter /completions stream %d for model %s: %s",
+                    resp.status_code, request.model, raw,
+                )
+                raise RuntimeError(
+                    f"OpenRouter completion error ({resp.status_code}): {detail}"
+                )
             async for line in resp.aiter_lines():
                 if not line.startswith("data: "):
                     continue
@@ -181,18 +296,20 @@ class OpenRouterProvider(OpenAICompatibleProvider):
                     input_tokens = usage.get("prompt_tokens", 0)
                     output_tokens = usage.get("completion_tokens", 0)
 
-        latency_ms = int((time.monotonic() - start) * 1000)
-        yield StreamChunk(
-            type="message_stop",
-            is_final=True,
-            result=GenerationResult(
-                content=accumulated,
-                model=model,
-                finish_reason=finish_reason,
-                usage={"input_tokens": input_tokens, "output_tokens": output_tokens},
-                latency_ms=latency_ms,
-            ),
-        )
+            latency_ms = int((time.monotonic() - start) * 1000)
+            yield StreamChunk(
+                type="message_stop",
+                is_final=True,
+                result=GenerationResult(
+                    content=accumulated,
+                    model=model,
+                    finish_reason=finish_reason,
+                    usage={"input_tokens": input_tokens, "output_tokens": output_tokens},
+                    latency_ms=latency_ms,
+                ),
+            )
+        finally:
+            await stream_cm.__aexit__(None, None, None)
 
     @staticmethod
     def _build_completion_body(request: GenerationRequest) -> dict:

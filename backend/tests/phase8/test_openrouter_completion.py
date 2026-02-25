@@ -1,11 +1,11 @@
 """Contract tests for OpenRouter completion mode.
 
 Tests the httpx-based completion path specific to OpenRouter,
-including HTTP 200 error response handling.
+including HTTP 200 error response handling and 429 retry logic.
 """
 
 import json
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
@@ -41,6 +41,22 @@ def _mock_http_response(data: dict, status_code: int = 200) -> httpx.Response:
     )
 
 
+def _success_response() -> httpx.Response:
+    return _mock_http_response({
+        "choices": [{"text": "Generated text", "finish_reason": "stop"}],
+        "model": "meta-llama/llama-3.1-405b",
+        "usage": {"prompt_tokens": 10, "completion_tokens": 5},
+    })
+
+
+def _429_response() -> httpx.Response:
+    return httpx.Response(
+        status_code=429,
+        json={"error": "too many requests"},
+        request=httpx.Request("POST", "https://openrouter.ai/api/v1/completions"),
+    )
+
+
 class TestOpenRouterCompletionErrorHandling:
     """OpenRouter sometimes returns errors with HTTP 200 status."""
 
@@ -71,20 +87,20 @@ class TestOpenRouterCompletionErrorHandling:
         with pytest.raises(RuntimeError, match="Rate limit exceeded"):
             await provider._generate_completion(_make_request())
 
-    async def test_actual_http_error_raises(self):
-        """Non-200 status codes still raise via raise_for_status."""
-        resp = httpx.Response(
-            status_code=429,
-            json={"error": "too many requests"},
-            request=httpx.Request("POST", "https://openrouter.ai/api/v1/completions"),
-        )
+    @patch("qivis.providers.openrouter.asyncio.sleep", new_callable=AsyncMock)
+    async def test_actual_http_error_raises(self, mock_sleep):
+        """Non-200 status codes raise with the error detail from the body after retries exhaust."""
         http = AsyncMock(spec=httpx.AsyncClient)
-        http.post = AsyncMock(return_value=resp)
+        http.post = AsyncMock(return_value=_429_response())
 
         provider = OpenRouterProvider(client=AsyncMock(), http_client=http)
 
-        with pytest.raises(httpx.HTTPStatusError):
+        with pytest.raises(RuntimeError, match="429.*too many requests"):
             await provider._generate_completion(_make_request())
+
+        # Verify retries happened (2 retries = 2 sleep calls)
+        assert mock_sleep.call_count == 2
+        assert http.post.call_count == 3  # initial + 2 retries
 
 
 class TestOpenRouterCompletionSuccess:
@@ -125,6 +141,117 @@ class TestOpenRouterCompletionSuccess:
         assert "prompt" in body
         assert body["prompt"] == "Hello!"
         assert "messages" not in body
+
+
+class TestOpenRouterRetry:
+    """429 retry with exponential backoff for upstream cold-start."""
+
+    @patch("qivis.providers.openrouter.asyncio.sleep", new_callable=AsyncMock)
+    async def test_retry_succeeds_after_429(self, mock_sleep):
+        """First request 429, second request succeeds."""
+        http = AsyncMock(spec=httpx.AsyncClient)
+        http.post = AsyncMock(side_effect=[_429_response(), _success_response()])
+
+        provider = OpenRouterProvider(client=AsyncMock(), http_client=http)
+        result = await provider._generate_completion(_make_request())
+
+        assert result.content == "Generated text"
+        assert http.post.call_count == 2
+        assert mock_sleep.call_count == 1
+
+    @patch("qivis.providers.openrouter.asyncio.sleep", new_callable=AsyncMock)
+    async def test_retry_respects_retry_after_header(self, mock_sleep):
+        """Retry-After header overrides default backoff."""
+        resp_429 = httpx.Response(
+            status_code=429,
+            json={"error": "rate limited"},
+            headers={"retry-after": "5"},
+            request=httpx.Request("POST", "https://openrouter.ai/api/v1/completions"),
+        )
+        http = AsyncMock(spec=httpx.AsyncClient)
+        http.post = AsyncMock(side_effect=[resp_429, _success_response()])
+
+        provider = OpenRouterProvider(client=AsyncMock(), http_client=http)
+        result = await provider._generate_completion(_make_request())
+
+        assert result.content == "Generated text"
+        mock_sleep.assert_called_once_with(5.0)
+
+    @patch("qivis.providers.openrouter.asyncio.sleep", new_callable=AsyncMock)
+    async def test_non_429_errors_not_retried(self, mock_sleep):
+        """500 errors are not retried."""
+        resp = httpx.Response(
+            status_code=500,
+            json={"error": "internal server error"},
+            request=httpx.Request("POST", "https://openrouter.ai/api/v1/completions"),
+        )
+        http = AsyncMock(spec=httpx.AsyncClient)
+        http.post = AsyncMock(return_value=resp)
+
+        provider = OpenRouterProvider(client=AsyncMock(), http_client=http)
+
+        with pytest.raises(RuntimeError, match="500"):
+            await provider._generate_completion(_make_request())
+
+        assert http.post.call_count == 1
+        mock_sleep.assert_not_called()
+
+    @patch("qivis.providers.openrouter.asyncio.sleep", new_callable=AsyncMock)
+    async def test_stream_retry_succeeds_after_429(self, mock_sleep):
+        """Streaming: first attempt 429, second succeeds."""
+        success_chunk = json.dumps({
+            "choices": [{"text": "streamed", "finish_reason": "stop"}],
+            "model": "meta-llama/llama-3.1-405b",
+            "usage": {"prompt_tokens": 10, "completion_tokens": 1},
+        })
+
+        call_count = 0
+
+        class Mock429Response:
+            status_code = 429
+            headers = {}
+
+            async def aread(self):
+                return b'{"error": "rate limited"}'
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                pass
+
+        class MockSuccessResponse:
+            status_code = 200
+
+            async def aiter_lines(self):
+                yield f"data: {success_chunk}"
+                yield "data: [DONE]"
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                pass
+
+        responses = [Mock429Response(), MockSuccessResponse()]
+
+        def make_stream(*args, **kwargs):
+            nonlocal call_count
+            resp = responses[call_count]
+            call_count += 1
+            return resp
+
+        http = AsyncMock(spec=httpx.AsyncClient)
+        http.stream = MagicMock(side_effect=make_stream)
+
+        provider = OpenRouterProvider(client=AsyncMock(), http_client=http)
+        chunks = []
+        async for chunk in provider._generate_completion_stream(_make_request()):
+            chunks.append(chunk)
+
+        assert any(c.text == "streamed" for c in chunks)
+        assert chunks[-1].is_final
+        assert mock_sleep.call_count == 1
 
 
 class TestOpenRouterCompletionBody:
@@ -183,7 +310,6 @@ class TestOpenRouterStreamErrorHandling:
         error_chunk = json.dumps({
             "error": {"message": "Upstream error from provider"}
         })
-        sse_data = f"data: {error_chunk}\n\n"
 
         # Build a mock async stream response
         class MockStreamResponse:

@@ -576,7 +576,9 @@ class GenerationService:
         )
 
         # Tree-level settings from metadata
-        include_timestamps = bool(metadata.get("include_timestamps", False))
+        # Completion mode never uses timestamps — they're chat context, not prompt text
+        is_completion = metadata.get("generation_mode") == "completion"
+        include_timestamps = False if is_completion else bool(metadata.get("include_timestamps", False))
         include_thinking = bool(metadata.get("include_thinking_in_context", False))
 
         # Context exclusion data

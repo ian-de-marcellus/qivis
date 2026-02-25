@@ -137,6 +137,52 @@
   border-color: var(--accent);
 }
 
+/* Mode selector — segmented control */
+
+.mode-selector {
+  display: flex;
+  gap: 0;
+}
+
+.mode-selector .mode-selector-btn {
+  flex: 1;
+  padding: var(--space-xs) var(--space-sm);
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  border-radius: 0;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.mode-selector .mode-selector-btn:first-child {
+  border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+}
+
+.mode-selector .mode-selector-btn:last-child {
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  border-left: none;
+}
+
+.mode-selector .mode-selector-btn:hover:not(.active) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.mode-selector .mode-selector-btn.active {
+  background: var(--accent);
+  color: var(--accent-text);
+  border-color: var(--accent);
+}
+
+.mode-selector .mode-selector-btn.active + .mode-selector-btn {
+  border-left-color: var(--accent);
+}
+
 .tree-settings-field textarea {
   font-family: var(--font-mono);
   font-size: var(--text-xs);

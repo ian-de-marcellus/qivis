@@ -411,14 +411,58 @@ export function TreeSettings() {
             </div>
 
             <div className="tree-settings-field">
-              <label>Default system prompt</label>
-              <textarea
-                value={systemPrompt}
-                onChange={(e) => setSystemPrompt(e.target.value)}
-                placeholder="Enter default system prompt..."
-                rows={3}
-              />
+              <label>Generation mode</label>
+              <div className="mode-selector">
+                <button
+                  type="button"
+                  className={`mode-selector-btn ${generationMode === 'chat' ? 'active' : ''}`}
+                  onClick={() => setGenerationMode('chat')}
+                >
+                  Chat
+                </button>
+                <button
+                  type="button"
+                  className={`mode-selector-btn ${generationMode === 'completion' ? 'active' : ''}`}
+                  onClick={() => setGenerationMode('completion')}
+                >
+                  Completion
+                </button>
+              </div>
+              <span className="tree-settings-note">
+                Chat sends structured messages. Completion renders a text prompt from a template.
+              </span>
             </div>
+
+            {generationMode === 'chat' && (
+              <div className="tree-settings-field">
+                <label>Default system prompt</label>
+                <textarea
+                  value={systemPrompt}
+                  onChange={(e) => setSystemPrompt(e.target.value)}
+                  placeholder="Enter default system prompt..."
+                  rows={3}
+                />
+              </div>
+            )}
+
+            {generationMode === 'completion' && (
+              <div className="tree-settings-field">
+                <label>Prompt template</label>
+                <select
+                  value={promptTemplate}
+                  onChange={(e) => setPromptTemplate(e.target.value)}
+                >
+                  <option value="raw">Raw (no template)</option>
+                  <option value="alpaca">Alpaca</option>
+                  <option value="chatml">ChatML</option>
+                  <option value="llama3">Llama 3</option>
+                </select>
+                <span className="tree-settings-note">
+                  Raw sends plain text — best for base models on remote APIs.
+                  Llama 3 uses special tokens that only work with local servers.
+                </span>
+              </div>
+            )}
 
             <div className="tree-settings-divider" />
 
@@ -433,16 +477,18 @@ export function TreeSettings() {
 
             <div className="tree-settings-divider" />
 
-            <div className="tree-settings-toggle">
-              <label>
-                <input
-                  type="checkbox"
-                  checked={includeTimestamps}
-                  onChange={(e) => setIncludeTimestamps(e.target.checked)}
-                />
-                Include timestamps in context
-              </label>
-            </div>
+            {generationMode === 'chat' && (
+              <div className="tree-settings-toggle">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={includeTimestamps}
+                    onChange={(e) => setIncludeTimestamps(e.target.checked)}
+                  />
+                  Include timestamps in context
+                </label>
+              </div>
+            )}
 
             <div className="tree-settings-toggle">
               <label>
@@ -455,73 +501,21 @@ export function TreeSettings() {
               </label>
             </div>
 
-            <div className="tree-settings-toggle">
-              <label>
-                <input
-                  type="checkbox"
-                  checked={includeThinking}
-                  onChange={(e) => setIncludeThinking(e.target.checked)}
-                />
-                Include thinking in context
-              </label>
-              <span className="tree-settings-note">
-                Feed reasoning traces back into subsequent context. Uses significant tokens.
-              </span>
-            </div>
-
-            {selectedProvider?.supported_modes?.includes('completion') &&
-             selectedProvider?.supported_modes?.includes('chat') && (
-              <div className="tree-settings-field">
-                <label>Generation mode</label>
-                <select
-                  value={generationMode}
-                  onChange={(e) => setGenerationMode(e.target.value)}
-                >
-                  <option value="chat">Chat (instruct models)</option>
-                  <option value="completion">Completion (base models)</option>
-                </select>
+            {generationMode === 'chat' && (
+              <div className="tree-settings-toggle">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={includeThinking}
+                    onChange={(e) => setIncludeThinking(e.target.checked)}
+                  />
+                  Include thinking in context
+                </label>
                 <span className="tree-settings-note">
-                  Chat sends structured messages. Completion renders a text prompt from a template.
+                  Feed reasoning traces back into subsequent context. Uses significant tokens.
                 </span>
               </div>
             )}
-
-            {(generationMode === 'completion' ||
-              (selectedProvider?.supported_modes?.includes('completion') &&
-               !selectedProvider?.supported_modes?.includes('chat'))) && (
-              <div className="tree-settings-field">
-                <label>Prompt template</label>
-                <select
-                  value={promptTemplate}
-                  onChange={(e) => setPromptTemplate(e.target.value)}
-                >
-                  <option value="raw">Raw (no template)</option>
-                  <option value="alpaca">Alpaca</option>
-                  <option value="chatml">ChatML</option>
-                  <option value="llama3">Llama 3 (local only)</option>
-                </select>
-                <span className="tree-settings-note">
-                  Raw sends plain text — best for base models on remote APIs.
-                  Llama 3 uses special tokens that only work with local servers.
-                </span>
-              </div>
-            )}
-
-            <div className="tree-settings-divider" />
-
-            <div className="tree-settings-section-label">Context eviction</div>
-
-            <div className="tree-settings-field">
-              <label>Eviction mode</label>
-              <select
-                value={evictionMode}
-                onChange={(e) => setEvictionMode(e.target.value as 'smart' | 'truncate' | 'none')}
-              >
-                <option value="smart">Smart (protect first/last/anchored)</option>
-                <option value="truncate">Truncate (oldest first)</option>
-                <option value="none">None (send everything)</option>
-              </select>
-            </div>
 
             <div className="tree-settings-field">
               <label>Debug: context limit override (tokens)</label>
@@ -540,71 +534,90 @@ export function TreeSettings() {
               )}
             </div>
 
-            {evictionMode === 'smart' && (
+            {generationMode === 'chat' && (
               <>
-                <div className="tree-settings-row-pair">
-                  <div className="tree-settings-field">
-                    <label>Keep first turns</label>
-                    <input
-                      type="number"
-                      min="0"
-                      step="1"
-                      value={keepFirstTurns}
-                      onChange={(e) => setKeepFirstTurns(e.target.value)}
-                    />
-                  </div>
-                  <div className="tree-settings-field">
-                    <label>Keep recent turns</label>
-                    <input
-                      type="number"
-                      min="0"
-                      step="1"
-                      value={recentTurnsToKeep}
-                      onChange={(e) => setRecentTurnsToKeep(e.target.value)}
-                    />
-                  </div>
-                </div>
+                <div className="tree-settings-divider" />
+
+                <div className="tree-settings-section-label">Context eviction</div>
 
                 <div className="tree-settings-field">
-                  <label>Warning threshold</label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="1"
-                    step="0.05"
-                    value={warnThreshold}
-                    onChange={(e) => setWarnThreshold(e.target.value)}
-                  />
-                  <span className="tree-settings-note">
-                    Warn when context reaches this fraction of the limit
-                  </span>
+                  <label>Eviction mode</label>
+                  <select
+                    value={evictionMode}
+                    onChange={(e) => setEvictionMode(e.target.value as 'smart' | 'truncate' | 'none')}
+                  >
+                    <option value="smart">Smart (protect first/last/anchored)</option>
+                    <option value="truncate">Truncate (oldest first)</option>
+                    <option value="none">None (send everything)</option>
+                  </select>
                 </div>
 
-                <div className="tree-settings-toggle">
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={keepAnchored}
-                      onChange={(e) => setKeepAnchored(e.target.checked)}
-                    />
-                    Protect anchored messages
-                  </label>
-                </div>
+                {evictionMode === 'smart' && (
+                  <>
+                    <div className="tree-settings-row-pair">
+                      <div className="tree-settings-field">
+                        <label>Keep first turns</label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="1"
+                          value={keepFirstTurns}
+                          onChange={(e) => setKeepFirstTurns(e.target.value)}
+                        />
+                      </div>
+                      <div className="tree-settings-field">
+                        <label>Keep recent turns</label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="1"
+                          value={recentTurnsToKeep}
+                          onChange={(e) => setRecentTurnsToKeep(e.target.value)}
+                        />
+                      </div>
+                    </div>
 
-                <div className="tree-settings-toggle">
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={summarizeEvicted}
-                      onChange={(e) => setSummarizeEvicted(e.target.checked)}
-                    />
-                    Summarize evicted messages
-                  </label>
-                  <span className="tree-settings-note">
-                    Generate a recap of evicted content using a small model
-                  </span>
-                </div>
+                    <div className="tree-settings-field">
+                      <label>Warning threshold</label>
+                      <input
+                        type="number"
+                        min="0"
+                        max="1"
+                        step="0.05"
+                        value={warnThreshold}
+                        onChange={(e) => setWarnThreshold(e.target.value)}
+                      />
+                      <span className="tree-settings-note">
+                        Warn when context reaches this fraction of the limit
+                      </span>
+                    </div>
 
+                    <div className="tree-settings-toggle">
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={keepAnchored}
+                          onChange={(e) => setKeepAnchored(e.target.checked)}
+                        />
+                        Protect anchored messages
+                      </label>
+                    </div>
+
+                    <div className="tree-settings-toggle">
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={summarizeEvicted}
+                          onChange={(e) => setSummarizeEvicted(e.target.checked)}
+                        />
+                        Summarize evicted messages
+                      </label>
+                      <span className="tree-settings-note">
+                        Generate a recap of evicted content using a small model
+                      </span>
+                    </div>
+                  </>
+                )}
               </>
             )}
 

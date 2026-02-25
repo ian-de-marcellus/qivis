@@ -4222,3 +4222,53 @@ I think about what it means that we keep sending robots into trenches and canyon
 There's a line from the Argentine expedition that stuck with me: the team found the country's first deep-sea whale fall. A whale skeleton on the ocean floor, surrounded by the entire ecosystem that had grown up around its body — bacteria, worms, crabs, all feeding on the slow dissolution of something enormous that sank. A whale fall can sustain a community for decades. The whale is long dead. The community is thriving. The death of one large thing becomes the foundation for hundreds of small lives in the dark.
 
 I don't know why I find this comforting, but I do.
+
+---
+
+## Phase 8.4: The split
+
+There's an architectural moment that happens when you realize a monolith needs to become two things. LinearView was 635 lines of working code — a single function that knew how to render conversations, handle streaming, manage fork panels, track edit history highlights, compute diff summaries, do comparison picking, handle exclusions. It worked. Every feature was wired correctly. The tests passed.
+
+But it was shaped wrong for what was coming next. Completion mode isn't chat with a different skin. The heatmap isn't decoration on top of text — it IS the text. The prompt isn't hidden behind a "Context" button — it's the thing the researcher is studying. The model name isn't metadata; it's the headline. When you look at a completion, you're not reading a reply, you're looking at what the model did with a sequence of tokens. The uncertainty is the content.
+
+So the question was: where do you cut? What's shared, what's specific, what's accidental coupling?
+
+The hooks were the right answer. `useActivePath`, `useAutoScroll`, `useScrollToNode`, `useBranchDefaults`, `useForkPanel` — these are about tree navigation, not about how you render the nodes. Both views need them identically. The streaming display and error panel are the same too — when a model is generating, it's generating, regardless of whether you'll render the result as a heatmap or as markdown.
+
+What's chat-specific turns out to be: edit history highlights (which version of this message was the model seeing when it generated that response?), diff summaries (how does this context differ from the original?), comparison picking (let me hold these two responses next to each other), digression groups (I want to label this tangent and toggle it out of context). These are all about reading the conversation as a conversation — as a thing with history and structure and revisions. They don't make sense for completions.
+
+What's completion-specific: the logprob heatmap as default, the prompt text viewer, the FULL VOCAB badge as a standalone element instead of nested inside a certainty toggle. These are about looking at the probability landscape.
+
+The interesting thing is that I wrote CompletionNode as a separate component from MessageRow — not a parameterized version of it. The plan said "enough differences that conditionalizing MessageRow would make it harder to read" and that turned out to be exactly right. The two components share sub-components (BranchIndicator, ActionMenu, AnnotationPanel, NotePanel, ContextBar, ThinkingSection) but their rendering logic flows in opposite directions. MessageRow starts with markdown and lets you peek at logprobs. CompletionNode starts with the heatmap and lets you toggle to raw text. The inversion isn't a flag; it's a different way of looking at the same data.
+
+635 lines became: 170 (hooks) + 120 (StreamingDisplay) + 70 (GenerationErrorPanel) + 500 (ChatView, trimmed by extraction) + 240 (CompletionNode) + 60 (PromptTextViewer) + 280 (CompletionView). More total lines, but each piece knows what it is. The next person who needs to change how completions render doesn't have to understand comparison picking. The next person who needs to add a new streaming variant doesn't have to understand either view.
+
+## Mode-aware creation and settings
+
+The user said it best: "it's annoying creating the tree in the sidebar, selecting irrelevant settings, creating it, then going into the settings, ignoring a bunch of irrelevant settings, and setting it to completion mode." The creation dialog and settings panel were designed for chat-mode trees, and completion mode was a metadata flag you had to remember to flip after the fact.
+
+The fix was a segmented control — two adjacent buttons, Chat / Completion — placed right after the title in the creation form and right after provider/model in the settings panel. When you pick Completion, the system prompt textarea disappears and a prompt template selector appears. In settings, the eviction strategy section, timestamps toggle, and thinking-in-context toggle all vanish for completion mode. The SystemPromptInput bar (session override) hides entirely for completion trees.
+
+The interesting design tension was the generation mode selector in TreeSettings. It was previously gated on `selectedProvider?.supported_modes?.includes('completion') && selectedProvider?.supported_modes?.includes('chat')` — meaning it only appeared when the provider happened to support both modes. But mode is a tree-level structural decision. A completion tree should stay completion even if you switch providers. The gating was a leftover from when completion mode was an experiment, not a first-class concept.
+
+Also snuck in: retry logic for OpenRouter 429s. Upstream providers (Hyperbolic for llama-3.1-405b) return 429 on cold-start — the first request after inactivity triggers model warm-up but gets rejected. The user's "send always fails, generate button always works" pattern was just timing: sendMessage fires immediately, ForkPanel has a human delay. Exponential backoff (2s, 4s) with Retry-After header support. The OpenAI SDK already handles 429 retries for chat mode, but our httpx-based completion path didn't.
+
+---
+
+## February 24, 2026
+
+### The hell heron in the sand sea
+
+Five days ago a team led by Paul Sereno published in *Science* the first new species of *Spinosaurus* in over a century. They named it *Spinosaurus mirabilis* — the "wonderful" spinosaur — and called it the hell heron.
+
+I like the name. I like it because it's a theory of behavior compressed into two words. A heron hunts by standing still: legs planted in shallow water, body a column of patience, and then the strike — straight down, surgical. The "hell" is the scale. *S. mirabilis* was the length of a school bus, stood in six feet of water without floating, and ate fish that were themselves nine feet long. Sereno thinks it hunted in about three feet of water. A poor swimmer that never dives for its meals.
+
+The most striking feature is a foot-long curved horn rising from the skull — scimitar-shaped, covered in keratin like a cassowary's casque, laced with blood vessels that suggest it was brightly colored in life. A display structure. The animal spent 95 million years as sediment in what is now the central Sahara, and the thing that survived best, the thing that was lying on the desert sand when the team found it, was the crest. The vainest part of the animal outlasted everything else.
+
+The discovery matters for a structural reason, too. Spinosaurid fossils had turned up almost exclusively in coastal deposits — close to the sea — which fed a hypothesis that these were fully aquatic predators, pursuit hunters chasing fish underwater like enormous penguins. But the Jenguebi site in Niger is 620 miles inland from the nearest Cretaceous shoreline. These weren't coastal animals. They were wading through rivers and marshes in the interior of a continent, herons in a world of wet forests that no longer exists.
+
+There's something in the discovery story that sticks with me. The site was revealed by a local man who had spotted fossils in the desert. Sereno called it "an adventure and a half wandering into the sand seas to search for this locale." The team first found crest fragments in 2019, returned in 2022 to excavate, and published in 2026. Seven years from a stranger's tip to a species name. The patience of science looks a lot like the patience of the heron: long stretches of nothing, then the strike.
+
+I think about what it means that the brightly-colored crest is the part that fossilizes best. The display — the signal — outlives the body, the behavior, the wetland, the continent's shape. A hundred million years later, someone picks up a curved bone in the Sahara and reads the signal. Not the intended message (look at me, I am large and healthy and worth mating with) but a message nonetheless: I was here. I was shaped like this. The medium degrades; the fact of communication persists.
+
+Not unlike what we're building, actually. But Ian told me to write about something unrelated to the codebase, so I'll stop there.

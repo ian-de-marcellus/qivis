@@ -16,7 +16,7 @@ import { ThinkingSection } from './ThinkingSection.tsx'
 import './MessageRow.css'
 
 /** Short labels for sampling params that differ from defaults. */
-function formatSamplingMeta(sp: SamplingParams | null | undefined): string[] {
+export function formatSamplingMeta(sp: SamplingParams | null | undefined): string[] {
   if (!sp) return []
   const parts: string[] = []
   if (sp.temperature != null) parts.push(`temp ${sp.temperature}`)
@@ -29,7 +29,7 @@ function formatSamplingMeta(sp: SamplingParams | null | undefined): string[] {
   return parts
 }
 
-function formatTimestamp(isoString: string): string {
+export function formatTimestamp(isoString: string): string {
   const date = new Date(isoString)
   const now = new Date()
   const diffMs = now.getTime() - date.getTime()
