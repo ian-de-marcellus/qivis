@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { DigressionGroupResponse, EvictionStrategy, NodeResponse } from '../../api/types.ts'
-import { getActivePath, useTreeStore, useTreeData, useNavigation, useComparison, useDigressionState } from '../../store/treeStore.ts'
+import { getActivePath, useRhizomeStore, useRhizomeData, useNavigation, useComparison, useDigressionState } from '../../store/rhizomeStore.ts'
 import { computeTreeLayout, type LayoutNode } from './treeLayout.ts'
 import { useZoomPan } from './useZoomPan.ts'
 import './GraphView.css'
@@ -185,11 +185,11 @@ function edgePath(px: number, py: number, cx: number, cy: number): string {
 }
 
 export function GraphView() {
-  const { currentTree } = useTreeData()
+  const { currentRhizome } = useRhizomeData()
   const { branchSelections } = useNavigation()
   const { comparisonHoveredNodeId } = useComparison()
   const { digressionGroups } = useDigressionState()
-  const navigateToNode = useTreeStore(s => s.navigateToNode)
+  const navigateToNode = useRhizomeStore(s => s.navigateToNode)
   const containerRef = useRef<HTMLDivElement>(null)
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null)
   const [tooltip, setTooltip] = useState<{
@@ -200,7 +200,7 @@ export function GraphView() {
 
   const { transform, wheelRef, handlers, fitToContent, isPanning } = useZoomPan()
 
-  const nodes = currentTree?.nodes ?? []
+  const nodes = currentRhizome?.nodes ?? []
 
   // Collapse long linear chains for a more compact graph
   const { displayNodes, collapsedMap } = useMemo(
@@ -268,7 +268,7 @@ export function GraphView() {
 
   // Eviction protection zones: first N, last N, anchored, evicted
   const evictionZones = useMemo(() => {
-    const es = currentTree?.metadata?.eviction_strategy as EvictionStrategy | undefined
+    const es = currentRhizome?.metadata?.eviction_strategy as EvictionStrategy | undefined
     if (!es || es.mode !== 'smart') return null
     const path = getActivePath(nodes, branchSelections)
     const sendable = path.filter((n) =>
@@ -288,7 +288,7 @@ export function GraphView() {
     const lastAssistant = [...path].reverse().find((n) => n.role === 'assistant')
     const evictedIds = new Set(lastAssistant?.context_usage?.evicted_node_ids ?? [])
     return { firstProtected, lastProtected, anchoredProtected, evictedIds }
-  }, [currentTree, nodes, branchSelections])
+  }, [currentRhizome, nodes, branchSelections])
 
   // Digression group hulls: bounding boxes for each group's nodes
   const groupHulls = useMemo(() => {

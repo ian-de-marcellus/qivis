@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useTreeStore, useTreeData } from '../../store/treeStore.ts'
-import type { TreeSummary } from '../../api/types.ts'
+import { useRhizomeStore, useRhizomeData } from '../../store/rhizomeStore.ts'
+import type { RhizomeSummary } from '../../api/types.ts'
 import { tagColor } from '../../utils/tagColor.ts'
-import { type FolderNode, buildFolderTrie, countTreesInFolder } from '../../utils/folderTrie.ts'
-import { TreeContextMenu } from './TreeContextMenu.tsx'
+import { type FolderNode, buildFolderTrie, countRhizomesInFolder } from '../../utils/folderTrie.ts'
+import { RhizomeContextMenu } from './RhizomeContextMenu.tsx'
 import { ImportWizard } from './ImportWizard.tsx'
-import './TreeList.css'
+import './RhizomeList.css'
 
 type ViewMode = 'all' | 'folders'
 
@@ -26,13 +26,13 @@ function getStoredCollapsed(): Set<string> {
   }
 }
 
-export function TreeList() {
-  const { trees, selectedTreeId, providers, isLoading } = useTreeData()
-  const selectTree = useTreeStore(s => s.selectTree)
-  const createTree = useTreeStore(s => s.createTree)
-  const updateTree = useTreeStore(s => s.updateTree)
-  const fetchTrees = useTreeStore(s => s.fetchTrees)
-  const fetchProviders = useTreeStore(s => s.fetchProviders)
+export function RhizomeList() {
+  const { rhizomes, selectedRhizomeId, providers, isLoading } = useRhizomeData()
+  const selectRhizome = useRhizomeStore(s => s.selectRhizome)
+  const createRhizome = useRhizomeStore(s => s.createRhizome)
+  const updateRhizome = useRhizomeStore(s => s.updateRhizome)
+  const fetchRhizomes = useRhizomeStore(s => s.fetchRhizomes)
+  const fetchProviders = useRhizomeStore(s => s.fetchProviders)
   const [isCreating, setIsCreating] = useState(false)
   const [newTitle, setNewTitle] = useState('')
   const [newGenerationMode, setNewGenerationMode] = useState<'chat' | 'completion'>('chat')
@@ -71,35 +71,35 @@ export function TreeList() {
 
   // Refetch trees when showArchived changes
   useEffect(() => {
-    fetchTrees(showArchived)
-  }, [showArchived, fetchTrees])
+    fetchRhizomes(showArchived)
+  }, [showArchived, fetchRhizomes])
 
   const selectedProvider = providers.find((p) => p.name === newProvider)
   const suggestedModels = selectedProvider?.models ?? []
 
-  // Filter trees by active tag filters
-  const filteredTrees = useMemo(() => {
-    if (activeTagFilters.length === 0) return trees
-    return trees.filter(t =>
+  // Filter rhizomes by active tag filters
+  const filteredRhizomes = useMemo(() => {
+    if (activeTagFilters.length === 0) return rhizomes
+    return rhizomes.filter(t =>
       activeTagFilters.every(tag => t.tags.includes(tag)),
     )
-  }, [trees, activeTagFilters])
+  }, [rhizomes, activeTagFilters])
 
   // Sort by updated_at
   const sorted = useMemo(() =>
-    [...filteredTrees].sort(
+    [...filteredRhizomes].sort(
       (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
     ),
-  [filteredTrees])
+  [filteredRhizomes])
 
   const treeMap = useMemo(() =>
-    new Map(sorted.map(t => [t.tree_id, t])),
+    new Map(sorted.map(t => [t.rhizome_id, t])),
   [sorted])
 
-  // Derive all tags from visible trees for the filter bar
+  // Derive all tags from visible rhizomes for the filter bar
   const allTags = useMemo(() =>
-    [...new Set(trees.flatMap(t => t.tags))].sort(),
-  [trees])
+    [...new Set(rhizomes.flatMap(t => t.tags))].sort(),
+  [rhizomes])
 
   // Folder trie for folder view
   const folderTrie = useMemo(() => buildFolderTrie(sorted), [sorted])
@@ -111,7 +111,7 @@ export function TreeList() {
 
   const handleCreate = async () => {
     if (!newTitle.trim()) return
-    await createTree(newTitle.trim(), {
+    await createRhizome(newTitle.trim(), {
       systemPrompt: newGenerationMode === 'chat' ? (newSystemPrompt.trim() || undefined) : undefined,
       defaultProvider: newProvider || undefined,
       defaultModel: newModel || undefined,
@@ -149,20 +149,20 @@ export function TreeList() {
   }, [])
 
   const handleRenameStart = useCallback((treeId: string) => {
-    const tree = trees.find(t => t.tree_id === treeId)
+    const rhizome = rhizomes.find(t => t.rhizome_id === treeId)
     setEditingTreeId(treeId)
-    setEditTitle(tree?.title ?? '')
-  }, [trees])
+    setEditTitle(rhizome?.title ?? '')
+  }, [rhizomes])
 
   const handleRenameCommit = useCallback(async () => {
     if (!editingTreeId) return
     const trimmed = editTitle.trim()
     if (trimmed) {
-      await updateTree(editingTreeId, { title: trimmed })
+      await updateRhizome(editingTreeId, { title: trimmed })
     }
     setEditingTreeId(null)
     setEditTitle('')
-  }, [editingTreeId, editTitle, updateTree])
+  }, [editingTreeId, editTitle, updateRhizome])
 
   const toggleFolder = useCallback((path: string) => {
     setCollapsedFolders(prev => {
@@ -180,22 +180,22 @@ export function TreeList() {
   }, [])
 
   // Render a single tree item (shared between flat and folder views)
-  const renderTreeItem = (tree: TreeSummary) => {
-    const isEditing = editingTreeId === tree.tree_id
+  const renderTreeItem = (tree: RhizomeSummary) => {
+    const isEditing = editingTreeId === tree.rhizome_id
     const isArchived = tree.archived === 1
 
     return (
       <button
-        key={tree.tree_id}
-        className={`tree-item ${tree.tree_id === selectedTreeId ? 'selected' : ''} ${isArchived ? 'archived' : ''}`}
-        onClick={() => !isEditing && selectTree(tree.tree_id)}
-        onContextMenu={(e) => handleContextMenu(e, tree.tree_id)}
-        onDoubleClick={() => handleRenameStart(tree.tree_id)}
+        key={tree.rhizome_id}
+        className={`rhizome-item ${tree.rhizome_id === selectedRhizomeId ? 'selected' : ''} ${isArchived ? 'archived' : ''}`}
+        onClick={() => !isEditing && selectRhizome(tree.rhizome_id)}
+        onContextMenu={(e) => handleContextMenu(e, tree.rhizome_id)}
+        onDoubleClick={() => handleRenameStart(tree.rhizome_id)}
       >
-        <span className="tree-item-main">
+        <span className="rhizome-item-main">
           {isEditing ? (
             <input
-              className="tree-rename-input"
+              className="rhizome-rename-input"
               type="text"
               value={editTitle}
               onChange={e => setEditTitle(e.target.value)}
@@ -212,14 +212,14 @@ export function TreeList() {
               autoFocus
             />
           ) : (
-            <span className="tree-title">{tree.title || 'Untitled'}</span>
+            <span className="rhizome-title">{tree.title || 'Untitled'}</span>
           )}
           {tree.tags.length > 0 && (
-            <span className="tree-tag-dots">
+            <span className="rhizome-tag-dots">
               {tree.tags.map(t => (
                 <span
                   key={t}
-                  className="tree-tag-dot"
+                  className="rhizome-tag-dot"
                   style={{ background: tagColor(t) }}
                   title={t}
                 />
@@ -227,9 +227,9 @@ export function TreeList() {
             </span>
           )}
         </span>
-        <span className="tree-date">
+        <span className="rhizome-date">
           {new Date(tree.updated_at).toLocaleDateString()}
-          {isArchived && <span className="tree-archived-label">archived</span>}
+          {isArchived && <span className="rhizome-archived-label">archived</span>}
         </span>
       </button>
     )
@@ -238,7 +238,7 @@ export function TreeList() {
   // Render folder tree recursively
   const renderFolderNode = (node: FolderNode, depth: number) => {
     const isCollapsed = collapsedFolders.has(node.path)
-    const count = countTreesInFolder(node, treeMap)
+    const count = countRhizomesInFolder(node, treeMap)
     if (count === 0) return null
 
     return (
@@ -254,9 +254,9 @@ export function TreeList() {
         </button>
         {!isCollapsed && (
           <>
-            {node.treeIds
+            {node.rhizomeIds
               .map(id => treeMap.get(id))
-              .filter((t): t is TreeSummary => t != null)
+              .filter((t): t is RhizomeSummary => t != null)
               .map(renderTreeItem)}
             {node.children.map(child => renderFolderNode(child, depth + 1))}
           </>
@@ -269,10 +269,10 @@ export function TreeList() {
   const var_space_md = 'var(--space-md)'
 
   return (
-    <div className="tree-list">
-      <div className="tree-list-header">
+    <div className="rhizome-list">
+      <div className="rhizome-list-header">
         <h2>Trees</h2>
-        <div className="tree-list-header-actions">
+        <div className="rhizome-list-header-actions">
           <button
             className={`view-mode-btn ${viewMode === 'all' ? 'active' : ''}`}
             onClick={() => setViewMode('all')}
@@ -288,14 +288,14 @@ export function TreeList() {
             &#128193;
           </button>
           <button
-            className="import-tree-btn"
+            className="import-rhizome-btn"
             onClick={() => setShowImport(true)}
             disabled={isLoading}
           >
             Import
           </button>
           <button
-            className="new-tree-btn"
+            className="new-rhizome-btn"
             onClick={() => setIsCreating(!isCreating)}
             disabled={isLoading}
           >
@@ -325,7 +325,7 @@ export function TreeList() {
       )}
 
       {isCreating && (
-        <div className="new-tree-form">
+        <div className="new-rhizome-form">
           <input
             type="text"
             placeholder="Tree title..."
@@ -455,7 +455,7 @@ export function TreeList() {
         </div>
       )}
 
-      <div className="tree-items">
+      <div className="rhizome-items">
         {viewMode === 'all' ? (
           // Flat list
           sorted.map(renderTreeItem)
@@ -475,7 +475,7 @@ export function TreeList() {
           </>
         )}
         {sorted.length === 0 && !isLoading && (
-          <p className="tree-empty">No trees yet. Create one to start.</p>
+          <p className="rhizome-empty">No trees yet. Create one to start.</p>
         )}
       </div>
 
@@ -491,7 +491,7 @@ export function TreeList() {
         </label>
         <button
           className="library-open-btn"
-          onClick={() => useTreeStore.getState().setLibraryOpen(true)}
+          onClick={() => useRhizomeStore.getState().setLibraryOpen(true)}
           title="Open library (Cmd+Shift+L)"
         >
           Library
@@ -499,11 +499,11 @@ export function TreeList() {
       </div>
 
       {contextMenu && (
-        <TreeContextMenu
-          tree={trees.find(t => t.tree_id === contextMenu.treeId)!}
+        <RhizomeContextMenu
+          tree={rhizomes.find(t => t.rhizome_id === contextMenu.treeId)!}
           x={contextMenu.x}
           y={contextMenu.y}
-          allTrees={trees}
+          allTrees={rhizomes}
           onClose={() => setContextMenu(null)}
           onRename={() => handleRenameStart(contextMenu.treeId)}
         />

@@ -1,4 +1,4 @@
-import { SAMPLING_PRESETS, detectPreset, type PresetName } from '../TreeView/samplingPresets.ts'
+import { SAMPLING_PRESETS, detectPreset, type PresetName } from '../RhizomeView/samplingPresets.ts'
 import './SamplingParamsPanel.css'
 
 export interface SamplingParamValues {

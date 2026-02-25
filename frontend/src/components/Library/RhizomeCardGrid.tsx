@@ -1,10 +1,10 @@
 import { useMemo } from 'react'
-import type { TreeSummary } from '../../api/types.ts'
-import { findFolderNode, collectTreeIds, type FolderNode } from '../../utils/folderTrie.ts'
-import { DraggableTreeCard } from './DraggableTreeCard.tsx'
+import type { RhizomeSummary } from '../../api/types.ts'
+import { findFolderNode, collectRhizomeIds, type FolderNode } from '../../utils/folderTrie.ts'
+import { DraggableRhizomeCard } from './DraggableRhizomeCard.tsx'
 
 interface Props {
-  trees: TreeSummary[]
+  rhizomes: RhizomeSummary[]
   selectedFolder: string | null
   folderTrie: FolderNode[]
   selectedIds: Set<string>
@@ -16,15 +16,15 @@ interface Props {
   onContextMenu: (e: React.MouseEvent, treeId: string) => void
 }
 
-export function TreeCardGrid({
-  trees, selectedFolder, folderTrie, selectedIds,
+export function RhizomeCardGrid({
+  rhizomes, selectedFolder, folderTrie, selectedIds,
   onSelect, onClick, onRemoveFolder, onArchive, onUnarchive, onContextMenu,
 }: Props) {
   const showCheckboxes = selectedIds.size > 0
 
-  // Filter trees based on selected folder
+  // Filter rhizomes based on selected folder
   const filtered = useMemo(() => {
-    const sorted = [...trees].sort(
+    const sorted = [...rhizomes].sort(
       (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
     )
 
@@ -35,9 +35,9 @@ export function TreeCardGrid({
     const folderNode = findFolderNode(folderTrie, selectedFolder)
     if (!folderNode) return sorted.filter(t => t.folders.includes(selectedFolder))
 
-    const idsInFolder = new Set(collectTreeIds(folderNode))
-    return sorted.filter(t => idsInFolder.has(t.tree_id))
-  }, [trees, selectedFolder, folderTrie])
+    const idsInFolder = new Set(collectRhizomeIds(folderNode))
+    return sorted.filter(t => idsInFolder.has(t.rhizome_id))
+  }, [rhizomes, selectedFolder, folderTrie])
 
   const label = selectedFolder === null
     ? 'All Trees'
@@ -53,10 +53,10 @@ export function TreeCardGrid({
       </div>
       <div className="library-grid">
         {filtered.map(tree => (
-          <DraggableTreeCard
-            key={tree.tree_id}
+          <DraggableRhizomeCard
+            key={tree.rhizome_id}
             tree={tree}
-            isSelected={selectedIds.has(tree.tree_id)}
+            isSelected={selectedIds.has(tree.rhizome_id)}
             showCheckboxes={showCheckboxes}
             onSelect={onSelect}
             onClick={onClick}

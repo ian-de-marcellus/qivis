@@ -19,12 +19,12 @@ from qivis.providers.base import (
     LLMProvider,
     StreamChunk,
 )
-from qivis.trees.schemas import (
+from qivis.rhizomes.schemas import (
     CreateNodeRequest,
-    CreateTreeRequest,
-    PatchTreeRequest,
+    CreateRhizomeRequest,
+    PatchRhizomeRequest,
 )
-from qivis.trees.service import TreeService
+from qivis.rhizomes.service import RhizomeService
 
 
 # -- Fixtures --
@@ -141,39 +141,39 @@ async def db():
 
 @pytest.fixture
 async def services(db):
-    tree_service = TreeService(db)
+    rhizome_service = RhizomeService(db)
     store = EventStore(db)
     projector = StateProjector(db)
-    gen_service = GenerationService(tree_service, store, projector)
-    return tree_service, gen_service
+    gen_service = GenerationService(rhizome_service, store, projector)
+    return rhizome_service, gen_service
 
 
-async def _create_tree_with_user_node(
-    tree_service: TreeService,
+async def _create_rhizome_with_user_node(
+    rhizome_service: RhizomeService,
     *,
     metadata: dict | None = None,
     system_prompt: str | None = "You are a helpful assistant.",
 ) -> tuple[str, str]:
-    """Create a tree with a user node, return (tree_id, node_id)."""
-    tree = await tree_service.create_tree(
-        CreateTreeRequest(
+    """Create a rhizome with a user node, return (rhizome_id, node_id)."""
+    rhizome = await rhizome_service.create_rhizome(
+        CreateRhizomeRequest(
             title="test",
             default_model="test-model.gguf",
             default_system_prompt=system_prompt,
         )
     )
-    tree_id = tree.tree_id
+    rhizome_id = rhizome.rhizome_id
 
     if metadata is not None:
-        await tree_service.update_tree(
-            tree_id, PatchTreeRequest(metadata=metadata)
+        await rhizome_service.update_rhizome(
+            rhizome_id, PatchRhizomeRequest(metadata=metadata)
         )
 
-    node = await tree_service.create_node(
-        tree_id,
+    node = await rhizome_service.create_node(
+        rhizome_id,
         CreateNodeRequest(content="Hello", role="user"),
     )
-    return tree_id, node.node_id
+    return rhizome_id, node.node_id
 
 
 # -- Tests --
@@ -182,8 +182,8 @@ async def _create_tree_with_user_node(
 class TestCompletionModeGenerate:
     async def test_completion_provider_gets_prompt_text(self, services):
         """When provider supports completion mode, prompt_text is rendered and set on request."""
-        tree_service, gen_service = services
-        tree_id, node_id = await _create_tree_with_user_node(tree_service)
+        rhizome_service, gen_service = services
+        rhizome_id, node_id = await _create_rhizome_with_user_node(rhizome_service)
 
         # Capture what the provider receives
         captured_request = None
@@ -198,7 +198,7 @@ class TestCompletionModeGenerate:
         provider.generate = lambda req: capture_generate(provider, req)
 
         result = await gen_service.generate(
-            tree_id, node_id, provider, model="test-model.gguf"
+            rhizome_id, node_id, provider, model="test-model.gguf"
         )
 
         assert captured_request is not None
@@ -208,8 +208,8 @@ class TestCompletionModeGenerate:
 
     async def test_chat_provider_does_not_get_prompt_text(self, services):
         """When provider only supports chat, prompt_text stays None."""
-        tree_service, gen_service = services
-        tree_id, node_id = await _create_tree_with_user_node(tree_service)
+        rhizome_service, gen_service = services
+        rhizome_id, node_id = await _create_rhizome_with_user_node(rhizome_service)
 
         captured_request = None
         original_generate = ChatOnlyProvider.generate
@@ -223,7 +223,7 @@ class TestCompletionModeGenerate:
         provider.generate = lambda req: capture_generate(provider, req)
 
         result = await gen_service.generate(
-            tree_id, node_id, provider, model="test-model.gguf"
+            rhizome_id, node_id, provider, model="test-model.gguf"
         )
 
         assert captured_request is not None
@@ -231,12 +231,12 @@ class TestCompletionModeGenerate:
 
     async def test_prompt_text_stored_on_node(self, services):
         """The rendered prompt text is stored on the created node."""
-        tree_service, gen_service = services
-        tree_id, node_id = await _create_tree_with_user_node(tree_service)
+        rhizome_service, gen_service = services
+        rhizome_id, node_id = await _create_rhizome_with_user_node(rhizome_service)
 
         provider = CompletionModeProvider()
         node = await gen_service.generate(
-            tree_id, node_id, provider, model="test-model.gguf"
+            rhizome_id, node_id, provider, model="test-model.gguf"
         )
 
         assert node.prompt_text is not None
@@ -244,20 +244,20 @@ class TestCompletionModeGenerate:
 
     async def test_completion_mode_on_node(self, services):
         """The node's mode is 'completion' when using a completion provider."""
-        tree_service, gen_service = services
-        tree_id, node_id = await _create_tree_with_user_node(tree_service)
+        rhizome_service, gen_service = services
+        rhizome_id, node_id = await _create_rhizome_with_user_node(rhizome_service)
 
         provider = CompletionModeProvider()
         node = await gen_service.generate(
-            tree_id, node_id, provider, model="test-model.gguf"
+            rhizome_id, node_id, provider, model="test-model.gguf"
         )
 
         assert node.mode == "completion"
 
     async def test_template_stop_tokens_merged(self, services):
         """Template stop tokens get merged into sampling_params.stop_sequences."""
-        tree_service, gen_service = services
-        tree_id, node_id = await _create_tree_with_user_node(tree_service)
+        rhizome_service, gen_service = services
+        rhizome_id, node_id = await _create_rhizome_with_user_node(rhizome_service)
 
         captured_request = None
         original_generate = CompletionModeProvider.generate
@@ -271,7 +271,7 @@ class TestCompletionModeGenerate:
         provider.generate = lambda req: capture_generate(provider, req)
 
         await gen_service.generate(
-            tree_id, node_id, provider, model="test-model.gguf"
+            rhizome_id, node_id, provider, model="test-model.gguf"
         )
 
         assert captured_request is not None
@@ -281,11 +281,11 @@ class TestCompletionModeGenerate:
 
     async def test_custom_template_from_metadata(self, services):
         """Tree metadata prompt_template selects the template."""
-        tree_service, gen_service = services
-        tree_id, node_id = await _create_tree_with_user_node(tree_service)
+        rhizome_service, gen_service = services
+        rhizome_id, node_id = await _create_rhizome_with_user_node(rhizome_service)
 
-        await tree_service.update_tree(
-            tree_id, PatchTreeRequest(metadata={"prompt_template": "llama3"})
+        await rhizome_service.update_rhizome(
+            rhizome_id, PatchRhizomeRequest(metadata={"prompt_template": "llama3"})
         )
 
         captured_request = None
@@ -300,7 +300,7 @@ class TestCompletionModeGenerate:
         provider.generate = lambda req: capture_generate(provider, req)
 
         await gen_service.generate(
-            tree_id, node_id, provider, model="test-model.gguf"
+            rhizome_id, node_id, provider, model="test-model.gguf"
         )
 
         assert captured_request is not None
@@ -308,8 +308,8 @@ class TestCompletionModeGenerate:
 
     async def test_prefill_appended_to_prompt_text(self, services):
         """In completion mode with prefill, prefill is appended to prompt_text."""
-        tree_service, gen_service = services
-        tree_id, node_id = await _create_tree_with_user_node(tree_service)
+        rhizome_service, gen_service = services
+        rhizome_id, node_id = await _create_rhizome_with_user_node(rhizome_service)
 
         captured_request = None
         original_generate = CompletionModeProvider.generate
@@ -323,7 +323,7 @@ class TestCompletionModeGenerate:
         provider.generate = lambda req: capture_generate(provider, req)
 
         await gen_service.generate(
-            tree_id, node_id, provider,
+            rhizome_id, node_id, provider,
             model="test-model.gguf",
             prefill_content="Sure, I'll",
         )
@@ -338,8 +338,8 @@ class TestDualModeProvider:
 
     async def test_dual_mode_defaults_to_chat(self, services):
         """A provider supporting both chat and completion defaults to chat mode."""
-        tree_service, gen_service = services
-        tree_id, node_id = await _create_tree_with_user_node(tree_service)
+        rhizome_service, gen_service = services
+        rhizome_id, node_id = await _create_rhizome_with_user_node(rhizome_service)
 
         captured_request = None
         original_generate = DualModeProvider.generate
@@ -353,7 +353,7 @@ class TestDualModeProvider:
         provider.generate = lambda req: capture_generate(provider, req)
 
         node = await gen_service.generate(
-            tree_id, node_id, provider, model="test-model"
+            rhizome_id, node_id, provider, model="test-model"
         )
 
         assert captured_request is not None
@@ -362,9 +362,9 @@ class TestDualModeProvider:
 
     async def test_dual_mode_opt_in_via_metadata(self, services):
         """Dual-mode provider uses completion when generation_mode is set in metadata."""
-        tree_service, gen_service = services
-        tree_id, node_id = await _create_tree_with_user_node(
-            tree_service, metadata={"generation_mode": "completion"}
+        rhizome_service, gen_service = services
+        rhizome_id, node_id = await _create_rhizome_with_user_node(
+            rhizome_service, metadata={"generation_mode": "completion"}
         )
 
         captured_request = None
@@ -379,7 +379,7 @@ class TestDualModeProvider:
         provider.generate = lambda req: capture_generate(provider, req)
 
         node = await gen_service.generate(
-            tree_id, node_id, provider, model="test-model"
+            rhizome_id, node_id, provider, model="test-model"
         )
 
         assert captured_request is not None
@@ -389,9 +389,9 @@ class TestDualModeProvider:
 
     async def test_dual_mode_explicit_chat_overrides(self, services):
         """Even if generation_mode is 'chat', dual-mode provider stays in chat mode."""
-        tree_service, gen_service = services
-        tree_id, node_id = await _create_tree_with_user_node(
-            tree_service, metadata={"generation_mode": "chat"}
+        rhizome_service, gen_service = services
+        rhizome_id, node_id = await _create_rhizome_with_user_node(
+            rhizome_service, metadata={"generation_mode": "chat"}
         )
 
         captured_request = None
@@ -406,7 +406,7 @@ class TestDualModeProvider:
         provider.generate = lambda req: capture_generate(provider, req)
 
         await gen_service.generate(
-            tree_id, node_id, provider, model="test-model"
+            rhizome_id, node_id, provider, model="test-model"
         )
 
         assert captured_request is not None
@@ -416,17 +416,17 @@ class TestDualModeProvider:
 class TestPromptTextRoundTrip:
     async def test_prompt_text_survives_projection(self, db, services):
         """prompt_text round-trips through event → projection → NodeResponse."""
-        tree_service, gen_service = services
-        tree_id, node_id = await _create_tree_with_user_node(tree_service)
+        rhizome_service, gen_service = services
+        rhizome_id, node_id = await _create_rhizome_with_user_node(rhizome_service)
 
         provider = CompletionModeProvider()
         node = await gen_service.generate(
-            tree_id, node_id, provider, model="test-model.gguf"
+            rhizome_id, node_id, provider, model="test-model.gguf"
         )
 
         # Read back from tree service
-        tree = await tree_service.get_tree(tree_id)
-        assistant_nodes = [n for n in tree.nodes if n.role == "assistant"]
+        rhizome = await rhizome_service.get_rhizome(rhizome_id)
+        assistant_nodes = [n for n in rhizome.nodes if n.role == "assistant"]
         assert len(assistant_nodes) == 1
         assert assistant_nodes[0].prompt_text is not None
         assert "Hello" in assistant_nodes[0].prompt_text

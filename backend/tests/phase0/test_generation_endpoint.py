@@ -1,4 +1,4 @@
-"""Integration tests for POST /api/trees/{id}/nodes/{nid}/generate."""
+"""Integration tests for POST /api/rhizomes/{id}/nodes/{nid}/generate."""
 
 from collections.abc import AsyncIterator
 
@@ -17,8 +17,8 @@ from qivis.providers.base import (
     StreamChunk,
 )
 from qivis.providers.registry import clear_providers, register_provider
-from qivis.trees.router import get_generation_service, get_tree_service
-from qivis.trees.service import TreeService
+from qivis.rhizomes.router import get_generation_service, get_rhizome_service
+from qivis.rhizomes.service import RhizomeService
 
 
 class FakeProvider(LLMProvider):
@@ -60,13 +60,13 @@ async def gen_client(db: Database) -> AsyncIterator[AsyncClient]:
     """Test client with FakeProvider wired in."""
     store = EventStore(db)
     projector = StateProjector(db)
-    service = TreeService(db)
+    service = RhizomeService(db)
     gen_service = GenerationService(service, store, projector)
 
     clear_providers()
     register_provider(FakeProvider())
 
-    app.dependency_overrides[get_tree_service] = lambda: service
+    app.dependency_overrides[get_rhizome_service] = lambda: service
     app.dependency_overrides[get_generation_service] = lambda: gen_service
 
     async with AsyncClient(
@@ -82,16 +82,16 @@ async def gen_client(db: Database) -> AsyncIterator[AsyncClient]:
 class TestGenerateEndpoint:
     async def test_creates_assistant_node(self, gen_client: AsyncClient):
         """POST generate returns a new assistant node with correct fields."""
-        tree = (await gen_client.post("/api/trees", json={"title": "Gen Test"})).json()
+        tree = (await gen_client.post("/api/rhizomes", json={"title": "Gen Test"})).json()
         node = (
             await gen_client.post(
-                f"/api/trees/{tree['tree_id']}/nodes",
+                f"/api/rhizomes/{tree['rhizome_id']}/nodes",
                 json={"content": "Hello AI"},
             )
         ).json()
 
         resp = await gen_client.post(
-            f"/api/trees/{tree['tree_id']}/nodes/{node['node_id']}/generate",
+            f"/api/rhizomes/{tree['rhizome_id']}/nodes/{node['node_id']}/generate",
             json={"provider": "fake"},
         )
         assert resp.status_code == 201
@@ -104,20 +104,20 @@ class TestGenerateEndpoint:
 
     async def test_node_appears_in_tree(self, gen_client: AsyncClient):
         """Generated node shows up when you GET the tree."""
-        tree = (await gen_client.post("/api/trees", json={"title": "Gen Test"})).json()
+        tree = (await gen_client.post("/api/rhizomes", json={"title": "Gen Test"})).json()
         node = (
             await gen_client.post(
-                f"/api/trees/{tree['tree_id']}/nodes",
+                f"/api/rhizomes/{tree['rhizome_id']}/nodes",
                 json={"content": "Hello"},
             )
         ).json()
 
         await gen_client.post(
-            f"/api/trees/{tree['tree_id']}/nodes/{node['node_id']}/generate",
+            f"/api/rhizomes/{tree['rhizome_id']}/nodes/{node['node_id']}/generate",
             json={"provider": "fake"},
         )
 
-        tree_detail = (await gen_client.get(f"/api/trees/{tree['tree_id']}")).json()
+        tree_detail = (await gen_client.get(f"/api/rhizomes/{tree['rhizome_id']}")).json()
         nodes = tree_detail["nodes"]
         assert len(nodes) == 2
         roles = {n["role"] for n in nodes}
@@ -126,29 +126,29 @@ class TestGenerateEndpoint:
 
     async def test_nonexistent_tree_404(self, gen_client: AsyncClient):
         resp = await gen_client.post(
-            "/api/trees/nonexistent/nodes/whatever/generate",
+            "/api/rhizomes/nonexistent/nodes/whatever/generate",
             json={"provider": "fake"},
         )
         assert resp.status_code == 404
 
     async def test_nonexistent_node_404(self, gen_client: AsyncClient):
-        tree = (await gen_client.post("/api/trees", json={"title": "Test"})).json()
+        tree = (await gen_client.post("/api/rhizomes", json={"title": "Test"})).json()
         resp = await gen_client.post(
-            f"/api/trees/{tree['tree_id']}/nodes/nonexistent/generate",
+            f"/api/rhizomes/{tree['rhizome_id']}/nodes/nonexistent/generate",
             json={"provider": "fake"},
         )
         assert resp.status_code == 404
 
     async def test_unknown_provider_400(self, gen_client: AsyncClient):
-        tree = (await gen_client.post("/api/trees", json={"title": "Test"})).json()
+        tree = (await gen_client.post("/api/rhizomes", json={"title": "Test"})).json()
         node = (
             await gen_client.post(
-                f"/api/trees/{tree['tree_id']}/nodes",
+                f"/api/rhizomes/{tree['rhizome_id']}/nodes",
                 json={"content": "Hello"},
             )
         ).json()
         resp = await gen_client.post(
-            f"/api/trees/{tree['tree_id']}/nodes/{node['node_id']}/generate",
+            f"/api/rhizomes/{tree['rhizome_id']}/nodes/{node['node_id']}/generate",
             json={"provider": "nonexistent_provider"},
         )
         assert resp.status_code == 400
@@ -158,23 +158,23 @@ class TestGenerateEndpoint:
         # Create tree
         tree = (
             await gen_client.post(
-                "/api/trees",
+                "/api/rhizomes",
                 json={"title": "Workflow Test", "default_system_prompt": "Be helpful."},
             )
         ).json()
-        tree_id = tree["tree_id"]
+        rhizome_id = tree["rhizome_id"]
 
         # Add user message
         node = (
             await gen_client.post(
-                f"/api/trees/{tree_id}/nodes",
+                f"/api/rhizomes/{rhizome_id}/nodes",
                 json={"content": "What is 2+2?"},
             )
         ).json()
 
         # Generate
         gen_resp = await gen_client.post(
-            f"/api/trees/{tree_id}/nodes/{node['node_id']}/generate",
+            f"/api/rhizomes/{rhizome_id}/nodes/{node['node_id']}/generate",
             json={"provider": "fake"},
         )
         assert gen_resp.status_code == 201
@@ -183,7 +183,7 @@ class TestGenerateEndpoint:
         assert assistant_node["parent_id"] == node["node_id"]
 
         # Verify tree has both
-        tree_detail = (await gen_client.get(f"/api/trees/{tree_id}")).json()
+        tree_detail = (await gen_client.get(f"/api/rhizomes/{rhizome_id}")).json()
         assert len(tree_detail["nodes"]) == 2
 
 
@@ -192,16 +192,16 @@ class TestContextUsageInResponse:
 
     async def test_context_usage_populated(self, gen_client: AsyncClient):
         """Generated node response includes non-null context_usage."""
-        tree = (await gen_client.post("/api/trees", json={"title": "CU Test"})).json()
+        tree = (await gen_client.post("/api/rhizomes", json={"title": "CU Test"})).json()
         node = (
             await gen_client.post(
-                f"/api/trees/{tree['tree_id']}/nodes",
+                f"/api/rhizomes/{tree['rhizome_id']}/nodes",
                 json={"content": "Hello AI"},
             )
         ).json()
 
         resp = await gen_client.post(
-            f"/api/trees/{tree['tree_id']}/nodes/{node['node_id']}/generate",
+            f"/api/rhizomes/{tree['rhizome_id']}/nodes/{node['node_id']}/generate",
             json={"provider": "fake"},
         )
         data = resp.json()
@@ -209,16 +209,16 @@ class TestContextUsageInResponse:
 
     async def test_context_usage_total_tokens_positive(self, gen_client: AsyncClient):
         """context_usage.total_tokens > 0 for any generated node."""
-        tree = (await gen_client.post("/api/trees", json={"title": "CU Test"})).json()
+        tree = (await gen_client.post("/api/rhizomes", json={"title": "CU Test"})).json()
         node = (
             await gen_client.post(
-                f"/api/trees/{tree['tree_id']}/nodes",
+                f"/api/rhizomes/{tree['rhizome_id']}/nodes",
                 json={"content": "Hello AI"},
             )
         ).json()
 
         resp = await gen_client.post(
-            f"/api/trees/{tree['tree_id']}/nodes/{node['node_id']}/generate",
+            f"/api/rhizomes/{tree['rhizome_id']}/nodes/{node['node_id']}/generate",
             json={"provider": "fake"},
         )
         cu = resp.json()["context_usage"]
@@ -228,19 +228,19 @@ class TestContextUsageInResponse:
         """context_usage.breakdown has role keys."""
         tree = (
             await gen_client.post(
-                "/api/trees",
+                "/api/rhizomes",
                 json={"title": "CU Test", "default_system_prompt": "Be helpful."},
             )
         ).json()
         node = (
             await gen_client.post(
-                f"/api/trees/{tree['tree_id']}/nodes",
+                f"/api/rhizomes/{tree['rhizome_id']}/nodes",
                 json={"content": "Hello AI"},
             )
         ).json()
 
         resp = await gen_client.post(
-            f"/api/trees/{tree['tree_id']}/nodes/{node['node_id']}/generate",
+            f"/api/rhizomes/{tree['rhizome_id']}/nodes/{node['node_id']}/generate",
             json={"provider": "fake"},
         )
         breakdown = resp.json()["context_usage"]["breakdown"]
@@ -251,22 +251,22 @@ class TestContextUsageInResponse:
         """In a multi-turn conversation, context_usage.total_tokens increases."""
         tree = (
             await gen_client.post(
-                "/api/trees",
+                "/api/rhizomes",
                 json={"title": "Multi-turn CU", "default_system_prompt": "Be helpful."},
             )
         ).json()
-        tree_id = tree["tree_id"]
+        rhizome_id = tree["rhizome_id"]
 
         # Turn 1: user message → generate
         user1 = (
             await gen_client.post(
-                f"/api/trees/{tree_id}/nodes",
+                f"/api/rhizomes/{rhizome_id}/nodes",
                 json={"content": "First question to the AI"},
             )
         ).json()
         gen1 = (
             await gen_client.post(
-                f"/api/trees/{tree_id}/nodes/{user1['node_id']}/generate",
+                f"/api/rhizomes/{rhizome_id}/nodes/{user1['node_id']}/generate",
                 json={"provider": "fake"},
             )
         ).json()
@@ -275,13 +275,13 @@ class TestContextUsageInResponse:
         # Turn 2: another user message → generate
         user2 = (
             await gen_client.post(
-                f"/api/trees/{tree_id}/nodes",
+                f"/api/rhizomes/{rhizome_id}/nodes",
                 json={"content": "Second question following up", "parent_id": gen1["node_id"]},
             )
         ).json()
         gen2 = (
             await gen_client.post(
-                f"/api/trees/{tree_id}/nodes/{user2['node_id']}/generate",
+                f"/api/rhizomes/{rhizome_id}/nodes/{user2['node_id']}/generate",
                 json={"provider": "fake"},
             )
         ).json()
@@ -293,16 +293,16 @@ class TestContextUsageInResponse:
 class TestStreamingEndpoint:
     async def test_stream_returns_sse(self, gen_client: AsyncClient):
         """Streaming mode returns SSE with text_delta and message_stop events."""
-        tree = (await gen_client.post("/api/trees", json={"title": "Stream Test"})).json()
+        tree = (await gen_client.post("/api/rhizomes", json={"title": "Stream Test"})).json()
         node = (
             await gen_client.post(
-                f"/api/trees/{tree['tree_id']}/nodes",
+                f"/api/rhizomes/{tree['rhizome_id']}/nodes",
                 json={"content": "Hello"},
             )
         ).json()
 
         resp = await gen_client.post(
-            f"/api/trees/{tree['tree_id']}/nodes/{node['node_id']}/generate",
+            f"/api/rhizomes/{tree['rhizome_id']}/nodes/{node['node_id']}/generate",
             json={"provider": "fake", "stream": True},
         )
         assert resp.status_code == 200  # StreamingResponse is 200

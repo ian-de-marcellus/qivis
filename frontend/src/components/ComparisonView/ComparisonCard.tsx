@@ -1,7 +1,7 @@
 import type { NodeResponse, SamplingParams } from '../../api/types.ts'
-import { useTreeStore } from '../../store/treeStore.ts'
-import { averageCertainty, uncertaintyColor } from '../TreeView/LogprobOverlay.tsx'
-import { ThinkingSection } from '../TreeView/ThinkingSection.tsx'
+import { useRhizomeStore } from '../../store/rhizomeStore.ts'
+import { averageCertainty, uncertaintyColor } from '../RhizomeView/LogprobOverlay.tsx'
+import { ThinkingSection } from '../RhizomeView/ThinkingSection.tsx'
 import type { DiffSegment } from './wordDiff.ts'
 
 interface ComparisonCardProps {
@@ -37,7 +37,7 @@ function DiffContent({ segments }: { segments: DiffSegment[] }) {
 }
 
 export function ComparisonCard({ node, isSelected, diffSegments, onSelect }: ComparisonCardProps) {
-  const setComparisonHoveredNodeId = useTreeStore((s) => s.setComparisonHoveredNodeId)
+  const setComparisonHoveredNodeId = useRhizomeStore((s) => s.setComparisonHoveredNodeId)
   const logprobs = node.logprobs
   const avgCertainty = logprobs ? averageCertainty(logprobs) : null
 

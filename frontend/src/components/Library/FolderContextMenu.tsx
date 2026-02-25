@@ -49,24 +49,24 @@ export function FolderContextMenu({
   }
 
   return (
-    <div ref={ref} className="tree-context-menu" style={style}>
+    <div ref={ref} className="rhizome-context-menu" style={style}>
       {view === 'menu' && (
         <>
           <button
-            className="tree-context-item"
+            className="rhizome-context-item"
             onClick={() => { onNewSubfolder(folderPath); onClose() }}
           >
             New Subfolder
           </button>
           <button
-            className="tree-context-item"
+            className="rhizome-context-item"
             onClick={() => setView('rename')}
           >
             Rename
           </button>
-          <div className="tree-context-divider" />
+          <div className="rhizome-context-divider" />
           <button
-            className="tree-context-item tree-context-item--danger"
+            className="rhizome-context-item rhizome-context-item--danger"
             onClick={() => {
               if (treeCount === 0 || isGhost) {
                 handleDelete()
@@ -81,16 +81,16 @@ export function FolderContextMenu({
       )}
 
       {view === 'rename' && (
-        <div className="tree-context-picker">
-          <div className="tree-context-picker-header">
-            <button className="tree-context-back" onClick={() => setView('menu')}>
+        <div className="rhizome-context-picker">
+          <div className="rhizome-context-picker-header">
+            <button className="rhizome-context-back" onClick={() => setView('menu')}>
               &larr;
             </button>
             <span>Rename Folder</span>
           </div>
           <input
             type="text"
-            className="tree-context-input"
+            className="rhizome-context-input"
             value={renameValue}
             onChange={e => setRenameValue(e.target.value)}
             onKeyDown={e => {
@@ -103,9 +103,9 @@ export function FolderContextMenu({
       )}
 
       {view === 'confirm-delete' && (
-        <div className="tree-context-picker">
-          <div className="tree-context-picker-header">
-            <button className="tree-context-back" onClick={() => setView('menu')}>
+        <div className="rhizome-context-picker">
+          <div className="rhizome-context-picker-header">
+            <button className="rhizome-context-back" onClick={() => setView('menu')}>
               &larr;
             </button>
             <span>Delete Folder</span>
@@ -121,7 +121,7 @@ export function FolderContextMenu({
             Trees will become unsorted.
           </p>
           <button
-            className="tree-context-item tree-context-item--danger"
+            className="rhizome-context-item rhizome-context-item--danger"
             onClick={handleDelete}
           >
             Remove from {treeCount} tree{treeCount !== 1 ? 's' : ''}

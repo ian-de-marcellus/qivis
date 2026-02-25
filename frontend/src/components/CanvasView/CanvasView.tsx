@@ -2,19 +2,19 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useModalBehavior } from '../../hooks/useModalBehavior.ts'
 import { getInterventions } from '../../api/client.ts'
 import type { InterventionEntry, NodeResponse } from '../../api/types.ts'
-import type { TreeDefaults } from '../TreeView/contextDiffs.ts'
+import type { RhizomeDefaults } from '../RhizomeView/contextDiffs.ts'
 import { CanvasBubble } from './CanvasBubble.tsx'
 import { computeCanvasGrid } from './eraComputation.ts'
 import './CanvasView.css'
 
 interface CanvasViewProps {
-  treeId: string
+  rhizomeId: string
   pathNodes: NodeResponse[]
-  treeDefaults: TreeDefaults
+  rhizomeDefaults: RhizomeDefaults
   onDismiss: () => void
 }
 
-export function CanvasView({ treeId, pathNodes, treeDefaults, onDismiss }: CanvasViewProps) {
+export function CanvasView({ rhizomeId, pathNodes, rhizomeDefaults, onDismiss }: CanvasViewProps) {
   const [interventions, setInterventions] = useState<InterventionEntry[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const headerRef = useRef<HTMLDivElement>(null)
@@ -23,7 +23,7 @@ export function CanvasView({ treeId, pathNodes, treeDefaults, onDismiss }: Canva
   // Fetch interventions on mount
   useEffect(() => {
     let cancelled = false
-    getInterventions(treeId)
+    getInterventions(rhizomeId)
       .then((resp) => {
         if (!cancelled) setInterventions(resp.interventions)
       })
@@ -31,7 +31,7 @@ export function CanvasView({ treeId, pathNodes, treeDefaults, onDismiss }: Canva
         if (!cancelled) setError(String(err))
       })
     return () => { cancelled = true }
-  }, [treeId])
+  }, [rhizomeId])
 
   const canvasRef = useRef<HTMLDivElement>(null)
   const { handleBackdropClick } = useModalBehavior(canvasRef, onDismiss)
@@ -88,8 +88,8 @@ export function CanvasView({ treeId, pathNodes, treeDefaults, onDismiss }: Canva
   // Compute grid
   const grid = useMemo(() => {
     if (combinedInterventions == null) return null
-    return computeCanvasGrid(pathNodes, combinedInterventions, treeDefaults)
-  }, [pathNodes, combinedInterventions, treeDefaults])
+    return computeCanvasGrid(pathNodes, combinedInterventions, rhizomeDefaults)
+  }, [pathNodes, combinedInterventions, rhizomeDefaults])
 
   // Format era header timestamp
   const formatEraTimestamp = (iso: string): string => {

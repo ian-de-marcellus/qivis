@@ -1,10 +1,16 @@
-"""Database schema DDL. All tables use CREATE IF NOT EXISTS for idempotency."""
+"""Database schema DDL. All tables use CREATE IF NOT EXISTS for idempotency.
 
-SCHEMA_SQL = """
+Split into TABLES_SQL and INDEX_SQL so that migrations can run between them.
+On existing databases, tables already exist (IF NOT EXISTS skips), then 018
+migrations rename tree_id → rhizome_id, then indexes are created on the
+now-renamed columns.
+"""
+
+TABLES_SQL = """
 CREATE TABLE IF NOT EXISTS events (
     sequence_num INTEGER PRIMARY KEY AUTOINCREMENT,
     event_id TEXT UNIQUE NOT NULL,
-    tree_id TEXT NOT NULL,
+    rhizome_id TEXT NOT NULL,
     timestamp TEXT NOT NULL,
     device_id TEXT NOT NULL DEFAULT 'local',
     user_id TEXT,
@@ -12,12 +18,8 @@ CREATE TABLE IF NOT EXISTS events (
     payload TEXT NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_events_tree_id ON events(tree_id);
-CREATE INDEX IF NOT EXISTS idx_events_event_type ON events(event_type);
-CREATE INDEX IF NOT EXISTS idx_events_timestamp ON events(timestamp);
-
-CREATE TABLE IF NOT EXISTS trees (
-    tree_id TEXT PRIMARY KEY,
+CREATE TABLE IF NOT EXISTS rhizomes (
+    rhizome_id TEXT PRIMARY KEY,
     title TEXT,
     metadata TEXT NOT NULL DEFAULT '{}',
     default_model TEXT,
@@ -32,7 +34,7 @@ CREATE TABLE IF NOT EXISTS trees (
 
 CREATE TABLE IF NOT EXISTS nodes (
     node_id TEXT PRIMARY KEY,
-    tree_id TEXT NOT NULL,
+    rhizome_id TEXT NOT NULL,
     parent_id TEXT,
     role TEXT NOT NULL,
     content TEXT NOT NULL,
@@ -56,15 +58,12 @@ CREATE TABLE IF NOT EXISTS nodes (
     prompt_text TEXT,
     created_at TEXT NOT NULL,
     archived INTEGER NOT NULL DEFAULT 0,
-    FOREIGN KEY (tree_id) REFERENCES trees(tree_id)
+    FOREIGN KEY (rhizome_id) REFERENCES rhizomes(rhizome_id)
 );
-
-CREATE INDEX IF NOT EXISTS idx_nodes_tree_id ON nodes(tree_id);
-CREATE INDEX IF NOT EXISTS idx_nodes_parent_id ON nodes(parent_id);
 
 CREATE TABLE IF NOT EXISTS annotations (
     annotation_id TEXT PRIMARY KEY,
-    tree_id TEXT NOT NULL,
+    rhizome_id TEXT NOT NULL,
     node_id TEXT NOT NULL,
     tag TEXT NOT NULL,
     value TEXT,
@@ -72,13 +71,9 @@ CREATE TABLE IF NOT EXISTS annotations (
     created_at TEXT NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_annotations_node_id ON annotations(node_id);
-CREATE INDEX IF NOT EXISTS idx_annotations_tree_id ON annotations(tree_id);
-CREATE INDEX IF NOT EXISTS idx_annotations_tag ON annotations(tag);
-
 CREATE TABLE IF NOT EXISTS bookmarks (
     bookmark_id TEXT PRIMARY KEY,
-    tree_id TEXT NOT NULL,
+    rhizome_id TEXT NOT NULL,
     node_id TEXT NOT NULL,
     label TEXT NOT NULL,
     notes TEXT,
@@ -88,27 +83,22 @@ CREATE TABLE IF NOT EXISTS bookmarks (
     created_at TEXT NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_bookmarks_tree_id ON bookmarks(tree_id);
-CREATE INDEX IF NOT EXISTS idx_bookmarks_node_id ON bookmarks(node_id);
-
 CREATE TABLE IF NOT EXISTS node_exclusions (
-    tree_id TEXT NOT NULL,
+    rhizome_id TEXT NOT NULL,
     node_id TEXT NOT NULL,
     scope_node_id TEXT NOT NULL,
     reason TEXT,
     created_at TEXT NOT NULL,
-    PRIMARY KEY (tree_id, node_id, scope_node_id)
+    PRIMARY KEY (rhizome_id, node_id, scope_node_id)
 );
 
 CREATE TABLE IF NOT EXISTS digression_groups (
     group_id TEXT PRIMARY KEY,
-    tree_id TEXT NOT NULL,
+    rhizome_id TEXT NOT NULL,
     label TEXT NOT NULL,
     included INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL
 );
-
-CREATE INDEX IF NOT EXISTS idx_digression_groups_tree_id ON digression_groups(tree_id);
 
 CREATE TABLE IF NOT EXISTS digression_group_nodes (
     group_id TEXT NOT NULL,
@@ -118,28 +108,23 @@ CREATE TABLE IF NOT EXISTS digression_group_nodes (
 );
 
 CREATE TABLE IF NOT EXISTS node_anchors (
-    tree_id TEXT NOT NULL,
+    rhizome_id TEXT NOT NULL,
     node_id TEXT NOT NULL,
     created_at TEXT NOT NULL,
-    PRIMARY KEY (tree_id, node_id)
+    PRIMARY KEY (rhizome_id, node_id)
 );
-
-CREATE INDEX IF NOT EXISTS idx_node_anchors_tree_id ON node_anchors(tree_id);
 
 CREATE TABLE IF NOT EXISTS notes (
     note_id TEXT PRIMARY KEY,
-    tree_id TEXT NOT NULL,
+    rhizome_id TEXT NOT NULL,
     node_id TEXT NOT NULL,
     content TEXT NOT NULL,
     created_at TEXT NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_notes_node_id ON notes(node_id);
-CREATE INDEX IF NOT EXISTS idx_notes_tree_id ON notes(tree_id);
-
 CREATE TABLE IF NOT EXISTS summaries (
     summary_id TEXT PRIMARY KEY,
-    tree_id TEXT NOT NULL,
+    rhizome_id TEXT NOT NULL,
     anchor_node_id TEXT NOT NULL,
     scope TEXT NOT NULL,
     summary_type TEXT NOT NULL,
@@ -150,13 +135,29 @@ CREATE TABLE IF NOT EXISTS summaries (
     created_at TEXT NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_summaries_tree_id ON summaries(tree_id);
-CREATE INDEX IF NOT EXISTS idx_summaries_anchor_node_id ON summaries(anchor_node_id);
-
 CREATE TABLE IF NOT EXISTS schema_migrations (
     name TEXT PRIMARY KEY,
     applied_at TEXT NOT NULL
 );
+"""
+
+INDEX_SQL = """
+CREATE INDEX IF NOT EXISTS idx_events_rhizome_id ON events(rhizome_id);
+CREATE INDEX IF NOT EXISTS idx_events_event_type ON events(event_type);
+CREATE INDEX IF NOT EXISTS idx_events_timestamp ON events(timestamp);
+CREATE INDEX IF NOT EXISTS idx_nodes_rhizome_id ON nodes(rhizome_id);
+CREATE INDEX IF NOT EXISTS idx_nodes_parent_id ON nodes(parent_id);
+CREATE INDEX IF NOT EXISTS idx_annotations_node_id ON annotations(node_id);
+CREATE INDEX IF NOT EXISTS idx_annotations_rhizome_id ON annotations(rhizome_id);
+CREATE INDEX IF NOT EXISTS idx_annotations_tag ON annotations(tag);
+CREATE INDEX IF NOT EXISTS idx_bookmarks_rhizome_id ON bookmarks(rhizome_id);
+CREATE INDEX IF NOT EXISTS idx_bookmarks_node_id ON bookmarks(node_id);
+CREATE INDEX IF NOT EXISTS idx_digression_groups_rhizome_id ON digression_groups(rhizome_id);
+CREATE INDEX IF NOT EXISTS idx_node_anchors_rhizome_id ON node_anchors(rhizome_id);
+CREATE INDEX IF NOT EXISTS idx_notes_node_id ON notes(node_id);
+CREATE INDEX IF NOT EXISTS idx_notes_rhizome_id ON notes(rhizome_id);
+CREATE INDEX IF NOT EXISTS idx_summaries_rhizome_id ON summaries(rhizome_id);
+CREATE INDEX IF NOT EXISTS idx_summaries_anchor_node_id ON summaries(anchor_node_id);
 """
 
 import logging
@@ -207,7 +208,7 @@ _MIGRATIONS: list[tuple[str, str]] = [
     ("010_create_notes_table",
      "CREATE TABLE IF NOT EXISTS notes ("
      "note_id TEXT PRIMARY KEY, "
-     "tree_id TEXT NOT NULL, "
+     "rhizome_id TEXT NOT NULL, "
      "node_id TEXT NOT NULL, "
      "content TEXT NOT NULL, "
      "created_at TEXT NOT NULL"
@@ -215,12 +216,12 @@ _MIGRATIONS: list[tuple[str, str]] = [
     ("011_notes_node_id_index",
      "CREATE INDEX IF NOT EXISTS idx_notes_node_id ON notes(node_id)"),
     ("012_notes_tree_id_index",
-     "CREATE INDEX IF NOT EXISTS idx_notes_tree_id ON notes(tree_id)"),
+     "CREATE INDEX IF NOT EXISTS idx_notes_rhizome_id ON notes(rhizome_id)"),
     # Phase 7.3: Manual summarization
     ("013_create_summaries_table",
      "CREATE TABLE IF NOT EXISTS summaries ("
      "summary_id TEXT PRIMARY KEY, "
-     "tree_id TEXT NOT NULL, "
+     "rhizome_id TEXT NOT NULL, "
      "anchor_node_id TEXT NOT NULL, "
      "scope TEXT NOT NULL, "
      "summary_type TEXT NOT NULL, "
@@ -231,7 +232,7 @@ _MIGRATIONS: list[tuple[str, str]] = [
      "created_at TEXT NOT NULL"
      ")"),
     ("014_summaries_tree_id_index",
-     "CREATE INDEX IF NOT EXISTS idx_summaries_tree_id ON summaries(tree_id)"),
+     "CREATE INDEX IF NOT EXISTS idx_summaries_rhizome_id ON summaries(rhizome_id)"),
     ("015_summaries_anchor_node_id_index",
      "CREATE INDEX IF NOT EXISTS idx_summaries_anchor_node_id ON summaries(anchor_node_id)"),
     # Phase 8.1: Prefill/continuation mode
@@ -240,6 +241,29 @@ _MIGRATIONS: list[tuple[str, str]] = [
     # Phase 8.3: Completion mode prompt text
     ("017_add_prompt_text",
      "ALTER TABLE nodes ADD COLUMN prompt_text TEXT"),
+    # Rename Tree → Rhizome
+    ("018a_rename_trees_table",
+     "ALTER TABLE trees RENAME TO rhizomes"),
+    ("018b_rename_rhizomes_tree_id",
+     "ALTER TABLE rhizomes RENAME COLUMN tree_id TO rhizome_id"),
+    ("018c_rename_events_tree_id",
+     "ALTER TABLE events RENAME COLUMN tree_id TO rhizome_id"),
+    ("018d_rename_nodes_tree_id",
+     "ALTER TABLE nodes RENAME COLUMN tree_id TO rhizome_id"),
+    ("018e_rename_annotations_tree_id",
+     "ALTER TABLE annotations RENAME COLUMN tree_id TO rhizome_id"),
+    ("018f_rename_bookmarks_tree_id",
+     "ALTER TABLE bookmarks RENAME COLUMN tree_id TO rhizome_id"),
+    ("018g_rename_exclusions_tree_id",
+     "ALTER TABLE node_exclusions RENAME COLUMN tree_id TO rhizome_id"),
+    ("018h_rename_digressions_tree_id",
+     "ALTER TABLE digression_groups RENAME COLUMN tree_id TO rhizome_id"),
+    ("018i_rename_anchors_tree_id",
+     "ALTER TABLE node_anchors RENAME COLUMN tree_id TO rhizome_id"),
+    ("018j_rename_notes_tree_id",
+     "ALTER TABLE notes RENAME COLUMN tree_id TO rhizome_id"),
+    ("018k_rename_summaries_tree_id",
+     "ALTER TABLE summaries RENAME COLUMN tree_id TO rhizome_id"),
 ]
 
 
@@ -251,7 +275,7 @@ async def run_migrations(db: object) -> None:
     transition from the old bare-except system by detecting already-existing
     columns.
     """
-    # Ensure tracking table exists (for databases created before it was added to SCHEMA_SQL)
+    # Ensure tracking table exists (for databases created before it was added to TABLES_SQL)
     await db.execute(
         "CREATE TABLE IF NOT EXISTS schema_migrations "
         "(name TEXT PRIMARY KEY, applied_at TEXT NOT NULL)"
@@ -275,7 +299,8 @@ async def run_migrations(db: object) -> None:
             )
             logger.info("Applied migration: %s", name)
         except aiosqlite.OperationalError as e:
-            if "duplicate column name" in str(e).lower():
+            err = str(e).lower()
+            if "duplicate column name" in err:
                 # Column already exists from pre-tracking era
                 await db.execute(
                     "INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)",
@@ -283,6 +308,18 @@ async def run_migrations(db: object) -> None:
                 )
                 logger.debug(
                     "Migration %s: column already exists, recording as applied", name
+                )
+            elif name.startswith("018") and (
+                "no such table" in err or "no such column" in err
+            ):
+                # Rename migration on fresh DB where schema already uses new names
+                await db.execute(
+                    "INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)",
+                    (name, now),
+                )
+                logger.debug(
+                    "Migration %s: already at target state, recording as applied",
+                    name,
                 )
             else:
                 logger.warning("Migration %s failed: %s", name, e)

@@ -5,8 +5,8 @@ from pydantic import BaseModel
 
 class SearchResultItem(BaseModel):
     node_id: str
-    tree_id: str
-    tree_title: str | None = None
+    rhizome_id: str
+    rhizome_title: str | None = None
     role: str
     content: str
     snippet: str

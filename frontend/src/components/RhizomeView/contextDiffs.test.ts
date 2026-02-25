@@ -5,7 +5,7 @@ import {
   buildComparisonRows,
   buildOriginalContext,
   getPathToNode,
-  type TreeDefaults,
+  type RhizomeDefaults,
 } from './contextDiffs.ts'
 
 // -- Helpers for building test fixtures --
@@ -13,7 +13,7 @@ import {
 function makeNode(overrides: Partial<NodeResponse> & { node_id: string; role: string }): NodeResponse {
   return {
     node_id: overrides.node_id,
-    tree_id: 'tree-1',
+    rhizome_id: 'tree-1',
     parent_id: overrides.parent_id ?? null,
     role: overrides.role,
     content: overrides.content ?? `content of ${overrides.node_id}`,
@@ -48,7 +48,7 @@ function makeNode(overrides: Partial<NodeResponse> & { node_id: string; role: st
   }
 }
 
-const defaultTreeDefaults: TreeDefaults = {
+const defaultRhizomeDefaults: RhizomeDefaults = {
   default_system_prompt: 'You are a helpful assistant.',
   default_model: 'test-model',
   default_provider: 'test-provider',
@@ -127,19 +127,19 @@ describe('buildOriginalContext', () => {
       makeNode({ node_id: 'u2', role: 'user', parent_id: 'a1', content: 'follow up' }),
       makeNode({ node_id: 'target', role: 'assistant', parent_id: 'u2', content: 'final' }),
     ]
-    const ctx = buildOriginalContext(nodes[3], nodes, defaultTreeDefaults)
+    const ctx = buildOriginalContext(nodes[3], nodes, defaultRhizomeDefaults)
 
     // All messages use original content, not edited
     expect(ctx.messages.map((m) => m.content)).toEqual(['original', 'response', 'follow up'])
     expect(ctx.messages.every((m) => !m.wasEdited)).toBe(true)
   })
 
-  it('uses tree-default system prompt', () => {
+  it('uses rhizome-default system prompt', () => {
     const nodes = [
       makeNode({ node_id: 'root', role: 'user' }),
       makeNode({ node_id: 'target', role: 'assistant', parent_id: 'root', system_prompt: 'custom prompt' }),
     ]
-    const ctx = buildOriginalContext(nodes[1], nodes, defaultTreeDefaults)
+    const ctx = buildOriginalContext(nodes[1], nodes, defaultRhizomeDefaults)
     expect(ctx.systemPrompt).toBe('You are a helpful assistant.')
   })
 
@@ -148,7 +148,7 @@ describe('buildOriginalContext', () => {
       makeNode({ node_id: 'root', role: 'user' }),
       makeNode({ node_id: 'target', role: 'assistant', parent_id: 'root' }),
     ]
-    const ctx = buildOriginalContext(nodes[1], nodes, defaultTreeDefaults)
+    const ctx = buildOriginalContext(nodes[1], nodes, defaultRhizomeDefaults)
     expect(ctx.messages.every((m) => !m.isExcluded && !m.isEvicted)).toBe(true)
     expect(ctx.excludedCount).toBe(0)
     expect(ctx.evictedCount).toBe(0)
@@ -160,7 +160,7 @@ describe('buildOriginalContext', () => {
       makeNode({ node_id: 'root', role: 'user', parent_id: 'note' }),
       makeNode({ node_id: 'target', role: 'assistant', parent_id: 'root' }),
     ]
-    const ctx = buildOriginalContext(nodes[2], nodes, defaultTreeDefaults)
+    const ctx = buildOriginalContext(nodes[2], nodes, defaultRhizomeDefaults)
     expect(ctx.messages.map((m) => m.role)).toEqual(['user'])
   })
 })

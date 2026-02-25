@@ -18,8 +18,8 @@ export interface SamplingParams {
 
 // -- Responses --
 
-export interface TreeSummary {
-  tree_id: string
+export interface RhizomeSummary {
+  rhizome_id: string
   title: string | null
   conversation_mode: string
   created_at: string
@@ -31,7 +31,7 @@ export interface TreeSummary {
 
 export interface NodeResponse {
   node_id: string
-  tree_id: string
+  rhizome_id: string
   parent_id: string | null
   role: string
   content: string
@@ -104,8 +104,8 @@ export interface LogprobData {
   full_vocab_available?: boolean
 }
 
-export interface TreeDetail {
-  tree_id: string
+export interface RhizomeDetail {
+  rhizome_id: string
   title: string | null
   metadata: Record<string, unknown>
   default_model: string | null
@@ -154,13 +154,13 @@ export interface InterventionEntry {
 }
 
 export interface InterventionTimelineResponse {
-  tree_id: string
+  rhizome_id: string
   interventions: InterventionEntry[]
 }
 
 export interface AnnotationResponse {
   annotation_id: string
-  tree_id: string
+  rhizome_id: string
   node_id: string
   tag: string
   value: unknown
@@ -175,7 +175,7 @@ export interface TaxonomyResponse {
 
 export interface BookmarkResponse {
   bookmark_id: string
-  tree_id: string
+  rhizome_id: string
   node_id: string
   label: string
   notes: string | null
@@ -187,7 +187,7 @@ export interface BookmarkResponse {
 
 export interface NoteResponse {
   note_id: string
-  tree_id: string
+  rhizome_id: string
   node_id: string
   content: string
   created_at: string
@@ -203,7 +203,7 @@ export interface CreateBookmarkRequest {
 }
 
 export interface NodeExclusionResponse {
-  tree_id: string
+  rhizome_id: string
   node_id: string
   scope_node_id: string
   reason: string | null
@@ -212,7 +212,7 @@ export interface NodeExclusionResponse {
 
 export interface DigressionGroupResponse {
   group_id: string
-  tree_id: string
+  rhizome_id: string
   label: string
   node_ids: string[]
   included: boolean
@@ -233,14 +233,14 @@ export interface AddAnnotationRequest {
 
 // -- Requests --
 
-export interface CreateTreeRequest {
+export interface CreateRhizomeRequest {
   title?: string
   default_system_prompt?: string
   default_model?: string
   default_provider?: string
 }
 
-export interface PatchTreeRequest {
+export interface PatchRhizomeRequest {
   title?: string | null
   metadata?: Record<string, unknown>
   default_model?: string | null
@@ -302,8 +302,8 @@ export type SSEEvent = TextDeltaEvent | ThinkingDeltaEvent | MessageStopEvent | 
 
 export interface SearchResultItem {
   node_id: string
-  tree_id: string
-  tree_title: string | null
+  rhizome_id: string
+  rhizome_title: string | null
   role: string
   content: string
   snippet: string
@@ -344,7 +344,7 @@ export interface ImportPreviewResponse {
 }
 
 export interface ImportResult {
-  tree_id: string
+  rhizome_id: string
   title: string | null
   node_count: number
   warnings: string[]
@@ -383,7 +383,7 @@ export interface MergeResult {
 
 export interface SummaryResponse {
   summary_id: string
-  tree_id: string
+  rhizome_id: string
   anchor_node_id: string
   scope: 'branch' | 'subtree'
   summary_type: 'concise' | 'detailed' | 'key_points' | 'custom'

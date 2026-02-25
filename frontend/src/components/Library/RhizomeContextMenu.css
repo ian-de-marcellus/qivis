@@ -1,4 +1,4 @@
-.tree-context-menu {
+.rhizome-context-menu {
   min-width: 180px;
   max-width: 260px;
   background: var(--bg-secondary);
@@ -11,7 +11,7 @@
   overflow: hidden;
 }
 
-.tree-context-item {
+.rhizome-context-item {
   display: block;
   width: 100%;
   padding: var(--space-sm) var(--space-md);
@@ -25,15 +25,15 @@
   transition: background 0.1s ease;
 }
 
-.tree-context-item:hover {
+.rhizome-context-item:hover {
   background: var(--bg-hover);
 }
 
-.tree-context-item--danger {
+.rhizome-context-item--danger {
   color: var(--color-red);
 }
 
-.tree-context-divider {
+.rhizome-context-divider {
   height: 1px;
   background: var(--border-subtle);
   margin: var(--space-xs) 0;
@@ -41,14 +41,14 @@
 
 /* Picker views (folders, tags) */
 
-.tree-context-picker {
+.rhizome-context-picker {
   padding: var(--space-sm);
   display: flex;
   flex-direction: column;
   gap: var(--space-sm);
 }
 
-.tree-context-picker-header {
+.rhizome-context-picker-header {
   display: flex;
   align-items: center;
   gap: var(--space-sm);
@@ -59,7 +59,7 @@
   color: var(--text-secondary);
 }
 
-.tree-context-back {
+.rhizome-context-back {
   background: none;
   border: none;
   color: var(--text-secondary);
@@ -70,11 +70,11 @@
   transition: color 0.1s;
 }
 
-.tree-context-back:hover {
+.rhizome-context-back:hover {
   color: var(--text-primary);
 }
 
-.tree-context-input {
+.rhizome-context-input {
   width: 100%;
   padding: var(--space-xs) var(--space-sm);
   font-family: var(--font-ui);
@@ -87,19 +87,19 @@
   transition: border-color 0.15s;
 }
 
-.tree-context-input:focus {
+.rhizome-context-input:focus {
   outline: none;
   border-color: var(--accent);
 }
 
-.tree-context-current {
+.rhizome-context-current {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-xs);
 }
 
-.tree-context-folder-chip,
-.tree-context-tag-chip {
+.rhizome-context-folder-chip,
+.rhizome-context-tag-chip {
   display: inline-flex;
   align-items: center;
   gap: 0.2rem;
@@ -110,12 +110,12 @@
   color: var(--text-primary);
 }
 
-.tree-context-tag-chip {
+.rhizome-context-tag-chip {
   border: 1px solid;
 }
 
-.tree-context-folder-chip button,
-.tree-context-tag-chip button {
+.rhizome-context-folder-chip button,
+.rhizome-context-tag-chip button {
   background: none;
   border: none;
   color: var(--text-secondary);
@@ -125,12 +125,12 @@
   line-height: 1;
 }
 
-.tree-context-folder-chip button:hover,
-.tree-context-tag-chip button:hover {
+.rhizome-context-folder-chip button:hover,
+.rhizome-context-tag-chip button:hover {
   color: var(--color-red);
 }
 
-.tree-context-tag-dot {
+.rhizome-context-tag-dot {
   display: inline-block;
   width: 6px;
   height: 6px;
@@ -138,7 +138,7 @@
   flex-shrink: 0;
 }
 
-.tree-context-suggestions {
+.rhizome-context-suggestions {
   display: flex;
   flex-direction: column;
   gap: 1px;
@@ -146,7 +146,7 @@
   overflow-y: auto;
 }
 
-.tree-context-suggestion {
+.rhizome-context-suggestion {
   display: flex;
   align-items: center;
   gap: var(--space-xs);
@@ -162,7 +162,7 @@
   transition: background 0.1s ease, color 0.1s ease;
 }
 
-.tree-context-suggestion:hover {
+.rhizome-context-suggestion:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
 }

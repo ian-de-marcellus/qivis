@@ -33,10 +33,10 @@ from qivis.models import (
     SamplingParams,
     SummaryGeneratedPayload,
     TokenLogprob,
-    TreeArchivedPayload,
-    TreeCreatedPayload,
-    TreeMetadataUpdatedPayload,
-    TreeUnarchivedPayload,
+    RhizomeArchivedPayload,
+    RhizomeCreatedPayload,
+    RhizomeMetadataUpdatedPayload,
+    RhizomeUnarchivedPayload,
 )
 
 # -- Canonical data structures --
@@ -129,15 +129,15 @@ class TestParticipant:
 # -- Event payloads --
 
 
-class TestTreeCreatedPayload:
+class TestRhizomeCreatedPayload:
     def test_minimal(self):
-        p = TreeCreatedPayload()
+        p = RhizomeCreatedPayload()
         assert p.title is None
         assert p.conversation_mode == "single"
         assert p.metadata == {}
 
     def test_full(self):
-        p = TreeCreatedPayload(
+        p = RhizomeCreatedPayload(
             title="My Tree",
             default_model="claude-sonnet-4-5-20250929",
             default_provider="anthropic",
@@ -147,7 +147,7 @@ class TestTreeCreatedPayload:
             conversation_mode="multi_agent",
         )
         dumped = p.model_dump()
-        restored = TreeCreatedPayload.model_validate(dumped)
+        restored = RhizomeCreatedPayload.model_validate(dumped)
         assert restored.title == "My Tree"
         assert restored.default_sampling_params is not None
         assert restored.default_sampling_params.temperature == 0.5
@@ -178,20 +178,20 @@ class TestNodeCreatedPayload:
 
 class TestEventEnvelope:
     def test_typed_payload_tree_created(self):
-        payload = TreeCreatedPayload(title="Test").model_dump()
+        payload = RhizomeCreatedPayload(title="Test").model_dump()
         env = EventEnvelope(
-            event_id="e1", tree_id="t1",
+            event_id="e1", rhizome_id="t1",
             timestamp=datetime(2026, 2, 15, tzinfo=UTC),
-            device_id="local", event_type="TreeCreated",
+            device_id="local", event_type="RhizomeCreated",
             payload=payload,
         )
         typed = env.typed_payload()
-        assert isinstance(typed, TreeCreatedPayload)
+        assert isinstance(typed, RhizomeCreatedPayload)
         assert typed.title == "Test"
 
     def test_typed_payload_unknown_type_raises(self):
         env = EventEnvelope(
-            event_id="e1", tree_id="t1",
+            event_id="e1", rhizome_id="t1",
             timestamp=datetime(2026, 2, 15, tzinfo=UTC),
             device_id="local", event_type="NonexistentEvent",
             payload={},
@@ -210,6 +210,8 @@ class TestEventTypesRegistry:
     def test_all_event_types_registered(self):
         """Every payload class defined in the module should be in EVENT_TYPES."""
         expected_types = {
+            "RhizomeCreated", "RhizomeMetadataUpdated", "RhizomeArchived", "RhizomeUnarchived",
+            # Backward compat aliases for old events stored as Tree*
             "TreeCreated", "TreeMetadataUpdated", "TreeArchived", "TreeUnarchived",
             "GenerationStarted", "NodeCreated", "NodeContentEdited",
             "NodeArchived", "NodeUnarchived",
@@ -224,12 +226,17 @@ class TestEventTypesRegistry:
         assert set(EVENT_TYPES.keys()) == expected_types
 
     def test_registry_maps_to_correct_classes(self):
-        assert EVENT_TYPES["TreeCreated"] is TreeCreatedPayload
+        assert EVENT_TYPES["RhizomeCreated"] is RhizomeCreatedPayload
         assert EVENT_TYPES["NodeCreated"] is NodeCreatedPayload
         assert EVENT_TYPES["GenerationStarted"] is GenerationStartedPayload
-        assert EVENT_TYPES["TreeMetadataUpdated"] is TreeMetadataUpdatedPayload
-        assert EVENT_TYPES["TreeArchived"] is TreeArchivedPayload
-        assert EVENT_TYPES["TreeUnarchived"] is TreeUnarchivedPayload
+        assert EVENT_TYPES["RhizomeMetadataUpdated"] is RhizomeMetadataUpdatedPayload
+        assert EVENT_TYPES["RhizomeArchived"] is RhizomeArchivedPayload
+        assert EVENT_TYPES["RhizomeUnarchived"] is RhizomeUnarchivedPayload
+        # Backward compat: old Tree* names map to same payload classes
+        assert EVENT_TYPES["TreeCreated"] is RhizomeCreatedPayload
+        assert EVENT_TYPES["TreeMetadataUpdated"] is RhizomeMetadataUpdatedPayload
+        assert EVENT_TYPES["TreeArchived"] is RhizomeArchivedPayload
+        assert EVENT_TYPES["TreeUnarchived"] is RhizomeUnarchivedPayload
         assert EVENT_TYPES["NodeArchived"] is NodeArchivedPayload
         assert EVENT_TYPES["NodeUnarchived"] is NodeUnarchivedPayload
         assert EVENT_TYPES["AnnotationAdded"] is AnnotationAddedPayload

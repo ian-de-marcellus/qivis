@@ -37,7 +37,7 @@ export function ForkPanel({
   const [content, setContent] = useState('')
   const [showSettings, setShowSettings] = useState(mode === 'regenerate' || mode === 'generate')
 
-  // Default to tree's provider if it's available, otherwise first provider
+  // Default to rhizome's provider if it's available, otherwise first provider
   const defaultProvider =
     providers.find((p) => p.name === defaults.provider)?.name ??
     providers[0]?.name ??
@@ -50,7 +50,7 @@ export function ForkPanel({
   const supportedParams = selectedProvider?.supported_params ?? []
   const [systemPrompt, setSystemPrompt] = useState(defaults.systemPrompt ?? '')
 
-  // Sampling state — initialize from tree defaults
+  // Sampling state — initialize from rhizome defaults
   const sp = samplingDefaults ?? {}
   const [samplingValues, setSamplingValues] = useState<SamplingParamValues>({
     temperature: sp.temperature != null ? String(sp.temperature) : '',

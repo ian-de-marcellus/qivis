@@ -1,20 +1,20 @@
 import { useEffect, useState } from 'react'
-import { useTreeStore, useTreeData } from '../../store/treeStore.ts'
+import { useRhizomeStore, useRhizomeData } from '../../store/rhizomeStore.ts'
 import './SystemPromptInput.css'
 
 export function SystemPromptInput() {
-  const { currentTree } = useTreeData()
-  const systemPromptOverride = useTreeStore(s => s.systemPromptOverride)
-  const setSystemPromptOverride = useTreeStore(s => s.setSystemPromptOverride)
+  const { currentRhizome } = useRhizomeData()
+  const systemPromptOverride = useRhizomeStore(s => s.systemPromptOverride)
+  const setSystemPromptOverride = useRhizomeStore(s => s.setSystemPromptOverride)
   const [isExpanded, setIsExpanded] = useState(false)
 
-  const defaultPrompt = currentTree?.default_system_prompt ?? ''
+  const defaultPrompt = currentRhizome?.default_system_prompt ?? ''
   const displayValue = systemPromptOverride ?? defaultPrompt
 
-  // Reset override when switching trees
+  // Reset override when switching rhizomes
   useEffect(() => {
     setSystemPromptOverride(null)
-  }, [currentTree?.tree_id, setSystemPromptOverride])
+  }, [currentRhizome?.rhizome_id, setSystemPromptOverride])
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const value = e.target.value

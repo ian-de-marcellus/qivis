@@ -13,15 +13,15 @@ import pytest
 
 from qivis.events.projector import StateProjector
 from qivis.events.store import EventStore
-from qivis.trees.schemas import CreateSummaryRequest
-from qivis.trees.service import TreeService
+from qivis.rhizomes.schemas import CreateSummaryRequest
+from qivis.rhizomes.service import RhizomeService
 from tests.fixtures import (
-    create_test_tree,
-    create_tree_with_messages,
+    create_test_rhizome,
+    create_rhizome_with_messages,
     make_node_created_envelope,
     make_summary_generated_envelope,
     make_summary_removed_envelope,
-    make_tree_created_envelope,
+    make_rhizome_created_envelope,
 )
 
 
@@ -35,8 +35,8 @@ class TestSummaryProjection:
 
     async def test_summary_generated_projects(self, event_store, projector, db):
         """SummaryGenerated inserts a row into the summaries table."""
-        tree_ev = make_tree_created_envelope()
-        node_ev = make_node_created_envelope(tree_id=tree_ev.tree_id, content="Hello")
+        tree_ev = make_rhizome_created_envelope()
+        node_ev = make_node_created_envelope(rhizome_id=tree_ev.rhizome_id, content="Hello")
 
         for e in [tree_ev, node_ev]:
             await event_store.append(e)
@@ -44,7 +44,7 @@ class TestSummaryProjection:
 
         node_id = node_ev.payload["node_id"]
         summary_ev = make_summary_generated_envelope(
-            tree_id=tree_ev.tree_id,
+            rhizome_id=tree_ev.rhizome_id,
             anchor_node_id=node_id,
             scope="branch",
             summary_type="concise",
@@ -61,15 +61,15 @@ class TestSummaryProjection:
         assert row is not None
         assert row["summary"] == "The user greeted the assistant."
         assert row["anchor_node_id"] == node_id
-        assert row["tree_id"] == tree_ev.tree_id
+        assert row["rhizome_id"] == tree_ev.rhizome_id
         assert row["scope"] == "branch"
         assert row["summary_type"] == "concise"
         assert json.loads(row["node_ids"]) == [node_id]
 
     async def test_summary_removed_deletes_row(self, event_store, projector, db):
         """SummaryRemoved deletes the summary from the table."""
-        tree_ev = make_tree_created_envelope()
-        node_ev = make_node_created_envelope(tree_id=tree_ev.tree_id, content="Hello")
+        tree_ev = make_rhizome_created_envelope()
+        node_ev = make_node_created_envelope(rhizome_id=tree_ev.rhizome_id, content="Hello")
 
         for e in [tree_ev, node_ev]:
             await event_store.append(e)
@@ -77,7 +77,7 @@ class TestSummaryProjection:
 
         node_id = node_ev.payload["node_id"]
         summary_ev = make_summary_generated_envelope(
-            tree_id=tree_ev.tree_id,
+            rhizome_id=tree_ev.rhizome_id,
             anchor_node_id=node_id,
         )
         await event_store.append(summary_ev)
@@ -85,7 +85,7 @@ class TestSummaryProjection:
 
         summary_id = summary_ev.payload["summary_id"]
         remove_ev = make_summary_removed_envelope(
-            tree_id=tree_ev.tree_id,
+            rhizome_id=tree_ev.rhizome_id,
             summary_id=summary_id,
         )
         await event_store.append(remove_ev)
@@ -99,8 +99,8 @@ class TestSummaryProjection:
 
     async def test_multiple_summaries_per_anchor_node(self, event_store, projector, db):
         """Multiple summaries can exist for the same anchor node."""
-        tree_ev = make_tree_created_envelope()
-        node_ev = make_node_created_envelope(tree_id=tree_ev.tree_id, content="Hello")
+        tree_ev = make_rhizome_created_envelope()
+        node_ev = make_node_created_envelope(rhizome_id=tree_ev.rhizome_id, content="Hello")
 
         for e in [tree_ev, node_ev]:
             await event_store.append(e)
@@ -109,13 +109,13 @@ class TestSummaryProjection:
         node_id = node_ev.payload["node_id"]
 
         summary1 = make_summary_generated_envelope(
-            tree_id=tree_ev.tree_id,
+            rhizome_id=tree_ev.rhizome_id,
             anchor_node_id=node_id,
             summary_type="concise",
             summary="Short version.",
         )
         summary2 = make_summary_generated_envelope(
-            tree_id=tree_ev.tree_id,
+            rhizome_id=tree_ev.rhizome_id,
             anchor_node_id=node_id,
             summary_type="detailed",
             summary="Long detailed version with more context.",
@@ -134,7 +134,7 @@ class TestSummaryProjection:
 
 
 # ---------------------------------------------------------------------------
-# Helper: create a TreeService with a mock summary client
+# Helper: create a RhizomeService with a mock summary client
 # ---------------------------------------------------------------------------
 
 def _mock_summary_client(text: str = "Mock summary.", model: str = "claude-haiku-4-5-20251001"):
@@ -157,15 +157,15 @@ class TestSummaryAPI:
 
     async def test_branch_summary(self, client, db):
         """POST /summarize with branch scope returns summary."""
-        data = await create_tree_with_messages(client, n_messages=4)
-        tree_id = data["tree_id"]
+        data = await create_rhizome_with_messages(client, n_messages=4)
+        rhizome_id = data["rhizome_id"]
         last_node = data["node_ids"][-1]
 
         mock_client = _mock_summary_client("Branch concise summary.")
-        service = TreeService(db, summary_client=mock_client)
+        service = RhizomeService(db, summary_client=mock_client)
 
         result = await service.generate_summary(
-            tree_id, last_node,
+            rhizome_id, last_node,
             CreateSummaryRequest(scope="branch", summary_type="concise"),
         )
         assert result.summary == "Branch concise summary."
@@ -177,15 +177,15 @@ class TestSummaryAPI:
 
     async def test_subtree_summary(self, client, db):
         """POST /summarize with subtree scope returns summary covering descendants."""
-        data = await create_tree_with_messages(client, n_messages=4)
-        tree_id = data["tree_id"]
+        data = await create_rhizome_with_messages(client, n_messages=4)
+        rhizome_id = data["rhizome_id"]
         root_node = data["node_ids"][0]
 
         mock_client = _mock_summary_client("Subtree summary.")
-        service = TreeService(db, summary_client=mock_client)
+        service = RhizomeService(db, summary_client=mock_client)
 
         result = await service.generate_summary(
-            tree_id, root_node,
+            rhizome_id, root_node,
             CreateSummaryRequest(scope="subtree", summary_type="detailed"),
         )
         assert result.summary == "Subtree summary."
@@ -196,15 +196,15 @@ class TestSummaryAPI:
 
     async def test_custom_prompt(self, client, db):
         """POST /summarize with custom prompt passes it through."""
-        data = await create_tree_with_messages(client, n_messages=2)
-        tree_id = data["tree_id"]
+        data = await create_rhizome_with_messages(client, n_messages=2)
+        rhizome_id = data["rhizome_id"]
         node_id = data["node_ids"][-1]
 
         mock_client = _mock_summary_client("Custom result.")
-        service = TreeService(db, summary_client=mock_client)
+        service = RhizomeService(db, summary_client=mock_client)
 
         result = await service.generate_summary(
-            tree_id, node_id,
+            rhizome_id, node_id,
             CreateSummaryRequest(
                 scope="branch",
                 summary_type="custom",
@@ -221,55 +221,55 @@ class TestSummaryAPI:
 
     async def test_list_summaries(self, client, db):
         """GET /summaries returns all summaries for tree."""
-        data = await create_tree_with_messages(client, n_messages=2)
-        tree_id = data["tree_id"]
+        data = await create_rhizome_with_messages(client, n_messages=2)
+        rhizome_id = data["rhizome_id"]
         node_id = data["node_ids"][-1]
 
         mock_client = _mock_summary_client()
-        service = TreeService(db, summary_client=mock_client)
+        service = RhizomeService(db, summary_client=mock_client)
 
         # Generate two summaries
         await service.generate_summary(
-            tree_id, node_id,
+            rhizome_id, node_id,
             CreateSummaryRequest(scope="branch", summary_type="concise"),
         )
         await service.generate_summary(
-            tree_id, node_id,
+            rhizome_id, node_id,
             CreateSummaryRequest(scope="branch", summary_type="detailed"),
         )
 
-        summaries = await service.list_summaries(tree_id)
+        summaries = await service.list_summaries(rhizome_id)
         assert len(summaries) == 2
         types = {s.summary_type for s in summaries}
         assert types == {"concise", "detailed"}
 
     async def test_remove_summary(self, client, db):
         """DELETE /summaries/{id} removes summary."""
-        data = await create_tree_with_messages(client, n_messages=2)
-        tree_id = data["tree_id"]
+        data = await create_rhizome_with_messages(client, n_messages=2)
+        rhizome_id = data["rhizome_id"]
         node_id = data["node_ids"][-1]
 
         mock_client = _mock_summary_client()
-        service = TreeService(db, summary_client=mock_client)
+        service = RhizomeService(db, summary_client=mock_client)
 
         result = await service.generate_summary(
-            tree_id, node_id,
+            rhizome_id, node_id,
             CreateSummaryRequest(scope="branch", summary_type="concise"),
         )
 
-        await service.remove_summary(tree_id, result.summary_id)
+        await service.remove_summary(rhizome_id, result.summary_id)
 
-        summaries = await service.list_summaries(tree_id)
+        summaries = await service.list_summaries(rhizome_id)
         assert len(summaries) == 0
 
     async def test_tree_not_found_404(self, client, db):
-        """Summarize on non-existent tree raises TreeNotFoundError."""
-        from qivis.trees.service import TreeNotFoundError
+        """Summarize on non-existent tree raises RhizomeNotFoundError."""
+        from qivis.rhizomes.service import RhizomeNotFoundError
 
         mock_client = _mock_summary_client()
-        service = TreeService(db, summary_client=mock_client)
+        service = RhizomeService(db, summary_client=mock_client)
 
-        with pytest.raises(TreeNotFoundError):
+        with pytest.raises(RhizomeNotFoundError):
             await service.generate_summary(
                 "nonexistent", "nope",
                 CreateSummaryRequest(),
@@ -277,47 +277,47 @@ class TestSummaryAPI:
 
     async def test_node_not_found_404(self, client, db):
         """Summarize on non-existent node raises NodeNotFoundError."""
-        from qivis.trees.service import NodeNotFoundError
+        from qivis.rhizomes.service import NodeNotFoundError
 
-        data = await create_tree_with_messages(client, n_messages=1)
-        tree_id = data["tree_id"]
+        data = await create_rhizome_with_messages(client, n_messages=1)
+        rhizome_id = data["rhizome_id"]
 
         mock_client = _mock_summary_client()
-        service = TreeService(db, summary_client=mock_client)
+        service = RhizomeService(db, summary_client=mock_client)
 
         with pytest.raises(NodeNotFoundError):
             await service.generate_summary(
-                tree_id, "nonexistent-node",
+                rhizome_id, "nonexistent-node",
                 CreateSummaryRequest(),
             )
 
     async def test_no_summary_client_503(self, client, db):
         """Summarize without summary client raises SummaryClientNotConfiguredError."""
-        from qivis.trees.service import SummaryClientNotConfiguredError
+        from qivis.rhizomes.service import SummaryClientNotConfiguredError
 
-        data = await create_tree_with_messages(client, n_messages=1)
-        tree_id = data["tree_id"]
+        data = await create_rhizome_with_messages(client, n_messages=1)
+        rhizome_id = data["rhizome_id"]
         node_id = data["node_ids"][0]
 
-        service = TreeService(db, summary_client=None)
+        service = RhizomeService(db, summary_client=None)
 
         with pytest.raises(SummaryClientNotConfiguredError):
             await service.generate_summary(
-                tree_id, node_id,
+                rhizome_id, node_id,
                 CreateSummaryRequest(),
             )
 
     async def test_remove_nonexistent_summary_404(self, client, db):
         """Remove non-existent summary raises SummaryNotFoundError."""
-        from qivis.trees.service import SummaryNotFoundError
+        from qivis.rhizomes.service import SummaryNotFoundError
 
-        data = await create_tree_with_messages(client, n_messages=1)
-        tree_id = data["tree_id"]
+        data = await create_rhizome_with_messages(client, n_messages=1)
+        rhizome_id = data["rhizome_id"]
 
-        service = TreeService(db, summary_client=None)
+        service = RhizomeService(db, summary_client=None)
 
         with pytest.raises(SummaryNotFoundError):
-            await service.remove_summary(tree_id, "nonexistent")
+            await service.remove_summary(rhizome_id, "nonexistent")
 
 
 # ---------------------------------------------------------------------------
@@ -330,15 +330,15 @@ class TestSummaryAlgorithm:
 
     async def test_branch_walks_parent_chain(self, client, db):
         """Branch scope walks the correct parent chain from leaf to root."""
-        data = await create_tree_with_messages(client, n_messages=5)
-        tree_id = data["tree_id"]
+        data = await create_rhizome_with_messages(client, n_messages=5)
+        rhizome_id = data["rhizome_id"]
         leaf = data["node_ids"][-1]
 
         mock_client = _mock_summary_client()
-        service = TreeService(db, summary_client=mock_client)
+        service = RhizomeService(db, summary_client=mock_client)
 
         result = await service.generate_summary(
-            tree_id, leaf,
+            rhizome_id, leaf,
             CreateSummaryRequest(scope="branch"),
         )
         # Branch from leaf to root should include all 5 nodes in order
@@ -347,34 +347,34 @@ class TestSummaryAlgorithm:
     async def test_subtree_collects_all_descendants(self, client, db):
         """Subtree scope collects all descendants including branches."""
         # Create tree: root -> A, root -> B (two children of root)
-        tree = await create_test_tree(client, title="Branching")
-        tree_id = tree["tree_id"]
+        tree = await create_test_rhizome(client, title="Branching")
+        rhizome_id = tree["rhizome_id"]
 
         # Root node
         resp = await client.post(
-            f"/api/trees/{tree_id}/nodes",
+            f"/api/rhizomes/{rhizome_id}/nodes",
             json={"content": "Root", "role": "user"},
         )
         root_id = resp.json()["node_id"]
 
         # Two children
         resp = await client.post(
-            f"/api/trees/{tree_id}/nodes",
+            f"/api/rhizomes/{rhizome_id}/nodes",
             json={"content": "Child A", "role": "assistant", "parent_id": root_id},
         )
         child_a = resp.json()["node_id"]
 
         resp = await client.post(
-            f"/api/trees/{tree_id}/nodes",
+            f"/api/rhizomes/{rhizome_id}/nodes",
             json={"content": "Child B", "role": "assistant", "parent_id": root_id},
         )
         child_b = resp.json()["node_id"]
 
         mock_client = _mock_summary_client()
-        service = TreeService(db, summary_client=mock_client)
+        service = RhizomeService(db, summary_client=mock_client)
 
         result = await service.generate_summary(
-            tree_id, root_id,
+            rhizome_id, root_id,
             CreateSummaryRequest(scope="subtree"),
         )
         assert len(result.node_ids) == 3
@@ -384,16 +384,16 @@ class TestSummaryAlgorithm:
 
     async def test_summary_type_selects_prompt(self, client, db):
         """Different summary types use different system prompts and max_tokens."""
-        data = await create_tree_with_messages(client, n_messages=2)
-        tree_id = data["tree_id"]
+        data = await create_rhizome_with_messages(client, n_messages=2)
+        rhizome_id = data["rhizome_id"]
         node_id = data["node_ids"][-1]
 
         mock_client = _mock_summary_client()
-        service = TreeService(db, summary_client=mock_client)
+        service = RhizomeService(db, summary_client=mock_client)
 
         # Concise
         await service.generate_summary(
-            tree_id, node_id,
+            rhizome_id, node_id,
             CreateSummaryRequest(summary_type="concise"),
         )
         call = mock_client.messages.create.call_args
@@ -405,7 +405,7 @@ class TestSummaryAlgorithm:
 
         # Key points
         await service.generate_summary(
-            tree_id, node_id,
+            rhizome_id, node_id,
             CreateSummaryRequest(summary_type="key_points"),
         )
         call = mock_client.messages.create.call_args
@@ -414,21 +414,21 @@ class TestSummaryAlgorithm:
 
     async def test_edited_content_used_in_transcript(self, client, db):
         """Transcript uses edited_content when present."""
-        data = await create_tree_with_messages(client, n_messages=2)
-        tree_id = data["tree_id"]
+        data = await create_rhizome_with_messages(client, n_messages=2)
+        rhizome_id = data["rhizome_id"]
         node_id = data["node_ids"][0]
 
         # Edit the first node
         await client.patch(
-            f"/api/trees/{tree_id}/nodes/{node_id}/content",
+            f"/api/rhizomes/{rhizome_id}/nodes/{node_id}/content",
             json={"edited_content": "Edited hello"},
         )
 
         mock_client = _mock_summary_client()
-        service = TreeService(db, summary_client=mock_client)
+        service = RhizomeService(db, summary_client=mock_client)
 
         await service.generate_summary(
-            tree_id, data["node_ids"][-1],
+            rhizome_id, data["node_ids"][-1],
             CreateSummaryRequest(scope="branch"),
         )
 
@@ -439,10 +439,10 @@ class TestSummaryAlgorithm:
 
     async def test_summaries_survive_replay(self, event_store, projector, db):
         """Summaries survive full event replay from scratch."""
-        tree_ev = make_tree_created_envelope()
-        node_ev = make_node_created_envelope(tree_id=tree_ev.tree_id, content="Hello")
+        tree_ev = make_rhizome_created_envelope()
+        node_ev = make_node_created_envelope(rhizome_id=tree_ev.rhizome_id, content="Hello")
         summary_ev = make_summary_generated_envelope(
-            tree_id=tree_ev.tree_id,
+            rhizome_id=tree_ev.rhizome_id,
             anchor_node_id=node_ev.payload["node_id"],
             summary="Replayed summary.",
         )
@@ -454,7 +454,7 @@ class TestSummaryAlgorithm:
         # Clear tables and replay
         await db.execute("DELETE FROM summaries")
         await db.execute("DELETE FROM nodes")
-        await db.execute("DELETE FROM trees")
+        await db.execute("DELETE FROM rhizomes")
 
         fresh_projector = StateProjector(db)
         await fresh_projector.project(all_events)

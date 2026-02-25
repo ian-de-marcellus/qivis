@@ -1,17 +1,17 @@
 import { useCallback, useRef, useState } from 'react'
 import * as api from '../../api/client.ts'
 import type { MergePreviewResponse, MergeResult } from '../../api/types.ts'
-import { useTreeStore } from '../../store/treeStore.ts'
+import { useRhizomeStore } from '../../store/rhizomeStore.ts'
 import './MergePanel.css'
 
 type MergeState = 'idle' | 'previewing' | 'preview' | 'merging' | 'done' | 'error'
 
 interface MergePanelProps {
-  treeId: string
+  rhizomeId: string
   onClose: () => void
 }
 
-export function MergePanel({ treeId, onClose }: MergePanelProps) {
+export function MergePanel({ rhizomeId, onClose }: MergePanelProps) {
   const [state, setState] = useState<MergeState>('idle')
   const [preview, setPreview] = useState<MergePreviewResponse | null>(null)
   const [result, setResult] = useState<MergeResult | null>(null)
@@ -20,22 +20,22 @@ export function MergePanel({ treeId, onClose }: MergePanelProps) {
   const [file, setFile] = useState<File | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const selectTree = useTreeStore(s => s.selectTree)
-  const navigateToNode = useTreeStore(s => s.navigateToNode)
+  const selectRhizome = useRhizomeStore(s => s.selectRhizome)
+  const navigateToNode = useRhizomeStore(s => s.navigateToNode)
 
   const handleFile = useCallback(async (f: File) => {
     setFile(f)
     setState('previewing')
     setError('')
     try {
-      const prev = await api.previewMerge(treeId, f)
+      const prev = await api.previewMerge(rhizomeId, f)
       setPreview(prev)
       setState('preview')
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
       setState('error')
     }
-  }, [treeId])
+  }, [rhizomeId])
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -63,16 +63,16 @@ export function MergePanel({ treeId, onClose }: MergePanelProps) {
     setState('merging')
     setError('')
     try {
-      const res = await api.executeMerge(treeId, file)
+      const res = await api.executeMerge(rhizomeId, file)
       setResult(res)
       setState('done')
-      // Refresh the tree to show new nodes
-      await selectTree(treeId)
+      // Refresh the rhizome to show new nodes
+      await selectRhizome(rhizomeId)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
       setState('error')
     }
-  }, [treeId, file, selectTree])
+  }, [rhizomeId, file, selectRhizome])
 
   const handleNavigate = useCallback(() => {
     if (result?.node_ids[0]) {
@@ -182,7 +182,7 @@ export function MergePanel({ treeId, onClose }: MergePanelProps) {
               </button>
             ) : (
               <div className="merge-nothing">
-                Nothing to merge — all messages already exist in this tree.
+                Nothing to merge — all messages already exist in this rhizome.
               </div>
             )}
           </div>

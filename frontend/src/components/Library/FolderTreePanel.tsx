@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useDroppable } from '@dnd-kit/core'
-import type { TreeSummary } from '../../api/types.ts'
-import { type FolderNode, buildFolderTrie, countTreesInFolder } from '../../utils/folderTrie.ts'
+import type { RhizomeSummary } from '../../api/types.ts'
+import { type FolderNode, buildFolderTrie, countRhizomesInFolder } from '../../utils/folderTrie.ts'
 
 interface Props {
-  trees: TreeSummary[]
+  rhizomes: RhizomeSummary[]
   ghostFolders: string[]
   selectedFolder: string | null
   prefillInput: string | null
@@ -26,7 +26,7 @@ function getStoredCollapsed(): Set<string> {
 }
 
 export function FolderTreePanel({
-  trees, ghostFolders, selectedFolder, prefillInput, onSelectFolder, onCreateFolder, onClearPrefill, onContextMenu,
+  rhizomes, ghostFolders, selectedFolder, prefillInput, onSelectFolder, onCreateFolder, onClearPrefill, onContextMenu,
 }: Props) {
   const [collapsed, setCollapsed] = useState<Set<string>>(getStoredCollapsed)
   const [folderInput, setFolderInput] = useState('')
@@ -41,13 +41,13 @@ export function FolderTreePanel({
     }
   }, [prefillInput, onClearPrefill])
 
-  const treeMap = new Map(trees.map(t => [t.tree_id, t]))
-  const folderTrie = buildFolderTrie(trees, ghostFolders)
-  const unsortedCount = trees.filter(t => t.folders.length === 0).length
-  const totalCount = trees.length
+  const treeMap = new Map(rhizomes.map(t => [t.rhizome_id, t]))
+  const folderTrie = buildFolderTrie(rhizomes, ghostFolders)
+  const unsortedCount = rhizomes.filter(t => t.folders.length === 0).length
+  const totalCount = rhizomes.length
 
-  // Track which folders exist from actual tree data vs ghost-only
-  const realFolders = new Set(trees.flatMap(t => t.folders))
+  // Track which folders exist from actual rhizome data vs ghost-only
+  const realFolders = new Set(rhizomes.flatMap(t => t.folders))
 
   const toggleCollapse = useCallback((path: string) => {
     setCollapsed(prev => {
@@ -69,7 +69,7 @@ export function FolderTreePanel({
 
   const renderFolderNode = (node: FolderNode, depth: number) => {
     const isCollapsed = collapsed.has(node.path)
-    const count = countTreesInFolder(node, treeMap)
+    const count = countRhizomesInFolder(node, treeMap)
     const hasChildren = node.children.length > 0
     const isGhost = !realFolders.has(node.path) && count === 0
 

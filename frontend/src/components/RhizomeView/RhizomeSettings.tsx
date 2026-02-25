@@ -1,28 +1,28 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { EvictionStrategy, PatchTreeRequest, SamplingParams } from '../../api/types.ts'
-import { exportTree } from '../../api/client.ts'
-import { useTreeStore, useTreeData, useRightPane } from '../../store/treeStore.ts'
+import type { EvictionStrategy, PatchRhizomeRequest, SamplingParams } from '../../api/types.ts'
+import { exportRhizome } from '../../api/client.ts'
+import { useRhizomeStore, useRhizomeData, useRightPane } from '../../store/rhizomeStore.ts'
 import { SamplingParamsPanel, type SamplingParamValues } from '../shared/SamplingParamsPanel.tsx'
 import { IconToggleButton } from '../shared/IconToggleButton.tsx'
 import { MergePanel } from './MergePanel.tsx'
-import './TreeSettings.css'
+import './RhizomeSettings.css'
 
-export function TreeSettings() {
-  const { currentTree, providers } = useTreeData()
+export function RhizomeSettings() {
+  const { currentRhizome, providers } = useRhizomeData()
   const { rightPaneMode, canvasOpen } = useRightPane()
-  const updateTree = useTreeStore(s => s.updateTree)
-  const fetchProviders = useTreeStore(s => s.fetchProviders)
-  const setCanvasOpen = useTreeStore(s => s.setCanvasOpen)
-  const setRightPaneMode = useTreeStore(s => s.setRightPaneMode)
-  const archiveTree = useTreeStore(s => s.archiveTree)
-  const unarchiveTree = useTreeStore(s => s.unarchiveTree)
-  const fetchTrees = useTreeStore(s => s.fetchTrees)
+  const updateRhizome = useRhizomeStore(s => s.updateRhizome)
+  const fetchProviders = useRhizomeStore(s => s.fetchProviders)
+  const setCanvasOpen = useRhizomeStore(s => s.setCanvasOpen)
+  const setRightPaneMode = useRhizomeStore(s => s.setRightPaneMode)
+  const archiveRhizome = useRhizomeStore(s => s.archiveRhizome)
+  const unarchiveRhizome = useRhizomeStore(s => s.unarchiveRhizome)
+  const fetchRhizomes = useRhizomeStore(s => s.fetchRhizomes)
 
   const [isOpen, setIsOpen] = useState(false)
   const [mergeOpen, setMergeOpen] = useState(false)
   const [isEditingTitle, setIsEditingTitle] = useState(false)
 
-  // Local form state (synced from tree on open/switch)
+  // Local form state (synced from rhizome on open/switch)
   const [title, setTitle] = useState('')
   const [provider, setProvider] = useState('')
   const [model, setModel] = useState('')
@@ -59,17 +59,17 @@ export function TreeSettings() {
   const [summarizeEvicted, setSummarizeEvicted] = useState(true)
   const [warnThreshold, setWarnThreshold] = useState('0.85')
 
-  // Sync form state when tree changes or panel opens
+  // Sync form state when rhizome changes or panel opens
   useEffect(() => {
-    if (currentTree) {
-      setTitle(currentTree.title ?? '')
-      setProvider(currentTree.default_provider ?? '')
-      setModel(currentTree.default_model ?? '')
-      setSystemPrompt(currentTree.default_system_prompt ?? '')
+    if (currentRhizome) {
+      setTitle(currentRhizome.title ?? '')
+      setProvider(currentRhizome.default_provider ?? '')
+      setModel(currentRhizome.default_model ?? '')
+      setSystemPrompt(currentRhizome.default_system_prompt ?? '')
 
       // Sampling defaults — read from default_sampling_params, fall back to metadata
-      const sp = currentTree.default_sampling_params
-      const meta = currentTree.metadata
+      const sp = currentRhizome.default_sampling_params
+      const meta = currentRhizome.metadata
       const thinkingOn = sp?.extended_thinking ?? !!meta?.extended_thinking
       setSamplingValues({
         temperature: sp?.temperature != null ? String(sp.temperature) : '',
@@ -99,14 +99,14 @@ export function TreeSettings() {
       setSummarizeEvicted(es?.summarize_evicted ?? true)
       setWarnThreshold(String(es?.warn_threshold ?? 0.85))
     }
-  }, [currentTree?.tree_id, isOpen])
+  }, [currentRhizome?.rhizome_id, isOpen])
 
   // Fetch providers when panel opens
   useEffect(() => {
     if (isOpen) fetchProviders()
   }, [isOpen, fetchProviders])
 
-  if (!currentTree) return null
+  if (!currentRhizome) return null
 
   const selectedProvider = providers.find((p) => p.name === provider)
   const suggestedModels = selectedProvider?.models ?? []
@@ -125,15 +125,15 @@ export function TreeSettings() {
     formSamplingParams.thinking_budget = parseInt(samplingValues.thinkingBudget, 10) || 10000
   }
 
-  // Compare form sampling params to current tree
-  const currentSp = currentTree.default_sampling_params ?? {}
+  // Compare form sampling params to current rhizome
+  const currentSp = currentRhizome.default_sampling_params ?? {}
   const samplingChanged = JSON.stringify(formSamplingParams) !== JSON.stringify(
     Object.fromEntries(
       Object.entries(currentSp).filter(([, v]) => v != null && v !== false),
     ),
   )
 
-  const currentMeta = currentTree.metadata ?? {}
+  const currentMeta = currentRhizome.metadata ?? {}
   const currentEs = currentMeta.eviction_strategy as Partial<EvictionStrategy> | undefined
   const metadataChanged =
     includeTimestamps !== !!currentMeta.include_timestamps ||
@@ -152,22 +152,22 @@ export function TreeSettings() {
     ))
 
   const hasChanges =
-    title !== (currentTree.title ?? '') ||
-    provider !== (currentTree.default_provider ?? '') ||
-    model !== (currentTree.default_model ?? '') ||
-    systemPrompt !== (currentTree.default_system_prompt ?? '') ||
+    title !== (currentRhizome.title ?? '') ||
+    provider !== (currentRhizome.default_provider ?? '') ||
+    model !== (currentRhizome.default_model ?? '') ||
+    systemPrompt !== (currentRhizome.default_system_prompt ?? '') ||
     samplingChanged ||
     metadataChanged
 
   const handleSave = async () => {
     if (!hasChanges) return
-    const req: PatchTreeRequest = {}
-    if (title !== (currentTree.title ?? '')) req.title = title || null
-    if (provider !== (currentTree.default_provider ?? ''))
+    const req: PatchRhizomeRequest = {}
+    if (title !== (currentRhizome.title ?? '')) req.title = title || null
+    if (provider !== (currentRhizome.default_provider ?? ''))
       req.default_provider = provider || null
-    if (model !== (currentTree.default_model ?? ''))
+    if (model !== (currentRhizome.default_model ?? ''))
       req.default_model = model || null
-    if (systemPrompt !== (currentTree.default_system_prompt ?? ''))
+    if (systemPrompt !== (currentRhizome.default_system_prompt ?? ''))
       req.default_system_prompt = systemPrompt || null
 
     if (samplingChanged) {
@@ -177,8 +177,8 @@ export function TreeSettings() {
     }
 
     // Build merged metadata from all buffered fields
-    if (metadataChanged || currentTree.metadata?.extended_thinking != null) {
-      const newMeta = { ...currentTree.metadata } as Record<string, unknown>
+    if (metadataChanged || currentRhizome.metadata?.extended_thinking != null) {
+      const newMeta = { ...currentRhizome.metadata } as Record<string, unknown>
       // Clear legacy thinking fields (now in default_sampling_params)
       delete newMeta.extended_thinking
       delete newMeta.thinking_budget
@@ -210,16 +210,16 @@ export function TreeSettings() {
       req.metadata = newMeta
     }
 
-    await updateTree(currentTree.tree_id, req)
+    await updateRhizome(currentRhizome.rhizome_id, req)
     setIsOpen(false)
   }
 
   const handleTitleBlur = async () => {
     setIsEditingTitle(false)
-    if (title !== (currentTree.title ?? '') && title.trim()) {
-      await updateTree(currentTree.tree_id, { title: title.trim() })
+    if (title !== (currentRhizome.title ?? '') && title.trim()) {
+      await updateRhizome(currentRhizome.rhizome_id, { title: title.trim() })
     } else {
-      setTitle(currentTree.title ?? '')
+      setTitle(currentRhizome.title ?? '')
     }
   }
 
@@ -227,29 +227,29 @@ export function TreeSettings() {
     if (e.key === 'Enter') {
       ;(e.target as HTMLInputElement).blur()
     } else if (e.key === 'Escape') {
-      setTitle(currentTree.title ?? '')
+      setTitle(currentRhizome.title ?? '')
       setIsEditingTitle(false)
     }
   }
 
   const graphOpen = rightPaneMode === 'graph'
-  const isArchived = currentTree.archived === 1
+  const isArchived = currentRhizome.archived === 1
 
   const handleToggleArchive = useCallback(async () => {
     if (isArchived) {
-      await unarchiveTree(currentTree.tree_id)
+      await unarchiveRhizome(currentRhizome.rhizome_id)
     } else {
-      await archiveTree(currentTree.tree_id)
+      await archiveRhizome(currentRhizome.rhizome_id)
     }
-    await fetchTrees(true)
-  }, [isArchived, currentTree.tree_id, archiveTree, unarchiveTree, fetchTrees])
+    await fetchRhizomes(true)
+  }, [isArchived, currentRhizome.rhizome_id, archiveRhizome, unarchiveRhizome, fetchRhizomes])
 
   return (
-    <div className="tree-settings">
-      <div className="tree-settings-bar">
+    <div className="rhizome-settings">
+      <div className="rhizome-settings-bar">
         {isEditingTitle ? (
           <input
-            className="tree-title-input"
+            className="rhizome-title-input"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             onBlur={handleTitleBlur}
@@ -258,11 +258,11 @@ export function TreeSettings() {
           />
         ) : (
           <span
-            className="tree-title-display"
+            className="rhizome-title-display"
             onClick={() => setIsEditingTitle(true)}
             title="Click to rename"
           >
-            {currentTree.title || 'Untitled'}
+            {currentRhizome.title || 'Untitled'}
           </span>
         )}
         <IconToggleButton
@@ -334,9 +334,9 @@ export function TreeSettings() {
           </svg>
         </IconToggleButton>
         <button
-          className={`tree-archive-btn${isArchived ? ' archived' : ''}`}
+          className={`rhizome-archive-btn${isArchived ? ' archived' : ''}`}
           onClick={handleToggleArchive}
-          title={isArchived ? 'Unarchive this tree' : 'Archive this tree'}
+          title={isArchived ? 'Unarchive this rhizome' : 'Archive this rhizome'}
         >
           <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
             <rect x="2" y="3" width="16" height="4" rx="1" />
@@ -362,15 +362,15 @@ export function TreeSettings() {
 
       {mergeOpen && (
         <MergePanel
-          treeId={currentTree.tree_id}
+          rhizomeId={currentRhizome.rhizome_id}
           onClose={() => setMergeOpen(false)}
         />
       )}
 
       {isOpen && (
-        <div className="tree-settings-panel">
-          <div className="tree-settings-fields">
-            <div className="tree-settings-field">
+        <div className="rhizome-settings-panel">
+          <div className="rhizome-settings-fields">
+            <div className="rhizome-settings-field">
               <label>Default provider</label>
               {providers.length > 0 ? (
                 <select
@@ -394,23 +394,23 @@ export function TreeSettings() {
               )}
             </div>
 
-            <div className="tree-settings-field">
+            <div className="rhizome-settings-field">
               <label>Default model</label>
               <input
                 type="text"
                 value={model}
                 onChange={(e) => setModel(e.target.value)}
                 placeholder={suggestedModels[0] ?? 'default'}
-                list="tree-settings-model-suggestions"
+                list="rhizome-settings-model-suggestions"
               />
-              <datalist id="tree-settings-model-suggestions">
+              <datalist id="rhizome-settings-model-suggestions">
                 {suggestedModels.map((m) => (
                   <option key={m} value={m} />
                 ))}
               </datalist>
             </div>
 
-            <div className="tree-settings-field">
+            <div className="rhizome-settings-field">
               <label>Generation mode</label>
               <div className="mode-selector">
                 <button
@@ -428,13 +428,13 @@ export function TreeSettings() {
                   Completion
                 </button>
               </div>
-              <span className="tree-settings-note">
+              <span className="rhizome-settings-note">
                 Chat sends structured messages. Completion renders a text prompt from a template.
               </span>
             </div>
 
             {generationMode === 'chat' && (
-              <div className="tree-settings-field">
+              <div className="rhizome-settings-field">
                 <label>Default system prompt</label>
                 <textarea
                   value={systemPrompt}
@@ -446,7 +446,7 @@ export function TreeSettings() {
             )}
 
             {generationMode === 'completion' && (
-              <div className="tree-settings-field">
+              <div className="rhizome-settings-field">
                 <label>Prompt template</label>
                 <select
                   value={promptTemplate}
@@ -457,16 +457,16 @@ export function TreeSettings() {
                   <option value="chatml">ChatML</option>
                   <option value="llama3">Llama 3</option>
                 </select>
-                <span className="tree-settings-note">
+                <span className="rhizome-settings-note">
                   Raw sends plain text — best for base models on remote APIs.
                   Llama 3 uses special tokens that only work with local servers.
                 </span>
               </div>
             )}
 
-            <div className="tree-settings-divider" />
+            <div className="rhizome-settings-divider" />
 
-            <div className="tree-settings-section-label">Sampling defaults</div>
+            <div className="rhizome-settings-section-label">Sampling defaults</div>
 
             <SamplingParamsPanel
               values={samplingValues}
@@ -475,10 +475,10 @@ export function TreeSettings() {
               providerName={provider}
             />
 
-            <div className="tree-settings-divider" />
+            <div className="rhizome-settings-divider" />
 
             {generationMode === 'chat' && (
-              <div className="tree-settings-toggle">
+              <div className="rhizome-settings-toggle">
                 <label>
                   <input
                     type="checkbox"
@@ -490,7 +490,7 @@ export function TreeSettings() {
               </div>
             )}
 
-            <div className="tree-settings-toggle">
+            <div className="rhizome-settings-toggle">
               <label>
                 <input
                   type="checkbox"
@@ -502,7 +502,7 @@ export function TreeSettings() {
             </div>
 
             {generationMode === 'chat' && (
-              <div className="tree-settings-toggle">
+              <div className="rhizome-settings-toggle">
                 <label>
                   <input
                     type="checkbox"
@@ -511,13 +511,13 @@ export function TreeSettings() {
                   />
                   Include thinking in context
                 </label>
-                <span className="tree-settings-note">
+                <span className="rhizome-settings-note">
                   Feed reasoning traces back into subsequent context. Uses significant tokens.
                 </span>
               </div>
             )}
 
-            <div className="tree-settings-field">
+            <div className="rhizome-settings-field">
               <label>Debug: context limit override (tokens)</label>
               <input
                 type="number"
@@ -528,7 +528,7 @@ export function TreeSettings() {
                 placeholder="Use real model limit"
               />
               {debugContextLimit && parseInt(debugContextLimit, 10) > 0 && (
-                <span className="tree-settings-note" style={{ color: 'var(--ctx-yellow)' }}>
+                <span className="rhizome-settings-note" style={{ color: 'var(--ctx-yellow)' }}>
                   Context limited to {parseInt(debugContextLimit, 10).toLocaleString()} tokens for testing
                 </span>
               )}
@@ -536,11 +536,11 @@ export function TreeSettings() {
 
             {generationMode === 'chat' && (
               <>
-                <div className="tree-settings-divider" />
+                <div className="rhizome-settings-divider" />
 
-                <div className="tree-settings-section-label">Context eviction</div>
+                <div className="rhizome-settings-section-label">Context eviction</div>
 
-                <div className="tree-settings-field">
+                <div className="rhizome-settings-field">
                   <label>Eviction mode</label>
                   <select
                     value={evictionMode}
@@ -554,8 +554,8 @@ export function TreeSettings() {
 
                 {evictionMode === 'smart' && (
                   <>
-                    <div className="tree-settings-row-pair">
-                      <div className="tree-settings-field">
+                    <div className="rhizome-settings-row-pair">
+                      <div className="rhizome-settings-field">
                         <label>Keep first turns</label>
                         <input
                           type="number"
@@ -565,7 +565,7 @@ export function TreeSettings() {
                           onChange={(e) => setKeepFirstTurns(e.target.value)}
                         />
                       </div>
-                      <div className="tree-settings-field">
+                      <div className="rhizome-settings-field">
                         <label>Keep recent turns</label>
                         <input
                           type="number"
@@ -577,7 +577,7 @@ export function TreeSettings() {
                       </div>
                     </div>
 
-                    <div className="tree-settings-field">
+                    <div className="rhizome-settings-field">
                       <label>Warning threshold</label>
                       <input
                         type="number"
@@ -587,12 +587,12 @@ export function TreeSettings() {
                         value={warnThreshold}
                         onChange={(e) => setWarnThreshold(e.target.value)}
                       />
-                      <span className="tree-settings-note">
+                      <span className="rhizome-settings-note">
                         Warn when context reaches this fraction of the limit
                       </span>
                     </div>
 
-                    <div className="tree-settings-toggle">
+                    <div className="rhizome-settings-toggle">
                       <label>
                         <input
                           type="checkbox"
@@ -603,7 +603,7 @@ export function TreeSettings() {
                       </label>
                     </div>
 
-                    <div className="tree-settings-toggle">
+                    <div className="rhizome-settings-toggle">
                       <label>
                         <input
                           type="checkbox"
@@ -612,7 +612,7 @@ export function TreeSettings() {
                         />
                         Summarize evicted messages
                       </label>
-                      <span className="tree-settings-note">
+                      <span className="rhizome-settings-note">
                         Generate a recap of evicted content using a small model
                       </span>
                     </div>
@@ -621,37 +621,37 @@ export function TreeSettings() {
               </>
             )}
 
-            <div className="tree-settings-divider" />
+            <div className="rhizome-settings-divider" />
 
-            <div className="tree-settings-section-label">Export</div>
+            <div className="rhizome-settings-section-label">Export</div>
 
-            <div className="tree-settings-export-buttons">
+            <div className="rhizome-settings-export-buttons">
               <button
-                className="tree-settings-export-btn"
-                onClick={() => exportTree(currentTree.tree_id, 'json')}
+                className="rhizome-settings-export-btn"
+                onClick={() => exportRhizome(currentRhizome.rhizome_id, 'json')}
               >
                 Export JSON
               </button>
               <button
-                className="tree-settings-export-btn"
-                onClick={() => exportTree(currentTree.tree_id, 'csv')}
+                className="rhizome-settings-export-btn"
+                onClick={() => exportRhizome(currentRhizome.rhizome_id, 'csv')}
               >
                 Export CSV
               </button>
               <button
-                className="tree-settings-export-btn"
-                onClick={() => exportTree(currentTree.tree_id, 'json', true)}
+                className="rhizome-settings-export-btn"
+                onClick={() => exportRhizome(currentRhizome.rhizome_id, 'json', true)}
               >
                 Export JSON (with events)
               </button>
             </div>
 
-            <div className="tree-settings-actions">
+            <div className="rhizome-settings-actions">
               {hasChanges && (
-                <span className="tree-settings-dirty">Unsaved changes</span>
+                <span className="rhizome-settings-dirty">Unsaved changes</span>
               )}
               <button
-                className="tree-settings-save"
+                className="rhizome-settings-save"
                 onClick={handleSave}
                 disabled={!hasChanges}
               >

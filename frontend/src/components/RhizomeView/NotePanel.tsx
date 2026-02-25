@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { NodeResponse } from '../../api/types.ts'
-import { useTreeStore } from '../../store/treeStore.ts'
+import { useRhizomeStore } from '../../store/rhizomeStore.ts'
 import './NotePanel.css'
 
 interface NotePanelProps {
@@ -10,10 +10,10 @@ interface NotePanelProps {
 export function NotePanel({ node }: NotePanelProps) {
   const [draft, setDraft] = useState('')
 
-  const nodeNotes = useTreeStore((s) => s.nodeNotes[node.node_id])
-  const addNote = useTreeStore((s) => s.addNote)
-  const removeNote = useTreeStore((s) => s.removeNote)
-  const fetchNodeNotes = useTreeStore((s) => s.fetchNodeNotes)
+  const nodeNotes = useRhizomeStore((s) => s.nodeNotes[node.node_id])
+  const addNote = useRhizomeStore((s) => s.addNote)
+  const removeNote = useRhizomeStore((s) => s.removeNote)
+  const fetchNodeNotes = useRhizomeStore((s) => s.fetchNodeNotes)
 
   useEffect(() => {
     if (nodeNotes == null) {

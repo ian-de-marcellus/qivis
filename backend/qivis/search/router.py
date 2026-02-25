@@ -23,7 +23,7 @@ def _split_csv(value: str | None) -> list[str] | None:
 @router.get("/search")
 async def search(
     q: str = Query(..., min_length=1),
-    tree_ids: str | None = Query(None),
+    rhizome_ids: str | None = Query(None),
     models: str | None = Query(None),
     providers: str | None = Query(None),
     roles: str | None = Query(None),
@@ -36,7 +36,7 @@ async def search(
     """Full-text search across all conversation nodes."""
     return await service.search(
         q,
-        tree_ids=_split_csv(tree_ids),
+        rhizome_ids=_split_csv(rhizome_ids),
         models=_split_csv(models),
         providers=_split_csv(providers),
         roles=_split_csv(roles),

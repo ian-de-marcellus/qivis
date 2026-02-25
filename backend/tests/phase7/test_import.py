@@ -9,8 +9,8 @@ from qivis.db.connection import Database
 from qivis.events.projector import StateProjector
 from qivis.events.store import EventStore
 from qivis.main import app
-from qivis.trees.router import get_tree_service
-from qivis.trees.service import TreeService
+from qivis.rhizomes.router import get_rhizome_service
+from qivis.rhizomes.service import RhizomeService
 
 
 # ---------------------------------------------------------------------------
@@ -231,9 +231,9 @@ async def client(db, event_store, projector):
     from qivis.importer.router import get_import_service
     from qivis.importer.service import ImportService
 
-    tree_service = TreeService(db)
+    tree_service = RhizomeService(db)
     import_svc = ImportService(db, event_store, projector)
-    app.dependency_overrides[get_tree_service] = lambda: tree_service
+    app.dependency_overrides[get_rhizome_service] = lambda: tree_service
     app.dependency_overrides[get_import_service] = lambda: import_svc
     async with AsyncClient(
         transport=ASGITransport(app=app),
@@ -582,27 +582,27 @@ class TestImportService:
     async def test_import_creates_tree_with_events(self, import_service, event_store):
         """Import emits TreeCreated + NodeCreated events."""
         data = json.dumps(make_chatgpt_conversation()).encode()
-        results = await import_service.import_trees(data, "test.json")
+        results = await import_service.import_rhizomes(data, "test.json")
         assert len(results) == 1
         result = results[0]
         assert result.node_count == 4
 
-        events = await event_store.get_events(result.tree_id)
+        events = await event_store.get_events(result.rhizome_id)
         event_types = [e.event_type for e in events]
-        assert event_types[0] == "TreeCreated"
+        assert event_types[0] == "RhizomeCreated"
         assert event_types.count("NodeCreated") == 4
 
     async def test_imported_tree_fully_functional(self, import_service, projector):
         """Imported tree has correct parent-child relationships."""
         data = json.dumps(make_chatgpt_conversation()).encode()
-        results = await import_service.import_trees(data, "test.json")
-        tree_id = results[0].tree_id
+        results = await import_service.import_rhizomes(data, "test.json")
+        rhizome_id = results[0].rhizome_id
 
-        tree = await projector.get_tree(tree_id)
+        tree = await projector.get_rhizome(rhizome_id)
         assert tree is not None
         assert tree["title"] == "Test Conversation"
 
-        nodes = await projector.get_nodes(tree_id)
+        nodes = await projector.get_nodes(rhizome_id)
         assert len(nodes) == 4
 
         # Verify chain: each node's parent is the previous node
@@ -614,9 +614,9 @@ class TestImportService:
     async def test_imported_timestamps_preserved(self, import_service, event_store):
         """Event timestamps match source conversation timestamps."""
         data = json.dumps(make_chatgpt_conversation()).encode()
-        results = await import_service.import_trees(data, "test.json")
+        results = await import_service.import_rhizomes(data, "test.json")
 
-        events = await event_store.get_events(results[0].tree_id)
+        events = await event_store.get_events(results[0].rhizome_id)
         node_events = [e for e in events if e.event_type == "NodeCreated"]
         for event in node_events:
             # Timestamp should be from the source (1700000000.0 epoch)
@@ -625,18 +625,18 @@ class TestImportService:
     async def test_imported_nodes_mode_is_chat(self, import_service, projector):
         """Imported nodes use mode='chat', NOT 'manual'."""
         data = json.dumps(make_chatgpt_conversation()).encode()
-        results = await import_service.import_trees(data, "test.json")
+        results = await import_service.import_rhizomes(data, "test.json")
 
-        nodes = await projector.get_nodes(results[0].tree_id)
+        nodes = await projector.get_nodes(results[0].rhizome_id)
         for node in nodes:
             assert node["mode"] == "chat"
 
     async def test_import_metadata_on_tree(self, import_service, projector):
         """Tree metadata includes import provenance."""
         data = json.dumps(make_chatgpt_conversation()).encode()
-        results = await import_service.import_trees(data, "test.json")
+        results = await import_service.import_rhizomes(data, "test.json")
 
-        tree = await projector.get_tree(results[0].tree_id)
+        tree = await projector.get_rhizome(results[0].rhizome_id)
         metadata = json.loads(tree["metadata"]) if isinstance(tree["metadata"], str) else tree["metadata"]
         assert metadata["imported"] is True
         assert metadata["import_source"] == "chatgpt"
@@ -645,9 +645,9 @@ class TestImportService:
     async def test_import_device_id(self, import_service, event_store):
         """All import events have device_id='import'."""
         data = json.dumps(make_chatgpt_conversation()).encode()
-        results = await import_service.import_trees(data, "test.json")
+        results = await import_service.import_rhizomes(data, "test.json")
 
-        events = await event_store.get_events(results[0].tree_id)
+        events = await event_store.get_events(results[0].rhizome_id)
         for event in events:
             assert event.device_id == "import"
 
@@ -659,7 +659,7 @@ class TestImportService:
             make_chatgpt_conversation(conv_id="c3", title="Third"),
         ]
         data = json.dumps(multi).encode()
-        results = await import_service.import_trees(
+        results = await import_service.import_rhizomes(
             data, "test.json", selected_indices=[1],
         )
         assert len(results) == 1
@@ -668,10 +668,10 @@ class TestImportService:
     async def test_import_with_branches(self, import_service, projector):
         """ChatGPT branching creates correct sibling structure."""
         data = json.dumps(make_chatgpt_branching_conversation()).encode()
-        results = await import_service.import_trees(data, "test.json")
-        tree_id = results[0].tree_id
+        results = await import_service.import_rhizomes(data, "test.json")
+        rhizome_id = results[0].rhizome_id
 
-        nodes = await projector.get_nodes(tree_id)
+        nodes = await projector.get_nodes(rhizome_id)
         assert len(nodes) == 3  # u1, a1, a2
 
         # Find the user node (root)
@@ -717,7 +717,7 @@ class TestImportAPI:
         assert resp.status_code == 200
         body = resp.json()
         assert len(body["results"]) == 1
-        assert "tree_id" in body["results"][0]
+        assert "rhizome_id" in body["results"][0]
         assert body["results"][0]["node_count"] == 4
 
     async def test_invalid_json_returns_422(self, client):
@@ -752,6 +752,6 @@ class TestImportEdgeCases:
         }
         conv = make_chatgpt_conversation(mapping=mapping)
         data = json.dumps(conv).encode()
-        results = await import_service.import_trees(data, "test.json")
+        results = await import_service.import_rhizomes(data, "test.json")
         assert len(results) == 1
         assert results[0].node_count == 0

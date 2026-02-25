@@ -16,22 +16,22 @@ from qivis.events.store import EventStore
 from qivis.export.router import get_export_service
 from qivis.export.service import ExportService
 from qivis.main import app
-from qivis.trees.router import get_tree_service
-from qivis.trees.service import TreeService
+from qivis.rhizomes.router import get_rhizome_service
+from qivis.rhizomes.service import RhizomeService
 from tests.fixtures import (
-    create_test_tree,
-    create_tree_with_messages,
+    create_test_rhizome,
+    create_rhizome_with_messages,
 )
 
 
 @pytest.fixture
 async def export_client(db: Database) -> AsyncClient:
     """Test client with export routes available."""
-    service = TreeService(db)
+    service = RhizomeService(db)
     store = EventStore(db)
     projector = StateProjector(db)
     export_svc = ExportService(db, store, projector)
-    app.dependency_overrides[get_tree_service] = lambda: service
+    app.dependency_overrides[get_rhizome_service] = lambda: service
     app.dependency_overrides[get_export_service] = lambda: export_svc
     async with AsyncClient(
         transport=ASGITransport(app=app),
@@ -59,28 +59,28 @@ class TestJsonExport:
 
     async def test_json_includes_tree_metadata(self, export_client):
         """Export JSON contains tree-level metadata."""
-        data = await create_tree_with_messages(export_client, n_messages=4)
-        tree_id = data["tree_id"]
+        data = await create_rhizome_with_messages(export_client, n_messages=4)
+        rhizome_id = data["rhizome_id"]
 
-        resp = await export_client.get(f"/api/trees/{tree_id}/export?format=json")
+        resp = await export_client.get(f"/api/rhizomes/{rhizome_id}/export?format=json")
         assert resp.status_code == 200
         export = resp.json()
 
         assert export["source"] == "qivis"
         assert export["version"] == "1.0"
         assert "exported_at" in export
-        assert export["tree"]["tree_id"] == tree_id
-        assert "title" in export["tree"]
-        assert "created_at" in export["tree"]
-        assert "updated_at" in export["tree"]
+        assert export["rhizome"]["rhizome_id"] == rhizome_id
+        assert "title" in export["rhizome"]
+        assert "created_at" in export["rhizome"]
+        assert "updated_at" in export["rhizome"]
 
     async def test_json_includes_all_nodes(self, export_client):
         """Export JSON contains all nodes with content and metadata."""
-        data = await create_tree_with_messages(export_client, n_messages=4)
-        tree_id = data["tree_id"]
+        data = await create_rhizome_with_messages(export_client, n_messages=4)
+        rhizome_id = data["rhizome_id"]
         node_ids = data["node_ids"]
 
-        resp = await export_client.get(f"/api/trees/{tree_id}/export?format=json")
+        resp = await export_client.get(f"/api/rhizomes/{rhizome_id}/export?format=json")
         export = resp.json()
 
         exported_ids = {n["node_id"] for n in export["nodes"]}
@@ -97,18 +97,18 @@ class TestJsonExport:
 
     async def test_json_includes_annotations(self, export_client, db):
         """Export JSON has annotations inlined on nodes."""
-        data = await create_tree_with_messages(export_client, n_messages=4)
-        tree_id = data["tree_id"]
+        data = await create_rhizome_with_messages(export_client, n_messages=4)
+        rhizome_id = data["rhizome_id"]
         node_id = data["node_ids"][0]
 
         # Add an annotation
         resp = await export_client.post(
-            f"/api/trees/{tree_id}/nodes/{node_id}/annotations",
+            f"/api/rhizomes/{rhizome_id}/nodes/{node_id}/annotations",
             json={"tag": "interesting", "value": 0.8, "notes": "good one"},
         )
         assert resp.status_code == 201
 
-        resp = await export_client.get(f"/api/trees/{tree_id}/export?format=json")
+        resp = await export_client.get(f"/api/rhizomes/{rhizome_id}/export?format=json")
         export = resp.json()
 
         annotated_node = next(n for n in export["nodes"] if n["node_id"] == node_id)
@@ -117,18 +117,18 @@ class TestJsonExport:
 
     async def test_json_includes_bookmarks(self, export_client):
         """Export JSON has bookmarks section."""
-        data = await create_tree_with_messages(export_client, n_messages=4)
-        tree_id = data["tree_id"]
+        data = await create_rhizome_with_messages(export_client, n_messages=4)
+        rhizome_id = data["rhizome_id"]
         node_id = data["node_ids"][-1]
 
         # Add a bookmark
         resp = await export_client.post(
-            f"/api/trees/{tree_id}/nodes/{node_id}/bookmarks",
+            f"/api/rhizomes/{rhizome_id}/nodes/{node_id}/bookmarks",
             json={"label": "Key moment"},
         )
         assert resp.status_code == 201
 
-        resp = await export_client.get(f"/api/trees/{tree_id}/export?format=json")
+        resp = await export_client.get(f"/api/rhizomes/{rhizome_id}/export?format=json")
         export = resp.json()
 
         assert len(export["bookmarks"]) == 1
@@ -136,29 +136,29 @@ class TestJsonExport:
 
     async def test_json_includes_exclusions(self, export_client):
         """Export JSON has exclusions section."""
-        data = await create_tree_with_messages(export_client, n_messages=4)
-        tree_id = data["tree_id"]
+        data = await create_rhizome_with_messages(export_client, n_messages=4)
+        rhizome_id = data["rhizome_id"]
         node_id = data["node_ids"][1]
         scope_id = data["node_ids"][-1]
 
         resp = await export_client.post(
-            f"/api/trees/{tree_id}/nodes/{node_id}/exclude",
+            f"/api/rhizomes/{rhizome_id}/nodes/{node_id}/exclude",
             json={"scope_node_id": scope_id},
         )
         assert resp.status_code == 200
 
-        resp = await export_client.get(f"/api/trees/{tree_id}/export?format=json")
+        resp = await export_client.get(f"/api/rhizomes/{rhizome_id}/export?format=json")
         export = resp.json()
 
         assert len(export["exclusions"]) >= 1
 
     async def test_json_includes_digression_groups(self, export_client):
         """Export JSON has digression_groups section."""
-        data = await create_tree_with_messages(export_client, n_messages=4)
-        tree_id = data["tree_id"]
+        data = await create_rhizome_with_messages(export_client, n_messages=4)
+        rhizome_id = data["rhizome_id"]
 
         resp = await export_client.post(
-            f"/api/trees/{tree_id}/digression-groups",
+            f"/api/rhizomes/{rhizome_id}/digression-groups",
             json={
                 "node_ids": data["node_ids"][:2],
                 "label": "Tangent",
@@ -166,7 +166,7 @@ class TestJsonExport:
         )
         assert resp.status_code == 201
 
-        resp = await export_client.get(f"/api/trees/{tree_id}/export?format=json")
+        resp = await export_client.get(f"/api/rhizomes/{rhizome_id}/export?format=json")
         export = resp.json()
 
         assert len(export["digression_groups"]) == 1
@@ -174,24 +174,24 @@ class TestJsonExport:
 
     async def test_json_with_events(self, export_client):
         """include_events=true adds the event log."""
-        data = await create_tree_with_messages(export_client, n_messages=2)
-        tree_id = data["tree_id"]
+        data = await create_rhizome_with_messages(export_client, n_messages=2)
+        rhizome_id = data["rhizome_id"]
 
         resp = await export_client.get(
-            f"/api/trees/{tree_id}/export?format=json&include_events=true"
+            f"/api/rhizomes/{rhizome_id}/export?format=json&include_events=true"
         )
         export = resp.json()
 
         assert "events" in export
         assert len(export["events"]) > 0
-        assert export["events"][0]["event_type"] == "TreeCreated"
+        assert export["events"][0]["event_type"] == "RhizomeCreated"
 
     async def test_json_without_events(self, export_client):
         """include_events=false (default) omits event log."""
-        data = await create_tree_with_messages(export_client, n_messages=2)
-        tree_id = data["tree_id"]
+        data = await create_rhizome_with_messages(export_client, n_messages=2)
+        rhizome_id = data["rhizome_id"]
 
-        resp = await export_client.get(f"/api/trees/{tree_id}/export?format=json")
+        resp = await export_client.get(f"/api/rhizomes/{rhizome_id}/export?format=json")
         export = resp.json()
 
         assert "events" not in export
@@ -207,10 +207,10 @@ class TestCsvExport:
 
     async def test_csv_one_row_per_node(self, export_client):
         """CSV has one row per node with correct headers."""
-        data = await create_tree_with_messages(export_client, n_messages=4)
-        tree_id = data["tree_id"]
+        data = await create_rhizome_with_messages(export_client, n_messages=4)
+        rhizome_id = data["rhizome_id"]
 
-        resp = await export_client.get(f"/api/trees/{tree_id}/export?format=csv")
+        resp = await export_client.get(f"/api/rhizomes/{rhizome_id}/export?format=csv")
         assert resp.status_code == 200
         assert "text/csv" in resp.headers["content-type"]
         assert "attachment" in resp.headers.get("content-disposition", "")
@@ -227,21 +227,21 @@ class TestCsvExport:
 
     async def test_csv_annotation_tags_comma_separated(self, export_client):
         """CSV has annotation_tags as comma-separated values."""
-        data = await create_tree_with_messages(export_client, n_messages=4)
-        tree_id = data["tree_id"]
+        data = await create_rhizome_with_messages(export_client, n_messages=4)
+        rhizome_id = data["rhizome_id"]
         node_id = data["node_ids"][0]
 
         # Add two annotations
         await export_client.post(
-            f"/api/trees/{tree_id}/nodes/{node_id}/annotations",
+            f"/api/rhizomes/{rhizome_id}/nodes/{node_id}/annotations",
             json={"tag": "interesting"},
         )
         await export_client.post(
-            f"/api/trees/{tree_id}/nodes/{node_id}/annotations",
+            f"/api/rhizomes/{rhizome_id}/nodes/{node_id}/annotations",
             json={"tag": "coherent"},
         )
 
-        resp = await export_client.get(f"/api/trees/{tree_id}/export?format=csv")
+        resp = await export_client.get(f"/api/rhizomes/{rhizome_id}/export?format=csv")
         reader = csv.DictReader(io.StringIO(resp.text))
         rows = list(reader)
 
@@ -261,14 +261,14 @@ class TestExportErrors:
 
     async def test_nonexistent_tree_404(self, export_client):
         """Export of nonexistent tree returns 404."""
-        resp = await export_client.get("/api/trees/nonexistent/export?format=json")
+        resp = await export_client.get("/api/rhizomes/nonexistent/export?format=json")
         assert resp.status_code == 404
 
     async def test_invalid_format_422(self, export_client):
         """Invalid format parameter returns 422."""
-        data = await create_tree_with_messages(export_client, n_messages=2)
-        tree_id = data["tree_id"]
-        resp = await export_client.get(f"/api/trees/{tree_id}/export?format=xml")
+        data = await create_rhizome_with_messages(export_client, n_messages=2)
+        rhizome_id = data["rhizome_id"]
+        resp = await export_client.get(f"/api/rhizomes/{rhizome_id}/export?format=xml")
         assert resp.status_code == 422
 
 
@@ -282,10 +282,10 @@ class TestTreePaths:
 
     async def test_linear_one_path(self, export_client):
         """Linear conversation has exactly one path."""
-        data = await create_tree_with_messages(export_client, n_messages=4)
-        tree_id = data["tree_id"]
+        data = await create_rhizome_with_messages(export_client, n_messages=4)
+        rhizome_id = data["rhizome_id"]
 
-        resp = await export_client.get(f"/api/trees/{tree_id}/paths")
+        resp = await export_client.get(f"/api/rhizomes/{rhizome_id}/paths")
         assert resp.status_code == 200
         paths = resp.json()["paths"]
 
@@ -294,19 +294,19 @@ class TestTreePaths:
 
     async def test_branching_multiple_paths(self, export_client):
         """Branching conversation produces multiple paths."""
-        data = await create_tree_with_messages(export_client, n_messages=4)
-        tree_id = data["tree_id"]
+        data = await create_rhizome_with_messages(export_client, n_messages=4)
+        rhizome_id = data["rhizome_id"]
 
         # Create a branch from node_ids[1] (the second node)
         branch_parent = data["node_ids"][1]
         resp = await export_client.post(
-            f"/api/trees/{tree_id}/nodes",
+            f"/api/rhizomes/{rhizome_id}/nodes",
             json={"content": "Branch message", "role": "user", "parent_id": branch_parent},
         )
         assert resp.status_code == 201
         branch_node_id = resp.json()["node_id"]
 
-        resp = await export_client.get(f"/api/trees/{tree_id}/paths")
+        resp = await export_client.get(f"/api/rhizomes/{rhizome_id}/paths")
         paths = resp.json()["paths"]
 
         assert len(paths) == 2
@@ -317,14 +317,14 @@ class TestTreePaths:
 
     async def test_empty_tree_no_paths(self, export_client):
         """Tree with no nodes has no paths."""
-        tree = await create_test_tree(export_client)
-        tree_id = tree["tree_id"]
+        tree = await create_test_rhizome(export_client)
+        rhizome_id = tree["rhizome_id"]
 
-        resp = await export_client.get(f"/api/trees/{tree_id}/paths")
+        resp = await export_client.get(f"/api/rhizomes/{rhizome_id}/paths")
         paths = resp.json()["paths"]
         assert len(paths) == 0
 
     async def test_paths_nonexistent_tree_404(self, export_client):
         """Paths of nonexistent tree returns 404."""
-        resp = await export_client.get("/api/trees/nonexistent/paths")
+        resp = await export_client.get("/api/rhizomes/nonexistent/paths")
         assert resp.status_code == 404

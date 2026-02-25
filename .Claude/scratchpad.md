@@ -4,6 +4,30 @@ A place for longer notes, debugging journals, brainstorming, and the occasional 
 
 ---
 
+## February 24, 2026
+
+### R.1: The Rhizome Rename — Backend
+
+The word "tree" is the data structure. The word "rhizome" is the concept — Deleuze and Guattari's image of thought without hierarchy, where any point can connect to any other. It was always the right name for what Qivis builds: not a tree that grows from root to crown, but a network of branching conversations that cross and reconnect.
+
+~2000 references across ~80 files. The mechanical find-replace was the easy part. The hard part was the migration layer: SCHEMA_SQL creates the final state with `rhizome_id`, but old migrations reference `tree_id`, and the 018 rename migrations fail on fresh databases where the rename is already done. The solution was three-fold: update old migration SQL to use new column names (existing DBs skip them since they're already recorded), add `name.startswith("018")` guard to the error handler so rename migrations gracefully no-op on fresh DBs, and register both old and new event type strings (`TreeCreated` and `RhizomeCreated` both map to `RhizomeCreatedPayload`) so historical events replay correctly.
+
+The agents were helpful for the mechanical bulk — three of them processing 10 test files each in parallel — but they kept leaving SQL column names and table names stale, reasoning that "the DB hasn't been renamed yet." They were wrong, and the audit afterward caught everything. The lesson: agents are good at transforming imports and class names, less good at reasoning about what SQL strings need to match the schema state.
+
+695 tests passing. On to R.2: the frontend.
+
+### R.2: The Rhizome Rename — Frontend & Docs (continued after crash)
+
+The previous session got through R.2 steps 1–8 (types, API client, store, directory renames, component renames, CSS classes, import updates, UI strings) and then crashed. I picked it up with a fresh context — no plan file, no memory of what was done, just a git status full of renames and modifications.
+
+The audit found what the crash left behind: six function calls that would have caused runtime errors (`api.getTree()`, `countTreesInFolder()`, `node.treeIds`), plus the documentation (step 9) untouched. The critical ones were the kind of thing that compiles fine under `tsc --noEmit` but breaks at runtime or under the stricter `tsc -b` — a renamed export that still has consumers using the old name, a property access on an interface that changed. The lesson from last session about agents and SQL strings has a frontend corollary: `tsc --noEmit` and `pnpm build` are not the same check, and a rename isn't done until the app actually runs.
+
+The migration story got interesting. The original `SCHEMA_SQL` was a single block: tables + indexes, run atomically via `executescript`. But after the rename, the indexes reference `rhizome_id` columns that don't exist yet on an old database — the 018 migrations haven't run. Split into `TABLES_SQL` → `run_migrations()` → `INDEX_SQL`. Then a second bug: on Ian's actual DB, the earlier failed startup had already created an empty `rhizomes` table from `TABLES_SQL`, so the `trees` → `rhizomes` rename couldn't proceed ("already another table with this name"). The fix: detect the old `trees` table, drop the ghost `rhizomes` if it exists, run migrations first, then create any missing tables. Three database states, one startup path.
+
+696 tests passing. The word "tree" now means the data structure. The word "rhizome" means the thing you build.
+
+---
+
 ## February 20, 2026
 
 ### Phase 8.2: The providers that aren't there yet

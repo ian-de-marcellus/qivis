@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react'
-import { useTreeStore } from '../../store/treeStore.ts'
+import { useRhizomeStore } from '../../store/rhizomeStore.ts'
 import * as api from '../../api/client.ts'
 import type { SearchResultItem } from '../../api/types.ts'
 import './SearchPanel.css'
@@ -30,7 +30,7 @@ function SearchResult({ result, onClick }: {
   return (
     <button className="search-result" onClick={onClick}>
       <div className="search-result-tree">
-        {result.tree_title || 'Untitled'}
+        {result.rhizome_title || 'Untitled'}
       </div>
       <div className="search-result-snippet">
         <span className={`search-result-role ${result.role}`}>
@@ -47,26 +47,26 @@ function SearchResult({ result, onClick }: {
 }
 
 export function SearchPanel() {
-  const searchQuery = useTreeStore(s => s.searchQuery)
-  const searchResults = useTreeStore(s => s.searchResults)
-  const searchLoading = useTreeStore(s => s.searchLoading)
-  const setSearchQuery = useTreeStore(s => s.setSearchQuery)
-  const clearSearch = useTreeStore(s => s.clearSearch)
-  const navigateToSearchResult = useTreeStore(s => s.navigateToSearchResult)
+  const searchQuery = useRhizomeStore(s => s.searchQuery)
+  const searchResults = useRhizomeStore(s => s.searchResults)
+  const searchLoading = useRhizomeStore(s => s.searchLoading)
+  const setSearchQuery = useRhizomeStore(s => s.setSearchQuery)
+  const clearSearch = useRhizomeStore(s => s.clearSearch)
+  const navigateToSearchResult = useRhizomeStore(s => s.navigateToSearchResult)
   const inputRef = useRef<HTMLInputElement>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const executeSearch = useCallback(async (query: string) => {
     if (!query.trim()) return
-    useTreeStore.setState({ searchLoading: true })
+    useRhizomeStore.setState({ searchLoading: true })
     try {
       const response = await api.searchNodes({ q: query, limit: 50 })
-      useTreeStore.setState({
+      useRhizomeStore.setState({
         searchResults: response.results,
         searchLoading: false,
       })
     } catch {
-      useTreeStore.setState({ searchResults: [], searchLoading: false })
+      useRhizomeStore.setState({ searchResults: [], searchLoading: false })
     }
   }, [])
 
@@ -122,7 +122,7 @@ export function SearchPanel() {
               <SearchResult
                 key={result.node_id}
                 result={result}
-                onClick={() => navigateToSearchResult(result.tree_id, result.node_id)}
+                onClick={() => navigateToSearchResult(result.rhizome_id, result.node_id)}
               />
             ))
           ) : (

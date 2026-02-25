@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useTreeStore, useTreeData, useStreamingState, useComparison, useDigressionState, useResearchMetadata } from '../../store/treeStore.ts'
+import { useRhizomeStore, useRhizomeData, useStreamingState, useComparison, useDigressionState, useResearchMetadata } from '../../store/rhizomeStore.ts'
 import { ComparisonView } from '../ComparisonView/ComparisonView.tsx'
 import { ComparisonPickerBanner } from './ComparisonPickerBanner.tsx'
 import { ContextModal } from './ContextModal.tsx'
@@ -10,7 +10,7 @@ import {
   buildComparisonRows,
   buildOriginalContext,
   getPathToNode,
-  getTreeDefaults,
+  getRhizomeDefaults,
 } from './contextDiffs.ts'
 import type { DiffSummary } from './contextDiffs.ts'
 import { DigressionCreator } from './DigressionPanel.tsx'
@@ -24,7 +24,7 @@ import './DigressionPanel.css'
 import './ChatView.css'
 
 export function ChatView() {
-  const { currentTree, providers } = useTreeData()
+  const { currentRhizome, providers } = useRhizomeData()
   const {
     isGenerating, streamingContent, streamingThinkingContent,
     streamingContents, streamingThinkingContents, streamingNodeIds,
@@ -38,26 +38,26 @@ export function ChatView() {
   const { digressionGroups, groupSelectionMode, selectedGroupNodeIds } = useDigressionState()
   const { bookmarks, exclusions, selectedEditVersion, editHistoryCache } = useResearchMetadata()
 
-  const selectBranch = useTreeStore(s => s.selectBranch)
-  const editNodeContent = useTreeStore(s => s.editNodeContent)
-  const setActiveStreamIndex = useTreeStore(s => s.setActiveStreamIndex)
-  const regenerate = useTreeStore(s => s.regenerate)
-  const clearGenerationError = useTreeStore(s => s.clearGenerationError)
-  const fetchProviders = useTreeStore(s => s.fetchProviders)
-  const setInspectedNodeId = useTreeStore(s => s.setInspectedNodeId)
-  const setSplitViewNodeId = useTreeStore(s => s.setSplitViewNodeId)
-  const addBookmark = useTreeStore(s => s.addBookmark)
-  const removeBookmark = useTreeStore(s => s.removeBookmark)
-  const excludeNode = useTreeStore(s => s.excludeNode)
-  const includeNode = useTreeStore(s => s.includeNode)
-  const toggleAnchor = useTreeStore(s => s.toggleAnchor)
-  const setGroupSelectionMode = useTreeStore(s => s.setGroupSelectionMode)
-  const toggleGroupNodeSelection = useTreeStore(s => s.toggleGroupNodeSelection)
-  const createDigressionGroup = useTreeStore(s => s.createDigressionGroup)
-  const setComparisonNodeId = useTreeStore(s => s.setComparisonNodeId)
-  const enterComparisonPicking = useTreeStore(s => s.enterComparisonPicking)
-  const pickComparisonTarget = useTreeStore(s => s.pickComparisonTarget)
-  const cancelComparisonPicking = useTreeStore(s => s.cancelComparisonPicking)
+  const selectBranch = useRhizomeStore(s => s.selectBranch)
+  const editNodeContent = useRhizomeStore(s => s.editNodeContent)
+  const setActiveStreamIndex = useRhizomeStore(s => s.setActiveStreamIndex)
+  const regenerate = useRhizomeStore(s => s.regenerate)
+  const clearGenerationError = useRhizomeStore(s => s.clearGenerationError)
+  const fetchProviders = useRhizomeStore(s => s.fetchProviders)
+  const setInspectedNodeId = useRhizomeStore(s => s.setInspectedNodeId)
+  const setSplitViewNodeId = useRhizomeStore(s => s.setSplitViewNodeId)
+  const addBookmark = useRhizomeStore(s => s.addBookmark)
+  const removeBookmark = useRhizomeStore(s => s.removeBookmark)
+  const excludeNode = useRhizomeStore(s => s.excludeNode)
+  const includeNode = useRhizomeStore(s => s.includeNode)
+  const toggleAnchor = useRhizomeStore(s => s.toggleAnchor)
+  const setGroupSelectionMode = useRhizomeStore(s => s.setGroupSelectionMode)
+  const toggleGroupNodeSelection = useRhizomeStore(s => s.toggleGroupNodeSelection)
+  const createDigressionGroup = useRhizomeStore(s => s.createDigressionGroup)
+  const setComparisonNodeId = useRhizomeStore(s => s.setComparisonNodeId)
+  const enterComparisonPicking = useRhizomeStore(s => s.enterComparisonPicking)
+  const pickComparisonTarget = useRhizomeStore(s => s.pickComparisonTarget)
+  const cancelComparisonPicking = useRhizomeStore(s => s.cancelComparisonPicking)
 
   const bottomRef = useRef<HTMLDivElement>(null)
   const [comparingAtParent, setComparingAtParent] = useState<string | null>(null)
@@ -92,7 +92,7 @@ export function ChatView() {
     return () => document.removeEventListener('keydown', handleKeyDown)
   }, [comparisonPickingMode, cancelComparisonPicking])
 
-  if (!currentTree) return null
+  if (!currentRhizome) return null
 
   // Compute highlight classes when an edit version is selected
   const highlights = useMemo(() => {
@@ -145,15 +145,15 @@ export function ChatView() {
   // Compute diff summaries for assistant nodes (for diff badges)
   const diffSummaries = useMemo(() => {
     const map = new Map<string, DiffSummary>()
-    if (!currentTree) return map
-    const treeDefaults = getTreeDefaults(currentTree)
+    if (!currentRhizome) return map
+    const rhizomeDefaults = getRhizomeDefaults(currentRhizome)
     for (const node of path) {
       if (node.role === 'assistant' && node.mode !== 'manual') {
-        map.set(node.node_id, computeDiffSummary(node, path, treeDefaults))
+        map.set(node.node_id, computeDiffSummary(node, path, rhizomeDefaults))
       }
     }
     return map
-  }, [currentTree, path])
+  }, [currentRhizome, path])
 
   // Compute which nodes are effectively excluded on the current path
   const effectiveExcludedIds = useMemo(() => {
@@ -344,8 +344,8 @@ export function ChatView() {
                   isGenerating={isGenerating}
                   providers={providers}
                   defaults={branchDefaults}
-                  streamDefault={currentTree.metadata?.stream_responses !== false}
-                  samplingDefaults={currentTree.default_sampling_params}
+                  streamDefault={currentRhizome.metadata?.stream_responses !== false}
+                  samplingDefaults={currentRhizome.default_sampling_params}
                 />
               )}
               {!isPicking && summarizeTargetId === node.node_id && (
@@ -395,10 +395,10 @@ export function ChatView() {
         )
       })()}
 
-      {splitViewNodeId && currentTree && (() => {
+      {splitViewNodeId && currentRhizome && (() => {
         const splitNode = nodes.find((n) => n.node_id === splitViewNodeId)
         if (!splitNode) return null
-        const treeDefaults = getTreeDefaults(currentTree)
+        const rhizomeDefaults = getRhizomeDefaults(currentRhizome)
 
         const contextB = reconstructContext(splitNode, nodes)
         const pathB = getPathToNode(splitNode, nodes)
@@ -418,7 +418,7 @@ export function ChatView() {
           responseContentA = compNode.content
           comparisonMode = 'node'
         } else {
-          contextA = buildOriginalContext(splitNode, nodes, treeDefaults)
+          contextA = buildOriginalContext(splitNode, nodes, rhizomeDefaults)
         }
 
         const pathA = compNode ? getPathToNode(compNode, nodes) : pathB
@@ -427,7 +427,7 @@ export function ChatView() {
         return (
           <ContextSplitView
             rows={comparisonRows}
-            summary={comparisonMode === 'original' ? computeDiffSummary(splitNode, path, treeDefaults) : null}
+            summary={comparisonMode === 'original' ? computeDiffSummary(splitNode, path, rhizomeDefaults) : null}
             contextA={contextA}
             contextB={contextB}
             responseContentA={responseContentA}

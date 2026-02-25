@@ -6,7 +6,7 @@
 
 import { type RefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { GenerateRequest, NodeResponse } from '../../api/types.ts'
-import { getActivePath, useTreeStore, useTreeData, useStreamingState, useNavigation } from '../../store/treeStore.ts'
+import { getActivePath, useRhizomeStore, useRhizomeData, useStreamingState, useNavigation } from '../../store/rhizomeStore.ts'
 
 export interface ForkTarget {
   parentId: string
@@ -14,15 +14,15 @@ export interface ForkTarget {
 }
 
 /**
- * Compute the active path through the conversation tree, build sibling lookup,
+ * Compute the active path through the conversation rhizome, build sibling lookup,
  * and handle regeneration truncation.
  */
 export function useActivePath() {
-  const { currentTree } = useTreeData()
+  const { currentRhizome } = useRhizomeData()
   const { branchSelections } = useNavigation()
   const { regeneratingParentId } = useStreamingState()
 
-  const nodes = currentTree?.nodes ?? []
+  const nodes = currentRhizome?.nodes ?? []
   let path = getActivePath(nodes, branchSelections)
 
   // Build childMap for sibling lookups
@@ -58,10 +58,10 @@ export function useAutoScroll(bottomRef: RefObject<HTMLDivElement | null>) {
     streamingContent, streamingThinkingContent,
     streamingContents, activeStreamIndex,
   } = useStreamingState()
-  const { currentTree } = useTreeData()
+  const { currentRhizome } = useRhizomeData()
   const { branchSelections } = useNavigation()
 
-  const nodes = currentTree?.nodes ?? []
+  const nodes = currentRhizome?.nodes ?? []
   const path = getActivePath(nodes, branchSelections)
   const activeMultiContent = streamingContents[activeStreamIndex]
 
@@ -81,8 +81,8 @@ export function useAutoScroll(bottomRef: RefObject<HTMLDivElement | null>) {
  * and scroll that DOM element into view.
  */
 export function useScrollToNode() {
-  const scrollToNodeId = useTreeStore(s => s.scrollToNodeId)
-  const clearScrollToNode = useTreeStore(s => s.clearScrollToNode)
+  const scrollToNodeId = useRhizomeStore(s => s.scrollToNodeId)
+  const clearScrollToNode = useRhizomeStore(s => s.clearScrollToNode)
 
   useEffect(() => {
     if (!scrollToNodeId) return
@@ -99,19 +99,19 @@ export function useScrollToNode() {
 
 /**
  * Compute branch-local defaults: use the last assistant node's provider/model
- * from the active path, falling back to tree defaults.
+ * from the active path, falling back to rhizome defaults.
  */
 export function useBranchDefaults(path: NodeResponse[]) {
-  const { currentTree } = useTreeData()
+  const { currentRhizome } = useRhizomeData()
 
   return useMemo(() => {
     const lastAssistant = [...path].reverse().find((n) => n.role === 'assistant')
     return {
-      provider: lastAssistant?.provider ?? currentTree?.default_provider ?? '',
-      model: lastAssistant?.model ?? currentTree?.default_model ?? '',
-      systemPrompt: currentTree?.default_system_prompt ?? '',
+      provider: lastAssistant?.provider ?? currentRhizome?.default_provider ?? '',
+      model: lastAssistant?.model ?? currentRhizome?.default_model ?? '',
+      systemPrompt: currentRhizome?.default_system_prompt ?? '',
     }
-  }, [path, currentTree])
+  }, [path, currentRhizome])
 }
 
 /**
@@ -121,10 +121,10 @@ export function useBranchDefaults(path: NodeResponse[]) {
 export function useForkPanel() {
   const [forkTarget, setForkTarget] = useState<ForkTarget | null>(null)
 
-  const forkAndGenerate = useTreeStore(s => s.forkAndGenerate)
-  const regenerate = useTreeStore(s => s.regenerate)
-  const prefillAssistant = useTreeStore(s => s.prefillAssistant)
-  const prefillAndGenerate = useTreeStore(s => s.prefillAndGenerate)
+  const forkAndGenerate = useRhizomeStore(s => s.forkAndGenerate)
+  const regenerate = useRhizomeStore(s => s.regenerate)
+  const prefillAssistant = useRhizomeStore(s => s.prefillAssistant)
+  const prefillAndGenerate = useRhizomeStore(s => s.prefillAndGenerate)
 
   const handleFork = useCallback((parentId: string, role: string) => {
     const mode = role === 'assistant' ? 'regenerate' : 'fork'

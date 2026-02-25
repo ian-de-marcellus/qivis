@@ -12,7 +12,7 @@
 
 import { memo, useState } from 'react'
 import type { LogprobData, NodeResponse } from '../../api/types.ts'
-import { useTreeStore } from '../../store/treeStore.ts'
+import { useRhizomeStore } from '../../store/rhizomeStore.ts'
 import { ActionMenu, ActionMenuItem } from './ActionMenu.tsx'
 import { AnnotationPanel } from './AnnotationPanel.tsx'
 import { BranchIndicator } from './BranchIndicator.tsx'
@@ -55,7 +55,7 @@ export const CompletionNode = memo(function CompletionNode({
   const [showAnnotations, setShowAnnotations] = useState(false)
   const [showNotes, setShowNotes] = useState(false)
 
-  const editHistoryCache = useTreeStore((s) => s.editHistoryCache)
+  const editHistoryCache = useRhizomeStore((s) => s.editHistoryCache)
 
   const avgCertainty = logprobs ? averageCertainty(logprobs) : null
   const hasEditHistory = node.edited_content != null || node.edit_count > 0

@@ -1,4 +1,4 @@
-"""Export service: JSON and CSV export, tree path enumeration."""
+"""Export service: JSON and CSV export, rhizome path enumeration."""
 
 import csv
 import io
@@ -25,24 +25,24 @@ class ExportService:
 
     async def export_json(
         self,
-        tree_id: str,
+        rhizome_id: str,
         *,
         include_events: bool = False,
     ) -> dict | None:
-        """Export tree as a rich JSON document.
+        """Export rhizome as a rich JSON document.
 
-        Returns None if tree not found.
+        Returns None if rhizome not found.
         """
-        tree = await self._projector.get_tree(tree_id)
-        if tree is None:
+        rhizome = await self._projector.get_rhizome(rhizome_id)
+        if rhizome is None:
             return None
 
-        nodes = await self._projector.get_nodes(tree_id)
+        nodes = await self._projector.get_nodes(rhizome_id)
 
         # Annotations per node
         annotations_by_node: dict[str, list[dict]] = {}
         ann_rows = await self._db.fetchall(
-            "SELECT * FROM annotations WHERE tree_id = ?", (tree_id,)
+            "SELECT * FROM annotations WHERE rhizome_id = ?", (rhizome_id,)
         )
         for row in ann_rows:
             r = _row_to_dict(row)
@@ -56,7 +56,7 @@ class ExportService:
 
         # Bookmarks
         bm_rows = await self._db.fetchall(
-            "SELECT * FROM bookmarks WHERE tree_id = ?", (tree_id,)
+            "SELECT * FROM bookmarks WHERE rhizome_id = ?", (rhizome_id,)
         )
         bookmarks = []
         for row in bm_rows:
@@ -71,7 +71,7 @@ class ExportService:
             })
 
         # Exclusions
-        excl_rows = await self._projector.get_node_exclusions(tree_id)
+        excl_rows = await self._projector.get_node_exclusions(rhizome_id)
         exclusions = [
             {
                 "node_id": r["node_id"],
@@ -82,7 +82,7 @@ class ExportService:
         ]
 
         # Digression groups
-        dg_raw = await self._projector.get_digression_groups(tree_id)
+        dg_raw = await self._projector.get_digression_groups(rhizome_id)
         digression_groups = [
             {
                 "group_id": g["group_id"],
@@ -95,7 +95,7 @@ class ExportService:
 
         # Anchored node IDs
         anchor_rows = await self._db.fetchall(
-            "SELECT node_id FROM node_anchors WHERE tree_id = ?", (tree_id,)
+            "SELECT node_id FROM node_anchors WHERE rhizome_id = ?", (rhizome_id,)
         )
         anchored_ids = {r["node_id"] for r in anchor_rows}
 
@@ -131,22 +131,22 @@ class ExportService:
                 "is_excluded": n["node_id"] in excluded_ids,
             })
 
-        metadata = parse_json_or_none(tree.get("metadata")) or {}
+        metadata = parse_json_or_none(rhizome.get("metadata")) or {}
 
         result: dict = {
             "source": "qivis",
             "version": "1.0",
             "exported_at": datetime.now(UTC).isoformat(),
-            "tree": {
-                "tree_id": tree["tree_id"],
-                "title": tree.get("title"),
-                "created_at": tree.get("created_at"),
-                "updated_at": tree.get("updated_at"),
-                "default_model": tree.get("default_model"),
-                "default_provider": tree.get("default_provider"),
-                "default_system_prompt": tree.get("default_system_prompt"),
+            "rhizome": {
+                "rhizome_id": rhizome["rhizome_id"],
+                "title": rhizome.get("title"),
+                "created_at": rhizome.get("created_at"),
+                "updated_at": rhizome.get("updated_at"),
+                "default_model": rhizome.get("default_model"),
+                "default_provider": rhizome.get("default_provider"),
+                "default_system_prompt": rhizome.get("default_system_prompt"),
                 "default_sampling_params": parse_json_or_none(
-                    tree.get("default_sampling_params")
+                    rhizome.get("default_sampling_params")
                 ),
                 "metadata": metadata,
             },
@@ -157,11 +157,11 @@ class ExportService:
         }
 
         if include_events:
-            events = await self._store.get_events(tree_id)
+            events = await self._store.get_events(rhizome_id)
             result["events"] = [
                 {
                     "event_id": e.event_id,
-                    "tree_id": e.tree_id,
+                    "rhizome_id": e.rhizome_id,
                     "timestamp": e.timestamp.isoformat()
                     if hasattr(e.timestamp, "isoformat")
                     else str(e.timestamp),
@@ -174,20 +174,20 @@ class ExportService:
 
         return result
 
-    async def export_csv(self, tree_id: str) -> str | None:
-        """Export tree as CSV (one row per node).
+    async def export_csv(self, rhizome_id: str) -> str | None:
+        """Export rhizome as CSV (one row per node).
 
-        Returns CSV string, or None if tree not found.
+        Returns CSV string, or None if rhizome not found.
         """
-        tree = await self._projector.get_tree(tree_id)
-        if tree is None:
+        rhizome = await self._projector.get_rhizome(rhizome_id)
+        if rhizome is None:
             return None
 
-        nodes = await self._projector.get_nodes(tree_id)
+        nodes = await self._projector.get_nodes(rhizome_id)
 
         # Annotations per node (tags only for CSV)
         ann_rows = await self._db.fetchall(
-            "SELECT node_id, tag FROM annotations WHERE tree_id = ?", (tree_id,)
+            "SELECT node_id, tag FROM annotations WHERE rhizome_id = ?", (rhizome_id,)
         )
         tags_by_node: dict[str, list[str]] = {}
         for row in ann_rows:
@@ -195,16 +195,16 @@ class ExportService:
 
         # Bookmarked / anchored / excluded sets
         bm_rows = await self._db.fetchall(
-            "SELECT node_id FROM bookmarks WHERE tree_id = ?", (tree_id,)
+            "SELECT node_id FROM bookmarks WHERE rhizome_id = ?", (rhizome_id,)
         )
         bookmarked_ids = {r["node_id"] for r in bm_rows}
 
         anchor_rows = await self._db.fetchall(
-            "SELECT node_id FROM node_anchors WHERE tree_id = ?", (tree_id,)
+            "SELECT node_id FROM node_anchors WHERE rhizome_id = ?", (rhizome_id,)
         )
         anchored_ids = {r["node_id"] for r in anchor_rows}
 
-        excl_rows = await self._projector.get_node_exclusions(tree_id)
+        excl_rows = await self._projector.get_node_exclusions(rhizome_id)
         excluded_ids = {r["node_id"] for r in excl_rows}
 
         # Compute path depth for each node
@@ -257,17 +257,17 @@ class ExportService:
 
         return output.getvalue()
 
-    async def get_paths(self, tree_id: str) -> list[list[str]] | None:
-        """Enumerate all root-to-leaf paths in the tree.
+    async def get_paths(self, rhizome_id: str) -> list[list[str]] | None:
+        """Enumerate all root-to-leaf paths in the rhizome.
 
         Returns list of paths (each path is a list of node_ids from root to leaf),
-        or None if tree not found.
+        or None if rhizome not found.
         """
-        tree = await self._projector.get_tree(tree_id)
-        if tree is None:
+        rhizome = await self._projector.get_rhizome(rhizome_id)
+        if rhizome is None:
             return None
 
-        nodes = await self._projector.get_nodes(tree_id)
+        nodes = await self._projector.get_nodes(rhizome_id)
         if not nodes:
             return []
 
@@ -277,7 +277,7 @@ class ExportService:
             pid = n.get("parent_id")
             children.setdefault(pid, []).append(n["node_id"])
 
-        # Find roots (no parent or parent not in tree)
+        # Find roots (no parent or parent not in rhizome)
         roots = children.get(None, [])
 
         # DFS to enumerate paths
@@ -305,5 +305,3 @@ def _row_to_dict(row) -> dict:
     if isinstance(row, dict):
         return row
     return dict(row)
-
-

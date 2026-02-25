@@ -1,4 +1,4 @@
-"""FastAPI routes for tree and node CRUD, and generation."""
+"""FastAPI routes for rhizome and node CRUD, and generation."""
 
 import json as json_module
 import logging
@@ -10,11 +10,11 @@ from fastapi.responses import StreamingResponse
 from qivis.generation.service import (
     GenerationService,
     NodeNotFoundForGenerationError,
-    TreeNotFoundForGenerationError,
+    RhizomeNotFoundForGenerationError,
 )
 from qivis.providers.base import LLMProvider
 from qivis.providers.registry import ProviderNotFoundError, get_provider
-from qivis.trees.schemas import (
+from qivis.rhizomes.schemas import (
     AddAnnotationRequest,
     AnnotationResponse,
     BookmarkResponse,
@@ -24,7 +24,7 @@ from qivis.trees.schemas import (
     CreateNodeRequest,
     CreateNoteRequest,
     CreateSummaryRequest,
-    CreateTreeRequest,
+    CreateRhizomeRequest,
     DigressionGroupResponse,
     EditHistoryResponse,
     ExcludeNodeRequest,
@@ -35,14 +35,14 @@ from qivis.trees.schemas import (
     NodeResponse,
     NoteResponse,
     PatchNodeContentRequest,
-    PatchTreeRequest,
+    PatchRhizomeRequest,
     SummaryResponse,
     TaxonomyResponse,
     ToggleDigressionGroupRequest,
-    TreeDetailResponse,
-    TreeSummary,
+    RhizomeDetailResponse,
+    RhizomeSummary,
 )
-from qivis.trees.service import (
+from qivis.rhizomes.service import (
     AnnotationNotFoundError,
     BookmarkNotFoundError,
     DigressionGroupNotFoundError,
@@ -52,18 +52,18 @@ from qivis.trees.service import (
     NoteNotFoundError,
     SummaryClientNotConfiguredError,
     SummaryNotFoundError,
-    TreeNotFoundError,
-    TreeService,
+    RhizomeNotFoundError,
+    RhizomeService,
 )
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/trees", tags=["trees"])
+router = APIRouter(prefix="/api/rhizomes", tags=["rhizomes"])
 
 
-def get_tree_service() -> TreeService:
+def get_rhizome_service() -> RhizomeService:
     """Dependency placeholder — replaced at app startup."""
-    raise RuntimeError("TreeService not initialized")
+    raise RuntimeError("RhizomeService not initialized")
 
 
 def get_generation_service() -> GenerationService:
@@ -72,290 +72,290 @@ def get_generation_service() -> GenerationService:
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
-async def create_tree(
-    request: CreateTreeRequest,
-    service: TreeService = Depends(get_tree_service),
-) -> TreeDetailResponse:
-    return await service.create_tree(request)
+async def create_rhizome(
+    request: CreateRhizomeRequest,
+    service: RhizomeService = Depends(get_rhizome_service),
+) -> RhizomeDetailResponse:
+    return await service.create_rhizome(request)
 
 
 @router.get("")
-async def list_trees(
+async def list_rhizomes(
     include_archived: bool = False,
-    service: TreeService = Depends(get_tree_service),
-) -> list[TreeSummary]:
-    return await service.list_trees(include_archived=include_archived)
+    service: RhizomeService = Depends(get_rhizome_service),
+) -> list[RhizomeSummary]:
+    return await service.list_rhizomes(include_archived=include_archived)
 
 
-@router.get("/{tree_id}")
-async def get_tree(
-    tree_id: str,
-    service: TreeService = Depends(get_tree_service),
-) -> TreeDetailResponse:
-    tree = await service.get_tree(tree_id)
-    if tree is None:
-        raise HTTPException(status_code=404, detail=f"Tree not found: {tree_id}")
-    return tree
+@router.get("/{rhizome_id}")
+async def get_rhizome(
+    rhizome_id: str,
+    service: RhizomeService = Depends(get_rhizome_service),
+) -> RhizomeDetailResponse:
+    rhizome = await service.get_rhizome(rhizome_id)
+    if rhizome is None:
+        raise HTTPException(status_code=404, detail=f"Rhizome not found: {rhizome_id}")
+    return rhizome
 
 
-@router.patch("/{tree_id}")
-async def update_tree(
-    tree_id: str,
-    request: PatchTreeRequest,
-    service: TreeService = Depends(get_tree_service),
-) -> TreeDetailResponse:
+@router.patch("/{rhizome_id}")
+async def update_rhizome(
+    rhizome_id: str,
+    request: PatchRhizomeRequest,
+    service: RhizomeService = Depends(get_rhizome_service),
+) -> RhizomeDetailResponse:
     try:
-        return await service.update_tree(tree_id, request)
-    except TreeNotFoundError:
-        raise HTTPException(status_code=404, detail=f"Tree not found: {tree_id}")
+        return await service.update_rhizome(rhizome_id, request)
+    except RhizomeNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Rhizome not found: {rhizome_id}")
 
 
-@router.post("/{tree_id}/archive")
-async def archive_tree(
-    tree_id: str,
-    service: TreeService = Depends(get_tree_service),
-) -> TreeDetailResponse:
+@router.post("/{rhizome_id}/archive")
+async def archive_rhizome(
+    rhizome_id: str,
+    service: RhizomeService = Depends(get_rhizome_service),
+) -> RhizomeDetailResponse:
     try:
-        return await service.archive_tree(tree_id)
-    except TreeNotFoundError:
-        raise HTTPException(status_code=404, detail=f"Tree not found: {tree_id}")
+        return await service.archive_rhizome(rhizome_id)
+    except RhizomeNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Rhizome not found: {rhizome_id}")
 
 
-@router.post("/{tree_id}/unarchive")
-async def unarchive_tree(
-    tree_id: str,
-    service: TreeService = Depends(get_tree_service),
-) -> TreeDetailResponse:
+@router.post("/{rhizome_id}/unarchive")
+async def unarchive_rhizome(
+    rhizome_id: str,
+    service: RhizomeService = Depends(get_rhizome_service),
+) -> RhizomeDetailResponse:
     try:
-        return await service.unarchive_tree(tree_id)
-    except TreeNotFoundError:
-        raise HTTPException(status_code=404, detail=f"Tree not found: {tree_id}")
+        return await service.unarchive_rhizome(rhizome_id)
+    except RhizomeNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Rhizome not found: {rhizome_id}")
 
 
-@router.post("/{tree_id}/nodes", status_code=status.HTTP_201_CREATED)
+@router.post("/{rhizome_id}/nodes", status_code=status.HTTP_201_CREATED)
 async def create_node(
-    tree_id: str,
+    rhizome_id: str,
     request: CreateNodeRequest,
-    service: TreeService = Depends(get_tree_service),
+    service: RhizomeService = Depends(get_rhizome_service),
 ) -> NodeResponse:
     try:
-        return await service.create_node(tree_id, request)
-    except TreeNotFoundError:
-        raise HTTPException(status_code=404, detail=f"Tree not found: {tree_id}")
+        return await service.create_node(rhizome_id, request)
+    except RhizomeNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Rhizome not found: {rhizome_id}")
     except InvalidParentError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.patch("/{tree_id}/nodes/{node_id}/content")
+@router.patch("/{rhizome_id}/nodes/{node_id}/content")
 async def edit_node_content(
-    tree_id: str,
+    rhizome_id: str,
     node_id: str,
     request: PatchNodeContentRequest,
-    service: TreeService = Depends(get_tree_service),
+    service: RhizomeService = Depends(get_rhizome_service),
 ) -> NodeResponse:
     try:
-        return await service.edit_node_content(tree_id, node_id, request.edited_content)
-    except TreeNotFoundError:
-        raise HTTPException(status_code=404, detail=f"Tree not found: {tree_id}")
+        return await service.edit_node_content(rhizome_id, node_id, request.edited_content)
+    except RhizomeNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Rhizome not found: {rhizome_id}")
     except NodeNotFoundError:
         raise HTTPException(status_code=404, detail=f"Node not found: {node_id}")
 
 
-@router.get("/{tree_id}/nodes/{node_id}/edit-history")
+@router.get("/{rhizome_id}/nodes/{node_id}/edit-history")
 async def get_edit_history(
-    tree_id: str,
+    rhizome_id: str,
     node_id: str,
-    service: TreeService = Depends(get_tree_service),
+    service: RhizomeService = Depends(get_rhizome_service),
 ) -> EditHistoryResponse:
     try:
-        return await service.get_edit_history(tree_id, node_id)
-    except TreeNotFoundError:
-        raise HTTPException(status_code=404, detail=f"Tree not found: {tree_id}")
+        return await service.get_edit_history(rhizome_id, node_id)
+    except RhizomeNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Rhizome not found: {rhizome_id}")
     except NodeNotFoundError:
         raise HTTPException(status_code=404, detail=f"Node not found: {node_id}")
 
 
-@router.get("/{tree_id}/interventions")
+@router.get("/{rhizome_id}/interventions")
 async def get_interventions(
-    tree_id: str,
-    service: TreeService = Depends(get_tree_service),
+    rhizome_id: str,
+    service: RhizomeService = Depends(get_rhizome_service),
 ) -> InterventionTimelineResponse:
     try:
-        return await service.get_intervention_timeline(tree_id)
-    except TreeNotFoundError:
-        raise HTTPException(status_code=404, detail=f"Tree not found: {tree_id}")
+        return await service.get_intervention_timeline(rhizome_id)
+    except RhizomeNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Rhizome not found: {rhizome_id}")
 
 
 @router.post(
-    "/{tree_id}/nodes/{node_id}/annotations",
+    "/{rhizome_id}/nodes/{node_id}/annotations",
     status_code=status.HTTP_201_CREATED,
 )
 async def add_annotation(
-    tree_id: str,
+    rhizome_id: str,
     node_id: str,
     request: AddAnnotationRequest,
-    service: TreeService = Depends(get_tree_service),
+    service: RhizomeService = Depends(get_rhizome_service),
 ) -> AnnotationResponse:
     try:
-        return await service.add_annotation(tree_id, node_id, request)
-    except TreeNotFoundError:
-        raise HTTPException(status_code=404, detail=f"Tree not found: {tree_id}")
+        return await service.add_annotation(rhizome_id, node_id, request)
+    except RhizomeNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Rhizome not found: {rhizome_id}")
     except NodeNotFoundError:
         raise HTTPException(status_code=404, detail=f"Node not found: {node_id}")
 
 
-@router.get("/{tree_id}/nodes/{node_id}/annotations")
+@router.get("/{rhizome_id}/nodes/{node_id}/annotations")
 async def get_node_annotations(
-    tree_id: str,
+    rhizome_id: str,
     node_id: str,
-    service: TreeService = Depends(get_tree_service),
+    service: RhizomeService = Depends(get_rhizome_service),
 ) -> list[AnnotationResponse]:
-    return await service.get_node_annotations(tree_id, node_id)
+    return await service.get_node_annotations(rhizome_id, node_id)
 
 
 @router.delete(
-    "/{tree_id}/annotations/{annotation_id}",
+    "/{rhizome_id}/annotations/{annotation_id}",
     status_code=status.HTTP_204_NO_CONTENT,
 )
 async def remove_annotation(
-    tree_id: str,
+    rhizome_id: str,
     annotation_id: str,
-    service: TreeService = Depends(get_tree_service),
+    service: RhizomeService = Depends(get_rhizome_service),
 ) -> None:
     try:
-        await service.remove_annotation(tree_id, annotation_id)
+        await service.remove_annotation(rhizome_id, annotation_id)
     except AnnotationNotFoundError:
         raise HTTPException(
             status_code=404, detail=f"Annotation not found: {annotation_id}"
         )
 
 
-@router.get("/{tree_id}/taxonomy")
-async def get_tree_taxonomy(
-    tree_id: str,
-    service: TreeService = Depends(get_tree_service),
+@router.get("/{rhizome_id}/taxonomy")
+async def get_rhizome_taxonomy(
+    rhizome_id: str,
+    service: RhizomeService = Depends(get_rhizome_service),
 ) -> TaxonomyResponse:
     try:
-        return await service.get_tree_taxonomy(tree_id)
-    except TreeNotFoundError:
-        raise HTTPException(status_code=404, detail=f"Tree not found: {tree_id}")
+        return await service.get_rhizome_taxonomy(rhizome_id)
+    except RhizomeNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Rhizome not found: {rhizome_id}")
 
 
 @router.post(
-    "/{tree_id}/nodes/{node_id}/notes",
+    "/{rhizome_id}/nodes/{node_id}/notes",
     status_code=status.HTTP_201_CREATED,
 )
 async def add_note(
-    tree_id: str,
+    rhizome_id: str,
     node_id: str,
     request: CreateNoteRequest,
-    service: TreeService = Depends(get_tree_service),
+    service: RhizomeService = Depends(get_rhizome_service),
 ) -> NoteResponse:
     try:
-        return await service.add_note(tree_id, node_id, request)
-    except TreeNotFoundError:
-        raise HTTPException(status_code=404, detail=f"Tree not found: {tree_id}")
+        return await service.add_note(rhizome_id, node_id, request)
+    except RhizomeNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Rhizome not found: {rhizome_id}")
     except NodeNotFoundError:
         raise HTTPException(status_code=404, detail=f"Node not found: {node_id}")
 
 
-@router.get("/{tree_id}/nodes/{node_id}/notes")
+@router.get("/{rhizome_id}/nodes/{node_id}/notes")
 async def get_node_notes(
-    tree_id: str,
+    rhizome_id: str,
     node_id: str,
-    service: TreeService = Depends(get_tree_service),
+    service: RhizomeService = Depends(get_rhizome_service),
 ) -> list[NoteResponse]:
-    return await service.get_node_notes(tree_id, node_id)
+    return await service.get_node_notes(rhizome_id, node_id)
 
 
-@router.get("/{tree_id}/notes")
-async def get_tree_notes(
-    tree_id: str,
+@router.get("/{rhizome_id}/notes")
+async def get_rhizome_notes(
+    rhizome_id: str,
     q: str | None = None,
-    service: TreeService = Depends(get_tree_service),
+    service: RhizomeService = Depends(get_rhizome_service),
 ) -> list[NoteResponse]:
-    return await service.get_tree_notes(tree_id, query=q)
+    return await service.get_rhizome_notes(rhizome_id, query=q)
 
 
 @router.delete(
-    "/{tree_id}/notes/{note_id}",
+    "/{rhizome_id}/notes/{note_id}",
     status_code=status.HTTP_204_NO_CONTENT,
 )
 async def remove_note(
-    tree_id: str,
+    rhizome_id: str,
     note_id: str,
-    service: TreeService = Depends(get_tree_service),
+    service: RhizomeService = Depends(get_rhizome_service),
 ) -> None:
     try:
-        await service.remove_note(tree_id, note_id)
+        await service.remove_note(rhizome_id, note_id)
     except NoteNotFoundError:
         raise HTTPException(
             status_code=404, detail=f"Note not found: {note_id}"
         )
 
 
-@router.get("/{tree_id}/annotations")
-async def get_tree_annotations(
-    tree_id: str,
-    service: TreeService = Depends(get_tree_service),
+@router.get("/{rhizome_id}/annotations")
+async def get_rhizome_annotations(
+    rhizome_id: str,
+    service: RhizomeService = Depends(get_rhizome_service),
 ) -> list[AnnotationResponse]:
-    return await service.get_tree_annotations(tree_id)
+    return await service.get_rhizome_annotations(rhizome_id)
 
 
 @router.post(
-    "/{tree_id}/nodes/{node_id}/bookmarks",
+    "/{rhizome_id}/nodes/{node_id}/bookmarks",
     status_code=status.HTTP_201_CREATED,
 )
 async def add_bookmark(
-    tree_id: str,
+    rhizome_id: str,
     node_id: str,
     request: CreateBookmarkRequest,
-    service: TreeService = Depends(get_tree_service),
+    service: RhizomeService = Depends(get_rhizome_service),
 ) -> BookmarkResponse:
     try:
-        return await service.add_bookmark(tree_id, node_id, request)
-    except TreeNotFoundError:
-        raise HTTPException(status_code=404, detail=f"Tree not found: {tree_id}")
+        return await service.add_bookmark(rhizome_id, node_id, request)
+    except RhizomeNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Rhizome not found: {rhizome_id}")
     except NodeNotFoundError:
         raise HTTPException(status_code=404, detail=f"Node not found: {node_id}")
 
 
-@router.get("/{tree_id}/bookmarks")
-async def get_tree_bookmarks(
-    tree_id: str,
+@router.get("/{rhizome_id}/bookmarks")
+async def get_rhizome_bookmarks(
+    rhizome_id: str,
     q: str | None = None,
-    service: TreeService = Depends(get_tree_service),
+    service: RhizomeService = Depends(get_rhizome_service),
 ) -> list[BookmarkResponse]:
-    return await service.get_tree_bookmarks(tree_id, query=q)
+    return await service.get_rhizome_bookmarks(rhizome_id, query=q)
 
 
 @router.delete(
-    "/{tree_id}/bookmarks/{bookmark_id}",
+    "/{rhizome_id}/bookmarks/{bookmark_id}",
     status_code=status.HTTP_204_NO_CONTENT,
 )
 async def remove_bookmark(
-    tree_id: str,
+    rhizome_id: str,
     bookmark_id: str,
-    service: TreeService = Depends(get_tree_service),
+    service: RhizomeService = Depends(get_rhizome_service),
 ) -> None:
     try:
-        await service.remove_bookmark(tree_id, bookmark_id)
+        await service.remove_bookmark(rhizome_id, bookmark_id)
     except BookmarkNotFoundError:
         raise HTTPException(
             status_code=404, detail=f"Bookmark not found: {bookmark_id}"
         )
 
 
-@router.post("/{tree_id}/bookmarks/{bookmark_id}/summarize")
+@router.post("/{rhizome_id}/bookmarks/{bookmark_id}/summarize")
 async def summarize_bookmark(
-    tree_id: str,
+    rhizome_id: str,
     bookmark_id: str,
-    service: TreeService = Depends(get_tree_service),
+    service: RhizomeService = Depends(get_rhizome_service),
 ) -> BookmarkResponse:
     try:
-        return await service.generate_bookmark_summary(tree_id, bookmark_id)
-    except TreeNotFoundError:
-        raise HTTPException(status_code=404, detail=f"Tree not found: {tree_id}")
+        return await service.generate_bookmark_summary(rhizome_id, bookmark_id)
+    except RhizomeNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Rhizome not found: {rhizome_id}")
     except BookmarkNotFoundError:
         raise HTTPException(
             status_code=404, detail=f"Bookmark not found: {bookmark_id}"
@@ -369,17 +369,17 @@ async def summarize_bookmark(
 # -- Manual summarization --
 
 
-@router.post("/{tree_id}/nodes/{node_id}/summarize")
+@router.post("/{rhizome_id}/nodes/{node_id}/summarize")
 async def generate_summary(
-    tree_id: str,
+    rhizome_id: str,
     node_id: str,
     request: CreateSummaryRequest,
-    service: TreeService = Depends(get_tree_service),
+    service: RhizomeService = Depends(get_rhizome_service),
 ) -> SummaryResponse:
     try:
-        return await service.generate_summary(tree_id, node_id, request)
-    except TreeNotFoundError:
-        raise HTTPException(status_code=404, detail=f"Tree not found: {tree_id}")
+        return await service.generate_summary(rhizome_id, node_id, request)
+    except RhizomeNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Rhizome not found: {rhizome_id}")
     except NodeNotFoundError:
         raise HTTPException(status_code=404, detail=f"Node not found: {node_id}")
     except SummaryClientNotConfiguredError:
@@ -388,103 +388,103 @@ async def generate_summary(
         )
 
 
-@router.get("/{tree_id}/summaries")
+@router.get("/{rhizome_id}/summaries")
 async def list_summaries(
-    tree_id: str,
-    service: TreeService = Depends(get_tree_service),
+    rhizome_id: str,
+    service: RhizomeService = Depends(get_rhizome_service),
 ) -> list[SummaryResponse]:
-    return await service.list_summaries(tree_id)
+    return await service.list_summaries(rhizome_id)
 
 
 @router.delete(
-    "/{tree_id}/summaries/{summary_id}",
+    "/{rhizome_id}/summaries/{summary_id}",
     status_code=status.HTTP_204_NO_CONTENT,
 )
 async def remove_summary(
-    tree_id: str,
+    rhizome_id: str,
     summary_id: str,
-    service: TreeService = Depends(get_tree_service),
+    service: RhizomeService = Depends(get_rhizome_service),
 ) -> None:
     try:
-        await service.remove_summary(tree_id, summary_id)
+        await service.remove_summary(rhizome_id, summary_id)
     except SummaryNotFoundError:
         raise HTTPException(
             status_code=404, detail=f"Summary not found: {summary_id}"
         )
 
 
-@router.post("/{tree_id}/nodes/{node_id}/exclude")
+@router.post("/{rhizome_id}/nodes/{node_id}/exclude")
 async def exclude_node(
-    tree_id: str,
+    rhizome_id: str,
     node_id: str,
     request: ExcludeNodeRequest,
-    service: TreeService = Depends(get_tree_service),
+    service: RhizomeService = Depends(get_rhizome_service),
 ) -> NodeExclusionResponse:
     try:
-        return await service.exclude_node(tree_id, node_id, request)
-    except TreeNotFoundError:
-        raise HTTPException(status_code=404, detail=f"Tree not found: {tree_id}")
+        return await service.exclude_node(rhizome_id, node_id, request)
+    except RhizomeNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Rhizome not found: {rhizome_id}")
     except NodeNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
 
 @router.post(
-    "/{tree_id}/nodes/{node_id}/include",
+    "/{rhizome_id}/nodes/{node_id}/include",
     status_code=status.HTTP_204_NO_CONTENT,
 )
 async def include_node(
-    tree_id: str,
+    rhizome_id: str,
     node_id: str,
     request: IncludeNodeRequest,
-    service: TreeService = Depends(get_tree_service),
+    service: RhizomeService = Depends(get_rhizome_service),
 ) -> None:
-    await service.include_node(tree_id, node_id, request.scope_node_id)
+    await service.include_node(rhizome_id, node_id, request.scope_node_id)
 
 
-@router.get("/{tree_id}/exclusions")
-async def get_tree_exclusions(
-    tree_id: str,
-    service: TreeService = Depends(get_tree_service),
+@router.get("/{rhizome_id}/exclusions")
+async def get_rhizome_exclusions(
+    rhizome_id: str,
+    service: RhizomeService = Depends(get_rhizome_service),
 ) -> list[NodeExclusionResponse]:
-    return await service.get_tree_exclusions(tree_id)
+    return await service.get_rhizome_exclusions(rhizome_id)
 
 
 @router.post(
-    "/{tree_id}/digression-groups",
+    "/{rhizome_id}/digression-groups",
     status_code=status.HTTP_201_CREATED,
 )
 async def create_digression_group(
-    tree_id: str,
+    rhizome_id: str,
     request: CreateDigressionGroupRequest,
-    service: TreeService = Depends(get_tree_service),
+    service: RhizomeService = Depends(get_rhizome_service),
 ) -> DigressionGroupResponse:
     try:
-        return await service.create_digression_group(tree_id, request)
-    except TreeNotFoundError:
-        raise HTTPException(status_code=404, detail=f"Tree not found: {tree_id}")
+        return await service.create_digression_group(rhizome_id, request)
+    except RhizomeNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Rhizome not found: {rhizome_id}")
     except NodeNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except NonContiguousGroupError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.get("/{tree_id}/digression-groups")
+@router.get("/{rhizome_id}/digression-groups")
 async def get_digression_groups(
-    tree_id: str,
-    service: TreeService = Depends(get_tree_service),
+    rhizome_id: str,
+    service: RhizomeService = Depends(get_rhizome_service),
 ) -> list[DigressionGroupResponse]:
-    return await service.get_digression_groups(tree_id)
+    return await service.get_digression_groups(rhizome_id)
 
 
-@router.post("/{tree_id}/digression-groups/{group_id}/toggle")
+@router.post("/{rhizome_id}/digression-groups/{group_id}/toggle")
 async def toggle_digression_group(
-    tree_id: str,
+    rhizome_id: str,
     group_id: str,
     request: ToggleDigressionGroupRequest,
-    service: TreeService = Depends(get_tree_service),
+    service: RhizomeService = Depends(get_rhizome_service),
 ) -> DigressionGroupResponse:
     try:
-        return await service.toggle_digression_group(tree_id, group_id, request.included)
+        return await service.toggle_digression_group(rhizome_id, group_id, request.included)
     except DigressionGroupNotFoundError:
         raise HTTPException(
             status_code=404, detail=f"Digression group not found: {group_id}"
@@ -492,57 +492,57 @@ async def toggle_digression_group(
 
 
 @router.delete(
-    "/{tree_id}/digression-groups/{group_id}",
+    "/{rhizome_id}/digression-groups/{group_id}",
     status_code=status.HTTP_204_NO_CONTENT,
 )
 async def delete_digression_group(
-    tree_id: str,
+    rhizome_id: str,
     group_id: str,
-    service: TreeService = Depends(get_tree_service),
+    service: RhizomeService = Depends(get_rhizome_service),
 ) -> None:
     try:
-        await service.delete_digression_group(tree_id, group_id)
+        await service.delete_digression_group(rhizome_id, group_id)
     except DigressionGroupNotFoundError:
         raise HTTPException(
             status_code=404, detail=f"Digression group not found: {group_id}"
         )
 
 
-@router.post("/{tree_id}/bulk-anchor")
+@router.post("/{rhizome_id}/bulk-anchor")
 async def bulk_anchor(
-    tree_id: str,
+    rhizome_id: str,
     request: BulkAnchorRequest,
-    service: TreeService = Depends(get_tree_service),
+    service: RhizomeService = Depends(get_rhizome_service),
 ) -> dict:
     try:
-        changed = await service.bulk_anchor(tree_id, request.node_ids, request.anchor)
+        changed = await service.bulk_anchor(rhizome_id, request.node_ids, request.anchor)
         return {"changed": changed, "anchor": request.anchor}
-    except TreeNotFoundError:
-        raise HTTPException(status_code=404, detail=f"Tree not found: {tree_id}")
+    except RhizomeNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Rhizome not found: {rhizome_id}")
 
 
-@router.post("/{tree_id}/nodes/{node_id}/anchor")
+@router.post("/{rhizome_id}/nodes/{node_id}/anchor")
 async def toggle_anchor(
-    tree_id: str,
+    rhizome_id: str,
     node_id: str,
-    service: TreeService = Depends(get_tree_service),
+    service: RhizomeService = Depends(get_rhizome_service),
 ) -> dict:
     try:
-        is_anchored = await service.anchor_node(tree_id, node_id)
+        is_anchored = await service.anchor_node(rhizome_id, node_id)
         return {"is_anchored": is_anchored}
-    except TreeNotFoundError:
-        raise HTTPException(status_code=404, detail=f"Tree not found: {tree_id}")
+    except RhizomeNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Rhizome not found: {rhizome_id}")
     except NodeNotFoundError:
         raise HTTPException(status_code=404, detail=f"Node not found: {node_id}")
 
 
 @router.post(
-    "/{tree_id}/nodes/{node_id}/generate",
+    "/{rhizome_id}/nodes/{node_id}/generate",
     status_code=status.HTTP_201_CREATED,
     response_model=None,
 )
 async def generate(
-    tree_id: str,
+    rhizome_id: str,
     node_id: str,
     request: GenerateRequest,
     gen_service: GenerationService = Depends(get_generation_service),
@@ -560,14 +560,14 @@ async def generate(
 
     if request.stream and request.n > 1:
         return StreamingResponse(
-            _stream_n_sse(gen_service, tree_id, node_id, provider, request),
+            _stream_n_sse(gen_service, rhizome_id, node_id, provider, request),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
 
     if request.stream:
         return StreamingResponse(
-            _stream_sse(gen_service, tree_id, node_id, provider, request),
+            _stream_sse(gen_service, rhizome_id, node_id, provider, request),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
@@ -575,7 +575,7 @@ async def generate(
     try:
         if request.n > 1:
             nodes = await gen_service.generate_n(
-                tree_id,
+                rhizome_id,
                 node_id,
                 provider,
                 n=request.n,
@@ -587,7 +587,7 @@ async def generate(
             return nodes[0]
 
         return await gen_service.generate(
-            tree_id,
+            rhizome_id,
             node_id,
             provider,
             model=request.model,
@@ -595,8 +595,8 @@ async def generate(
             sampling_params=request.sampling_params,
             prefill_content=request.prefill_content,
         )
-    except TreeNotFoundForGenerationError:
-        raise HTTPException(status_code=404, detail=f"Tree not found: {tree_id}")
+    except RhizomeNotFoundForGenerationError:
+        raise HTTPException(status_code=404, detail=f"Rhizome not found: {rhizome_id}")
     except NodeNotFoundForGenerationError:
         raise HTTPException(status_code=404, detail=f"Node not found: {node_id}")
     except (RuntimeError, Exception) as e:
@@ -605,7 +605,7 @@ async def generate(
 
 async def _stream_sse(
     gen_service: GenerationService,
-    tree_id: str,
+    rhizome_id: str,
     node_id: str,
     provider: LLMProvider,
     request: GenerateRequest,
@@ -613,7 +613,7 @@ async def _stream_sse(
     """Async generator that yields SSE-formatted lines."""
     try:
         async for chunk in gen_service.generate_stream(
-            tree_id,
+            rhizome_id,
             node_id,
             provider,
             model=request.model,
@@ -642,8 +642,8 @@ async def _stream_sse(
             elif chunk.text:
                 data = {"type": "text_delta", "text": chunk.text}
                 yield f"event: text_delta\ndata: {json_module.dumps(data)}\n\n"
-    except TreeNotFoundForGenerationError:
-        error = {"error": f"Tree not found: {tree_id}"}
+    except RhizomeNotFoundForGenerationError:
+        error = {"error": f"Rhizome not found: {rhizome_id}"}
         yield f"event: error\ndata: {json_module.dumps(error)}\n\n"
     except NodeNotFoundForGenerationError:
         error = {"error": f"Node not found: {node_id}"}
@@ -657,7 +657,7 @@ async def _stream_sse(
 
 async def _stream_n_sse(
     gen_service: GenerationService,
-    tree_id: str,
+    rhizome_id: str,
     node_id: str,
     provider: LLMProvider,
     request: GenerateRequest,
@@ -665,7 +665,7 @@ async def _stream_n_sse(
     """SSE generator for simultaneous n>1 streaming with completion_index."""
     try:
         async for chunk in gen_service.generate_n_stream(
-            tree_id,
+            rhizome_id,
             node_id,
             provider,
             n=request.n,
@@ -728,8 +728,8 @@ async def _stream_n_sse(
                     f"event: text_delta\n"
                     f"data: {json_module.dumps(data)}\n\n"
                 )
-    except TreeNotFoundForGenerationError:
-        error = {"error": f"Tree not found: {tree_id}"}
+    except RhizomeNotFoundForGenerationError:
+        error = {"error": f"Rhizome not found: {rhizome_id}"}
         yield f"event: error\ndata: {json_module.dumps(error)}\n\n"
     except NodeNotFoundForGenerationError:
         error = {"error": f"Node not found: {node_id}"}

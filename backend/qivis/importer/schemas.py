@@ -27,7 +27,7 @@ class ImportPreviewResponse(BaseModel):
 
 
 class ImportResult(BaseModel):
-    tree_id: str
+    rhizome_id: str
     title: str | None
     node_count: int
     warnings: list[str]

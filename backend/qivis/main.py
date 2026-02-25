@@ -30,9 +30,9 @@ from qivis.importer.service import ImportService
 from qivis.search.router import get_search_service
 from qivis.search.router import router as search_router
 from qivis.search.service import SearchService
-from qivis.trees.router import get_generation_service, get_tree_service
-from qivis.trees.router import router as trees_router
-from qivis.trees.service import TreeService
+from qivis.rhizomes.router import get_generation_service, get_rhizome_service
+from qivis.rhizomes.router import router as rhizomes_router
+from qivis.rhizomes.service import RhizomeService
 
 
 @asynccontextmanager
@@ -47,9 +47,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     summary_api_key = os.environ.get("SUMMARY_API_KEY")
     summary_client = AsyncAnthropic(api_key=summary_api_key) if summary_api_key else None
 
-    # Tree service
-    service = TreeService(db, summary_client=summary_client)
-    app.dependency_overrides[get_tree_service] = lambda: service
+    # Rhizome service
+    service = RhizomeService(db, summary_client=summary_client)
+    app.dependency_overrides[get_rhizome_service] = lambda: service
 
     # Provider setup — auto-discover from env vars
     if os.environ.get("ANTHROPIC_API_KEY"):
@@ -125,7 +125,7 @@ app = FastAPI(
     title="Qivis",
     description=(
         "Research instrument for exploring AI personality, emotion, and behavior"
-        " through branching conversation trees"
+        " through branching conversation rhizomes"
     ),
     version="0.1.0",
     lifespan=lifespan,
@@ -138,7 +138,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(trees_router)
+app.include_router(rhizomes_router)
 app.include_router(export_router)
 app.include_router(search_router)
 app.include_router(import_router)

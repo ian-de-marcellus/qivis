@@ -8,7 +8,7 @@ content of each event; the EventEnvelope wraps them with metadata.
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 # ---------------------------------------------------------------------------
 # Canonical data structures
@@ -98,7 +98,7 @@ class Participant(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-class TreeCreatedPayload(BaseModel):
+class RhizomeCreatedPayload(BaseModel):
     title: str | None = None
     default_system_prompt: str | None = None
     default_model: str | None = None
@@ -109,17 +109,17 @@ class TreeCreatedPayload(BaseModel):
     participants: list[Participant] | None = None
 
 
-class TreeMetadataUpdatedPayload(BaseModel):
+class RhizomeMetadataUpdatedPayload(BaseModel):
     field: str
     old_value: Any = None
     new_value: Any = None
 
 
-class TreeArchivedPayload(BaseModel):
+class RhizomeArchivedPayload(BaseModel):
     reason: str | None = None
 
 
-class TreeUnarchivedPayload(BaseModel):
+class RhizomeUnarchivedPayload(BaseModel):
     pass
 
 
@@ -162,7 +162,7 @@ class NodeCreatedPayload(BaseModel):
     # Thinking / reasoning
     thinking_content: str | None = None
 
-    # Context flags — snapshot of tree-level settings at generation time
+    # Context flags — snapshot of rhizome-level settings at generation time
     include_thinking_in_context: bool = False
     include_timestamps: bool = False
 
@@ -262,8 +262,10 @@ class SummaryRemovedPayload(BaseModel):
 
 
 class GarbageCollectedPayload(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     deleted_node_ids: list[str]
-    deleted_tree_ids: list[str]
+    deleted_rhizome_ids: list[str] = Field(alias="deleted_tree_ids")
     reason: str = "manual_gc"
     recoverable_until: str  # ISO-8601
 
@@ -286,8 +288,10 @@ class NodeContentEditedPayload(BaseModel):
 
 
 class GarbagePurgedPayload(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     purged_node_ids: list[str]
-    purged_tree_ids: list[str]
+    purged_rhizome_ids: list[str] = Field(alias="purged_tree_ids")
 
 
 # ---------------------------------------------------------------------------
@@ -295,10 +299,11 @@ class GarbagePurgedPayload(BaseModel):
 # ---------------------------------------------------------------------------
 
 EVENT_TYPES: dict[str, type[BaseModel]] = {
-    "TreeCreated": TreeCreatedPayload,
-    "TreeMetadataUpdated": TreeMetadataUpdatedPayload,
-    "TreeArchived": TreeArchivedPayload,
-    "TreeUnarchived": TreeUnarchivedPayload,
+    # Current names
+    "RhizomeCreated": RhizomeCreatedPayload,
+    "RhizomeMetadataUpdated": RhizomeMetadataUpdatedPayload,
+    "RhizomeArchived": RhizomeArchivedPayload,
+    "RhizomeUnarchived": RhizomeUnarchivedPayload,
     "GenerationStarted": GenerationStartedPayload,
     "NodeCreated": NodeCreatedPayload,
     "NodeContentEdited": NodeContentEditedPayload,
@@ -319,6 +324,11 @@ EVENT_TYPES: dict[str, type[BaseModel]] = {
     "SummaryRemoved": SummaryRemovedPayload,
     "GarbageCollected": GarbageCollectedPayload,
     "GarbagePurged": GarbagePurgedPayload,
+    # Backward compat: old event type names from before the rename
+    "TreeCreated": RhizomeCreatedPayload,
+    "TreeMetadataUpdated": RhizomeMetadataUpdatedPayload,
+    "TreeArchived": RhizomeArchivedPayload,
+    "TreeUnarchived": RhizomeUnarchivedPayload,
 }
 
 
@@ -331,7 +341,7 @@ class EventEnvelope(BaseModel):
     """Wraps every event with metadata. Stored in the events table."""
 
     event_id: str
-    tree_id: str
+    rhizome_id: str
     timestamp: datetime
     device_id: str = "local"
     user_id: str | None = None

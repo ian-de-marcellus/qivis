@@ -1,4 +1,4 @@
-"""MergeService: merges imported conversations into existing trees."""
+"""MergeService: merges imported conversations into existing rhizomes."""
 
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -51,7 +51,7 @@ class MergeResult(BaseModel):
 
 @dataclass
 class MergePlan:
-    """Result of matching imported nodes against existing tree nodes."""
+    """Result of matching imported nodes against existing rhizome nodes."""
 
     matched: dict[str, str] = field(default_factory=dict)
     """imported temp_id -> existing node_id"""
@@ -78,7 +78,7 @@ def _effective_content(node: dict) -> str:
 def _compute_merge_plan(
     imported: ImportedTree, existing_nodes: list[dict]
 ) -> MergePlan:
-    """Match imported nodes against existing tree nodes.
+    """Match imported nodes against existing rhizome nodes.
 
     Pure function — no I/O. Builds an index of existing nodes by
     (parent_id, role, normalized_content), then walks imported nodes
@@ -137,19 +137,19 @@ class MergeService:
         self._projector = projector
 
     async def preview_merge(
-        self, tree_id: str, content: bytes, filename: str
+        self, rhizome_id: str, content: bytes, filename: str
     ) -> MergePreviewResponse:
         """Parse file and return merge preview without creating anything."""
-        # Verify tree exists
-        tree = await self._projector.get_tree(tree_id)
-        if tree is None:
-            raise TreeNotFoundError(tree_id)
+        # Verify rhizome exists
+        rhizome = await self._projector.get_rhizome(rhizome_id)
+        if rhizome is None:
+            raise RhizomeNotFoundError(rhizome_id)
 
         data = ImportService._load_json(content)
         fmt = detect_format_safe(data)
-        trees = ImportService._parse(fmt, data)
+        rhizomes = ImportService._parse(fmt, data)
 
-        if not trees:
+        if not rhizomes:
             return MergePreviewResponse(
                 source_format=fmt,
                 source_title=None,
@@ -162,8 +162,8 @@ class MergeService:
             )
 
         # Use first conversation for preview
-        imported = trees[0]
-        existing_nodes = await self._projector.get_nodes(tree_id)
+        imported = rhizomes[0]
+        existing_nodes = await self._projector.get_nodes(rhizome_id)
         plan = _compute_merge_plan(imported, existing_nodes)
 
         # Build graft points summary
@@ -213,7 +213,7 @@ class MergeService:
         return MergePreviewResponse(
             source_format=fmt,
             source_title=imported.title,
-            conversation_count=len(trees),
+            conversation_count=len(rhizomes),
             total_imported=len(imported.nodes),
             matched_count=len(plan.matched),
             new_count=len(plan.new_nodes),
@@ -223,29 +223,29 @@ class MergeService:
 
     async def execute_merge(
         self,
-        tree_id: str,
+        rhizome_id: str,
         content: bytes,
         filename: str,
         *,
         conversation_index: int = 0,
     ) -> MergeResult:
-        """Parse file, match against tree, create new nodes."""
-        tree = await self._projector.get_tree(tree_id)
-        if tree is None:
-            raise TreeNotFoundError(tree_id)
+        """Parse file, match against rhizome, create new nodes."""
+        rhizome = await self._projector.get_rhizome(rhizome_id)
+        if rhizome is None:
+            raise RhizomeNotFoundError(rhizome_id)
 
         data = ImportService._load_json(content)
         fmt = detect_format_safe(data)
-        trees = ImportService._parse(fmt, data)
+        rhizomes = ImportService._parse(fmt, data)
 
-        if conversation_index >= len(trees):
+        if conversation_index >= len(rhizomes):
             raise ImportFormatError(
                 f"Conversation index {conversation_index} out of range "
-                f"(file has {len(trees)} conversations)"
+                f"(file has {len(rhizomes)} conversations)"
             )
 
-        imported = trees[conversation_index]
-        existing_nodes = await self._projector.get_nodes(tree_id)
+        imported = rhizomes[conversation_index]
+        existing_nodes = await self._projector.get_nodes(rhizome_id)
         plan = _compute_merge_plan(imported, existing_nodes)
 
         if not plan.new_nodes:
@@ -291,7 +291,7 @@ class MergeService:
             )
             node_event = EventEnvelope(
                 event_id=str(uuid4()),
-                tree_id=tree_id,
+                rhizome_id=rhizome_id,
                 timestamp=node_timestamp,
                 device_id="merge",
                 event_type="NodeCreated",
@@ -329,10 +329,10 @@ class MergeService:
 # ---------------------------------------------------------------------------
 
 
-class TreeNotFoundError(Exception):
-    def __init__(self, tree_id: str) -> None:
-        self.tree_id = tree_id
-        super().__init__(f"Tree not found: {tree_id}")
+class RhizomeNotFoundError(Exception):
+    def __init__(self, rhizome_id: str) -> None:
+        self.rhizome_id = rhizome_id
+        super().__init__(f"Rhizome not found: {rhizome_id}")
 
 
 def detect_format_safe(data: dict | list) -> str:

@@ -1,6 +1,6 @@
 """State projector: projects events into materialized tables.
 
-The read side of the CQRS pattern. Currently handles TreeCreated and
+The read side of the CQRS pattern. Currently handles RhizomeCreated and
 NodeCreated events. New handlers are added as their subphases arrive.
 """
 
@@ -26,25 +26,34 @@ from qivis.models import (
     NodeUnanchoredPayload,
     NoteAddedPayload,
     NoteRemovedPayload,
+    RhizomeArchivedPayload,
+    RhizomeCreatedPayload,
+    RhizomeMetadataUpdatedPayload,
+    RhizomeUnarchivedPayload,
     SummaryGeneratedPayload,
     SummaryRemovedPayload,
-    TreeArchivedPayload,
-    TreeCreatedPayload,
-    TreeMetadataUpdatedPayload,
-    TreeUnarchivedPayload,
 )
 
 logger = logging.getLogger(__name__)
 
 
 class StateProjector:
-    """Projects events into materialized SQL tables (trees, nodes)."""
+    """Projects events into materialized SQL tables (rhizomes, nodes)."""
 
     def __init__(self, db: Database) -> None:
         self._db = db
         self._handlers: dict[str, Callable[[EventEnvelope], Awaitable[None]]] = {
-            "TreeCreated": self._handle_tree_created,
-            "TreeMetadataUpdated": self._handle_tree_metadata_updated,
+            # Current event type names
+            "RhizomeCreated": self._handle_rhizome_created,
+            "RhizomeMetadataUpdated": self._handle_rhizome_metadata_updated,
+            "RhizomeArchived": self._handle_rhizome_archived,
+            "RhizomeUnarchived": self._handle_rhizome_unarchived,
+            # Backward compat: old event type names
+            "TreeCreated": self._handle_rhizome_created,
+            "TreeMetadataUpdated": self._handle_rhizome_metadata_updated,
+            "TreeArchived": self._handle_rhizome_archived,
+            "TreeUnarchived": self._handle_rhizome_unarchived,
+            # Non-rhizome event types
             "NodeCreated": self._handle_node_created,
             "NodeContentEdited": self._handle_node_content_edited,
             "GenerationStarted": self._handle_generation_started,
@@ -63,8 +72,6 @@ class StateProjector:
             "NoteRemoved": self._handle_note_removed,
             "SummaryGenerated": self._handle_summary_generated,
             "SummaryRemoved": self._handle_summary_removed,
-            "TreeArchived": self._handle_tree_archived,
-            "TreeUnarchived": self._handle_tree_unarchived,
         }
 
     async def project(self, events: list[EventEnvelope]) -> None:
@@ -74,36 +81,36 @@ class StateProjector:
             if handler:
                 await handler(event)
 
-    async def get_tree(self, tree_id: str) -> dict | None:
-        """Read projected tree state. Returns None if not found."""
+    async def get_rhizome(self, rhizome_id: str) -> dict | None:
+        """Read projected rhizome state. Returns None if not found."""
         row = await self._db.fetchone(
-            "SELECT * FROM trees WHERE tree_id = ?", (tree_id,)
+            "SELECT * FROM rhizomes WHERE rhizome_id = ?", (rhizome_id,)
         )
         if row is None:
             return None
         return dict(row)
 
-    async def get_nodes(self, tree_id: str) -> list[dict]:
-        """Read projected nodes for a tree, ordered by creation time."""
+    async def get_nodes(self, rhizome_id: str) -> list[dict]:
+        """Read projected nodes for a rhizome, ordered by creation time."""
         rows = await self._db.fetchall(
-            "SELECT * FROM nodes WHERE tree_id = ? ORDER BY created_at",
-            (tree_id,),
+            "SELECT * FROM nodes WHERE rhizome_id = ? ORDER BY created_at",
+            (rhizome_id,),
         )
         return [dict(row) for row in rows]
 
-    async def _handle_tree_created(self, event: EventEnvelope) -> None:
-        """Project a TreeCreated event into the trees table."""
-        payload = TreeCreatedPayload.model_validate(event.payload)
+    async def _handle_rhizome_created(self, event: EventEnvelope) -> None:
+        """Project a RhizomeCreated event into the rhizomes table."""
+        payload = RhizomeCreatedPayload.model_validate(event.payload)
         await self._db.execute(
             """
-            INSERT OR REPLACE INTO trees
-                (tree_id, title, metadata, default_model, default_provider,
+            INSERT OR REPLACE INTO rhizomes
+                (rhizome_id, title, metadata, default_model, default_provider,
                  default_system_prompt, default_sampling_params, conversation_mode,
                  created_at, updated_at, archived)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
             """,
             (
-                event.tree_id,
+                event.rhizome_id,
                 payload.title,
                 json.dumps(payload.metadata),
                 payload.default_model,
@@ -122,7 +129,7 @@ class StateProjector:
             ),
         )
 
-    _UPDATABLE_TREE_FIELDS = {
+    _UPDATABLE_RHIZOME_FIELDS = {
         "title",
         "metadata",
         "default_model",
@@ -131,13 +138,13 @@ class StateProjector:
         "default_sampling_params",
     }
 
-    async def _handle_tree_metadata_updated(self, event: EventEnvelope) -> None:
-        """Project a TreeMetadataUpdated event: update a single tree column."""
-        payload = TreeMetadataUpdatedPayload.model_validate(event.payload)
+    async def _handle_rhizome_metadata_updated(self, event: EventEnvelope) -> None:
+        """Project a RhizomeMetadataUpdated event: update a single rhizome column."""
+        payload = RhizomeMetadataUpdatedPayload.model_validate(event.payload)
 
-        if payload.field not in self._UPDATABLE_TREE_FIELDS:
+        if payload.field not in self._UPDATABLE_RHIZOME_FIELDS:
             logger.warning(
-                "TreeMetadataUpdated: unknown field %r, skipping", payload.field
+                "RhizomeMetadataUpdated: unknown field %r, skipping", payload.field
             )
             return
 
@@ -152,8 +159,8 @@ class StateProjector:
         )
 
         await self._db.execute(
-            f"UPDATE trees SET {payload.field} = ?, updated_at = ? WHERE tree_id = ?",
-            (value, timestamp, event.tree_id),
+            f"UPDATE rhizomes SET {payload.field} = ?, updated_at = ? WHERE rhizome_id = ?",
+            (value, timestamp, event.rhizome_id),
         )
 
     async def _handle_node_content_edited(self, event: EventEnvelope) -> None:
@@ -180,12 +187,12 @@ class StateProjector:
         await self._db.execute(
             """
             INSERT OR REPLACE INTO annotations
-                (annotation_id, tree_id, node_id, tag, value, notes, created_at)
+                (annotation_id, rhizome_id, node_id, tag, value, notes, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 payload.annotation_id,
-                event.tree_id,
+                event.rhizome_id,
                 payload.node_id,
                 payload.tag,
                 value_json,
@@ -213,12 +220,12 @@ class StateProjector:
         await self._db.execute(
             """
             INSERT OR REPLACE INTO bookmarks
-                (bookmark_id, tree_id, node_id, label, notes, created_at)
+                (bookmark_id, rhizome_id, node_id, label, notes, created_at)
             VALUES (?, ?, ?, ?, ?, ?)
             """,
             (
                 payload.bookmark_id,
-                event.tree_id,
+                event.rhizome_id,
                 payload.node_id,
                 payload.label,
                 payload.notes,
@@ -251,19 +258,19 @@ class StateProjector:
             ),
         )
 
-    async def get_node_exclusions(self, tree_id: str) -> list[dict]:
-        """Read all node exclusions for a tree."""
+    async def get_node_exclusions(self, rhizome_id: str) -> list[dict]:
+        """Read all node exclusions for a rhizome."""
         rows = await self._db.fetchall(
-            "SELECT * FROM node_exclusions WHERE tree_id = ?",
-            (tree_id,),
+            "SELECT * FROM node_exclusions WHERE rhizome_id = ?",
+            (rhizome_id,),
         )
         return [dict(row) for row in rows]
 
-    async def get_digression_groups(self, tree_id: str) -> list[dict]:
-        """Read all digression groups for a tree, with member node_ids."""
+    async def get_digression_groups(self, rhizome_id: str) -> list[dict]:
+        """Read all digression groups for a rhizome, with member node_ids."""
         group_rows = await self._db.fetchall(
-            "SELECT * FROM digression_groups WHERE tree_id = ?",
-            (tree_id,),
+            "SELECT * FROM digression_groups WHERE rhizome_id = ?",
+            (rhizome_id,),
         )
         groups = []
         for row in group_rows:
@@ -288,11 +295,11 @@ class StateProjector:
         await self._db.execute(
             """
             INSERT OR REPLACE INTO node_exclusions
-                (tree_id, node_id, scope_node_id, reason, created_at)
+                (rhizome_id, node_id, scope_node_id, reason, created_at)
             VALUES (?, ?, ?, ?, ?)
             """,
             (
-                event.tree_id,
+                event.rhizome_id,
                 payload.node_id,
                 payload.scope_node_id,
                 payload.reason,
@@ -304,8 +311,8 @@ class StateProjector:
         """Project a NodeContextIncluded event: remove matching exclusion."""
         payload = NodeContextIncludedPayload.model_validate(event.payload)
         await self._db.execute(
-            "DELETE FROM node_exclusions WHERE tree_id = ? AND node_id = ? AND scope_node_id = ?",
-            (event.tree_id, payload.node_id, payload.scope_node_id),
+            "DELETE FROM node_exclusions WHERE rhizome_id = ? AND node_id = ? AND scope_node_id = ?",
+            (event.rhizome_id, payload.node_id, payload.scope_node_id),
         )
 
     async def _handle_digression_group_created(self, event: EventEnvelope) -> None:
@@ -320,10 +327,10 @@ class StateProjector:
         await self._db.execute(
             """
             INSERT OR REPLACE INTO digression_groups
-                (group_id, tree_id, label, included, created_at)
+                (group_id, rhizome_id, label, included, created_at)
             VALUES (?, ?, ?, ?, ?)
             """,
-            (payload.group_id, event.tree_id, payload.label, included, timestamp),
+            (payload.group_id, event.rhizome_id, payload.label, included, timestamp),
         )
         for i, node_id in enumerate(payload.node_ids):
             await self._db.execute(
@@ -354,18 +361,18 @@ class StateProjector:
         await self._db.execute(
             """
             INSERT OR REPLACE INTO node_anchors
-                (tree_id, node_id, created_at)
+                (rhizome_id, node_id, created_at)
             VALUES (?, ?, ?)
             """,
-            (event.tree_id, payload.node_id, timestamp),
+            (event.rhizome_id, payload.node_id, timestamp),
         )
 
     async def _handle_node_unanchored(self, event: EventEnvelope) -> None:
         """Project a NodeUnanchored event: delete from node_anchors table."""
         payload = NodeUnanchoredPayload.model_validate(event.payload)
         await self._db.execute(
-            "DELETE FROM node_anchors WHERE tree_id = ? AND node_id = ?",
-            (event.tree_id, payload.node_id),
+            "DELETE FROM node_anchors WHERE rhizome_id = ? AND node_id = ?",
+            (event.rhizome_id, payload.node_id),
         )
 
     async def _handle_note_added(self, event: EventEnvelope) -> None:
@@ -379,12 +386,12 @@ class StateProjector:
         await self._db.execute(
             """
             INSERT OR REPLACE INTO notes
-                (note_id, tree_id, node_id, content, created_at)
+                (note_id, rhizome_id, node_id, content, created_at)
             VALUES (?, ?, ?, ?, ?)
             """,
             (
                 payload.note_id,
-                event.tree_id,
+                event.rhizome_id,
                 payload.node_id,
                 payload.content,
                 timestamp,
@@ -410,13 +417,13 @@ class StateProjector:
         await self._db.execute(
             """
             INSERT OR REPLACE INTO summaries
-                (summary_id, tree_id, anchor_node_id, scope, summary_type,
+                (summary_id, rhizome_id, anchor_node_id, scope, summary_type,
                  summary, model, node_ids, prompt_used, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 payload.summary_id,
-                event.tree_id,
+                event.rhizome_id,
                 payload.anchor_node_id,
                 payload.scope,
                 payload.summary_type,
@@ -436,30 +443,30 @@ class StateProjector:
             (payload.summary_id,),
         )
 
-    async def _handle_tree_archived(self, event: EventEnvelope) -> None:
-        """Project a TreeArchived event: set archived = 1."""
-        TreeArchivedPayload.model_validate(event.payload)
+    async def _handle_rhizome_archived(self, event: EventEnvelope) -> None:
+        """Project a RhizomeArchived event: set archived = 1."""
+        RhizomeArchivedPayload.model_validate(event.payload)
         timestamp = (
             event.timestamp.isoformat()
             if hasattr(event.timestamp, "isoformat")
             else str(event.timestamp)
         )
         await self._db.execute(
-            "UPDATE trees SET archived = 1, updated_at = ? WHERE tree_id = ?",
-            (timestamp, event.tree_id),
+            "UPDATE rhizomes SET archived = 1, updated_at = ? WHERE rhizome_id = ?",
+            (timestamp, event.rhizome_id),
         )
 
-    async def _handle_tree_unarchived(self, event: EventEnvelope) -> None:
-        """Project a TreeUnarchived event: set archived = 0."""
-        TreeUnarchivedPayload.model_validate(event.payload)
+    async def _handle_rhizome_unarchived(self, event: EventEnvelope) -> None:
+        """Project a RhizomeUnarchived event: set archived = 0."""
+        RhizomeUnarchivedPayload.model_validate(event.payload)
         timestamp = (
             event.timestamp.isoformat()
             if hasattr(event.timestamp, "isoformat")
             else str(event.timestamp)
         )
         await self._db.execute(
-            "UPDATE trees SET archived = 0, updated_at = ? WHERE tree_id = ?",
-            (timestamp, event.tree_id),
+            "UPDATE rhizomes SET archived = 0, updated_at = ? WHERE rhizome_id = ?",
+            (timestamp, event.rhizome_id),
         )
 
     async def _handle_node_created(self, event: EventEnvelope) -> None:
@@ -468,7 +475,7 @@ class StateProjector:
         await self._db.execute(
             """
             INSERT OR REPLACE INTO nodes
-                (node_id, tree_id, parent_id, role, content, model, provider,
+                (node_id, rhizome_id, parent_id, role, content, model, provider,
                  system_prompt, sampling_params, mode, usage, latency_ms,
                  finish_reason, logprobs, context_usage, participant_id,
                  participant_name, thinking_content,
@@ -479,7 +486,7 @@ class StateProjector:
             """,
             (
                 payload.node_id,
-                event.tree_id,
+                event.rhizome_id,
                 payload.parent_id,
                 payload.role,
                 payload.content,

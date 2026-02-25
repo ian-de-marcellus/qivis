@@ -42,7 +42,7 @@ async def import_conversations(
         else None
     )
     try:
-        results = await service.import_trees(
+        results = await service.import_rhizomes(
             content,
             file.filename or "unknown",
             format_hint=format,

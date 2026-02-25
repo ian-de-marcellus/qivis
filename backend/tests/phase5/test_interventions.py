@@ -1,41 +1,41 @@
 """Tests for the intervention timeline endpoint (Phase 5.4).
 
-Tests that GET /api/trees/{tree_id}/interventions returns a chronological
+Tests that GET /api/rhizomes/{rhizome_id}/interventions returns a chronological
 list of NodeContentEdited and system-prompt TreeMetadataUpdated events.
 """
 
 import pytest
 
 from tests.fixtures import (
-    create_test_tree,
-    create_tree_with_messages,
+    create_test_rhizome,
+    create_rhizome_with_messages,
 )
 
 
 class TestInterventionTimeline:
-    """API integration tests for GET /api/trees/{tree_id}/interventions."""
+    """API integration tests for GET /api/rhizomes/{rhizome_id}/interventions."""
 
     async def test_empty_tree_returns_empty_interventions(self, client):
         """A tree with no edits or metadata changes has no interventions."""
-        tree = await create_test_tree(client)
-        resp = await client.get(f"/api/trees/{tree['tree_id']}/interventions")
+        tree = await create_test_rhizome(client)
+        resp = await client.get(f"/api/rhizomes/{tree['rhizome_id']}/interventions")
         assert resp.status_code == 200
         data = resp.json()
-        assert data["tree_id"] == tree["tree_id"]
+        assert data["rhizome_id"] == tree["rhizome_id"]
         assert data["interventions"] == []
 
     async def test_single_node_edit(self, client):
         """Editing a node produces one intervention of type 'node_edited'."""
-        info = await create_tree_with_messages(client, n_messages=2)
-        tree_id = info["tree_id"]
+        info = await create_rhizome_with_messages(client, n_messages=2)
+        rhizome_id = info["rhizome_id"]
         node_id = info["node_ids"][0]
 
         await client.patch(
-            f"/api/trees/{tree_id}/nodes/{node_id}/content",
+            f"/api/rhizomes/{rhizome_id}/nodes/{node_id}/content",
             json={"edited_content": "Edited message"},
         )
 
-        resp = await client.get(f"/api/trees/{tree_id}/interventions")
+        resp = await client.get(f"/api/rhizomes/{rhizome_id}/interventions")
         assert resp.status_code == 200
         data = resp.json()
         assert len(data["interventions"]) == 1
@@ -51,20 +51,20 @@ class TestInterventionTimeline:
 
     async def test_multiple_edits_sorted_by_sequence(self, client):
         """Multiple edits return interventions sorted by sequence_num."""
-        info = await create_tree_with_messages(client, n_messages=4)
-        tree_id = info["tree_id"]
+        info = await create_rhizome_with_messages(client, n_messages=4)
+        rhizome_id = info["rhizome_id"]
 
         # Edit two different nodes
         await client.patch(
-            f"/api/trees/{tree_id}/nodes/{info['node_ids'][0]}/content",
+            f"/api/rhizomes/{rhizome_id}/nodes/{info['node_ids'][0]}/content",
             json={"edited_content": "First edit"},
         )
         await client.patch(
-            f"/api/trees/{tree_id}/nodes/{info['node_ids'][2]}/content",
+            f"/api/rhizomes/{rhizome_id}/nodes/{info['node_ids'][2]}/content",
             json={"edited_content": "Second edit"},
         )
 
-        resp = await client.get(f"/api/trees/{tree_id}/interventions")
+        resp = await client.get(f"/api/rhizomes/{rhizome_id}/interventions")
         data = resp.json()
         assert len(data["interventions"]) == 2
 
@@ -75,15 +75,15 @@ class TestInterventionTimeline:
 
     async def test_system_prompt_change_appears(self, client):
         """Changing the system prompt produces an intervention of type 'system_prompt_changed'."""
-        tree = await create_test_tree(client, system_prompt="Original prompt")
-        tree_id = tree["tree_id"]
+        tree = await create_test_rhizome(client, system_prompt="Original prompt")
+        rhizome_id = tree["rhizome_id"]
 
         await client.patch(
-            f"/api/trees/{tree_id}",
+            f"/api/rhizomes/{rhizome_id}",
             json={"default_system_prompt": "New prompt"},
         )
 
-        resp = await client.get(f"/api/trees/{tree_id}/interventions")
+        resp = await client.get(f"/api/rhizomes/{rhizome_id}/interventions")
         data = resp.json()
         assert len(data["interventions"]) == 1
 
@@ -95,22 +95,22 @@ class TestInterventionTimeline:
 
     async def test_mixed_edits_and_system_prompt_sorted(self, client):
         """Edits and system prompt changes are merged and sorted by sequence_num."""
-        info = await create_tree_with_messages(client, n_messages=2, system_prompt="Prompt v1")
-        tree_id = info["tree_id"]
+        info = await create_rhizome_with_messages(client, n_messages=2, system_prompt="Prompt v1")
+        rhizome_id = info["rhizome_id"]
 
         # Edit a node first
         await client.patch(
-            f"/api/trees/{tree_id}/nodes/{info['node_ids'][0]}/content",
+            f"/api/rhizomes/{rhizome_id}/nodes/{info['node_ids'][0]}/content",
             json={"edited_content": "Edited message"},
         )
 
         # Then change system prompt
         await client.patch(
-            f"/api/trees/{tree_id}",
+            f"/api/rhizomes/{rhizome_id}",
             json={"default_system_prompt": "Prompt v2"},
         )
 
-        resp = await client.get(f"/api/trees/{tree_id}/interventions")
+        resp = await client.get(f"/api/rhizomes/{rhizome_id}/interventions")
         data = resp.json()
         assert len(data["interventions"]) == 2
 
@@ -121,20 +121,20 @@ class TestInterventionTimeline:
 
     async def test_non_system_prompt_metadata_excluded(self, client):
         """Model/provider changes in TreeMetadataUpdated are NOT included."""
-        tree = await create_test_tree(client)
-        tree_id = tree["tree_id"]
+        tree = await create_test_rhizome(client)
+        rhizome_id = tree["rhizome_id"]
 
         # Change model and provider — these should NOT appear
         await client.patch(
-            f"/api/trees/{tree_id}",
+            f"/api/rhizomes/{rhizome_id}",
             json={"default_model": "gpt-4o", "default_provider": "openai"},
         )
 
-        resp = await client.get(f"/api/trees/{tree_id}/interventions")
+        resp = await client.get(f"/api/rhizomes/{rhizome_id}/interventions")
         data = resp.json()
         assert len(data["interventions"]) == 0
 
     async def test_nonexistent_tree_returns_404(self, client):
         """Requesting interventions for a nonexistent tree returns 404."""
-        resp = await client.get("/api/trees/nonexistent-id/interventions")
+        resp = await client.get("/api/rhizomes/nonexistent-id/interventions")
         assert resp.status_code == 404

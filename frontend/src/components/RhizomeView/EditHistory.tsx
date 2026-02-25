@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import * as api from '../../api/client.ts'
 import type { EditHistoryEntry, NodeResponse } from '../../api/types.ts'
-import { useTreeStore, useResearchMetadata } from '../../store/treeStore.ts'
+import { useRhizomeStore, useResearchMetadata } from '../../store/rhizomeStore.ts'
 import './EditHistory.css'
 
 function formatRelativeTime(isoString: string): string {
@@ -33,9 +33,9 @@ interface EditHistoryProps {
 
 export function EditHistory({ node }: EditHistoryProps) {
   const { editHistoryCache, selectedEditVersion } = useResearchMetadata()
-  const cacheEditHistory = useTreeStore(s => s.cacheEditHistory)
-  const setSelectedEditVersion = useTreeStore(s => s.setSelectedEditVersion)
-  const editNodeContent = useTreeStore(s => s.editNodeContent)
+  const cacheEditHistory = useRhizomeStore(s => s.cacheEditHistory)
+  const setSelectedEditVersion = useRhizomeStore(s => s.setSelectedEditVersion)
+  const editNodeContent = useRhizomeStore(s => s.editNodeContent)
 
   const [expanded, setExpanded] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -46,7 +46,7 @@ export function EditHistory({ node }: EditHistoryProps) {
     if (!expanded && !cached) {
       setLoading(true)
       try {
-        const resp = await api.getEditHistory(node.tree_id, node.node_id)
+        const resp = await api.getEditHistory(node.rhizome_id, node.node_id)
         cacheEditHistory(node.node_id, resp.entries)
       } catch {
         // Silently fail — user can retry by collapsing and expanding

@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 import pytest
 from httpx import AsyncClient
 
-from qivis.models import EventEnvelope, NodeCreatedPayload, TreeCreatedPayload
+from qivis.models import EventEnvelope, NodeCreatedPayload, RhizomeCreatedPayload
 
 
 # ---- Contract tests ----
@@ -55,11 +55,11 @@ def test_node_created_payload_serializes_context_flags():
 # ---- Projection tests ----
 
 
-def _make_envelope(tree_id: str, payload: NodeCreatedPayload) -> EventEnvelope:
+def _make_envelope(rhizome_id: str, payload: NodeCreatedPayload) -> EventEnvelope:
     """Wrap a NodeCreatedPayload in an EventEnvelope for testing."""
     return EventEnvelope(
         event_id=f"evt-{payload.node_id}",
-        tree_id=tree_id,
+        rhizome_id=rhizome_id,
         timestamp=datetime.now(UTC),
         device_id="test",
         event_type="NodeCreated",
@@ -81,11 +81,11 @@ async def test_context_flags_projected_from_event():
     # Create a tree
     tree_event = EventEnvelope(
         event_id="e0",
-        tree_id="t1",
+        rhizome_id="t1",
         timestamp=datetime.now(UTC),
         device_id="test",
-        event_type="TreeCreated",
-        payload=TreeCreatedPayload(title="test").model_dump(),
+        event_type="RhizomeCreated",
+        payload=RhizomeCreatedPayload(title="test").model_dump(),
     )
     await store.append(tree_event)
     await projector.project([tree_event])
@@ -122,11 +122,11 @@ async def test_context_flags_default_in_projection():
 
     tree_event = EventEnvelope(
         event_id="e0",
-        tree_id="t1",
+        rhizome_id="t1",
         timestamp=datetime.now(UTC),
         device_id="test",
-        event_type="TreeCreated",
-        payload=TreeCreatedPayload(title="test").model_dump(),
+        event_type="RhizomeCreated",
+        payload=RhizomeCreatedPayload(title="test").model_dump(),
     )
     await store.append(tree_event)
     await projector.project([tree_event])
@@ -153,11 +153,11 @@ async def test_context_flags_default_in_projection():
 @pytest.mark.anyio
 async def test_node_response_includes_context_flags(client: AsyncClient):
     """NodeResponse should include both context flags."""
-    r = await client.post("/api/trees", json={"title": "test"})
-    tree_id = r.json()["tree_id"]
+    r = await client.post("/api/rhizomes", json={"title": "test"})
+    rhizome_id = r.json()["rhizome_id"]
 
     r = await client.post(
-        f"/api/trees/{tree_id}/nodes",
+        f"/api/rhizomes/{rhizome_id}/nodes",
         json={"content": "hello", "role": "user"},
     )
     node = r.json()

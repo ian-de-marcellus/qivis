@@ -1,4 +1,4 @@
-"""Request and response schemas for tree and node endpoints."""
+"""Request and response schemas for rhizome and node endpoints."""
 
 from typing import Any, Literal
 
@@ -9,7 +9,7 @@ from qivis.models import SamplingParams
 # -- Requests --
 
 
-class CreateTreeRequest(BaseModel):
+class CreateRhizomeRequest(BaseModel):
     title: str | None = None
     default_system_prompt: str | None = None
     default_model: str | None = None
@@ -17,8 +17,8 @@ class CreateTreeRequest(BaseModel):
     default_sampling_params: SamplingParams | None = None
 
 
-class PatchTreeRequest(BaseModel):
-    """Fields to update on a tree. Only fields present in the request body are changed."""
+class PatchRhizomeRequest(BaseModel):
+    """Fields to update on a rhizome. Only fields present in the request body are changed."""
 
     title: str | None = None
     metadata: dict | None = None
@@ -36,13 +36,13 @@ class CreateNodeRequest(BaseModel):
 
 
 class PatchNodeContentRequest(BaseModel):
-    """Request body for PATCH /api/trees/{tree_id}/nodes/{node_id}/content."""
+    """Request body for PATCH /api/rhizomes/{rhizome_id}/nodes/{node_id}/content."""
 
     edited_content: str | None
 
 
 class GenerateRequest(BaseModel):
-    """Request body for POST /api/trees/{tree_id}/nodes/{node_id}/generate."""
+    """Request body for POST /api/rhizomes/{rhizome_id}/nodes/{node_id}/generate."""
 
     provider: str = "anthropic"
     model: str | None = None
@@ -58,7 +58,7 @@ class GenerateRequest(BaseModel):
 
 class NodeResponse(BaseModel):
     node_id: str
-    tree_id: str
+    rhizome_id: str
     parent_id: str | None = None
     role: str
     content: str
@@ -119,12 +119,12 @@ class InterventionEntry(BaseModel):
 
 
 class InterventionTimelineResponse(BaseModel):
-    tree_id: str
+    rhizome_id: str
     interventions: list[InterventionEntry]
 
 
-class TreeSummary(BaseModel):
-    tree_id: str
+class RhizomeSummary(BaseModel):
+    rhizome_id: str
     title: str | None = None
     conversation_mode: str = "single"
     created_at: str
@@ -142,7 +142,7 @@ class AddAnnotationRequest(BaseModel):
 
 class AnnotationResponse(BaseModel):
     annotation_id: str
-    tree_id: str
+    rhizome_id: str
     node_id: str
     tag: str
     value: Any = None
@@ -161,7 +161,7 @@ class CreateNoteRequest(BaseModel):
 
 class NoteResponse(BaseModel):
     note_id: str
-    tree_id: str
+    rhizome_id: str
     node_id: str
     content: str
     created_at: str
@@ -174,7 +174,7 @@ class CreateBookmarkRequest(BaseModel):
 
 class BookmarkResponse(BaseModel):
     bookmark_id: str
-    tree_id: str
+    rhizome_id: str
     node_id: str
     label: str
     notes: str | None = None
@@ -194,7 +194,7 @@ class IncludeNodeRequest(BaseModel):
 
 
 class NodeExclusionResponse(BaseModel):
-    tree_id: str
+    rhizome_id: str
     node_id: str
     scope_node_id: str
     reason: str | None = None
@@ -218,7 +218,7 @@ class BulkAnchorRequest(BaseModel):
 
 class DigressionGroupResponse(BaseModel):
     group_id: str
-    tree_id: str
+    rhizome_id: str
     label: str
     node_ids: list[str]
     included: bool
@@ -233,7 +233,7 @@ class CreateSummaryRequest(BaseModel):
 
 class SummaryResponse(BaseModel):
     summary_id: str
-    tree_id: str
+    rhizome_id: str
     anchor_node_id: str
     scope: str
     summary_type: str
@@ -244,8 +244,8 @@ class SummaryResponse(BaseModel):
     created_at: str
 
 
-class TreeDetailResponse(BaseModel):
-    tree_id: str
+class RhizomeDetailResponse(BaseModel):
+    rhizome_id: str
     title: str | None = None
     metadata: dict = Field(default_factory=dict)
     default_model: str | None = None

@@ -20,40 +20,40 @@ from qivis.models import (
     SamplingParams,
 )
 from qivis.providers.base import GenerationRequest, GenerationResult, LLMProvider, StreamChunk
-from qivis.trees.schemas import NodeResponse
-from qivis.trees.service import TreeService
+from qivis.rhizomes.schemas import NodeResponse
+from qivis.rhizomes.service import RhizomeService
 from qivis.utils.json import parse_json_field
 
 
 def merge_sampling_params(
     request_params: SamplingParams | None,
-    tree_defaults_raw: str | dict | None,
+    rhizome_defaults_raw: str | dict | None,
     *,
     metadata: dict | None = None,
 ) -> SamplingParams:
-    """Merge sampling params: request overrides > tree defaults > SamplingParams() base.
+    """Merge sampling params: request overrides > rhizome defaults > SamplingParams() base.
 
     Uses Pydantic's model_fields_set on request_params to only apply fields
-    that were explicitly provided, preserving tree defaults for the rest.
+    that were explicitly provided, preserving rhizome defaults for the rest.
     """
     base = SamplingParams()
 
-    tree_dict = parse_json_field(tree_defaults_raw)
+    rhizome_dict = parse_json_field(rhizome_defaults_raw)
 
     # Backward compat: if no default_sampling_params but metadata has extended_thinking
-    if not tree_dict and metadata:
+    if not rhizome_dict and metadata:
         if metadata.get("extended_thinking"):
-            tree_dict = {
+            rhizome_dict = {
                 "extended_thinking": True,
                 "thinking_budget": metadata.get("thinking_budget", 10000),
             }
 
-    # Layer 1: apply tree defaults over base
-    if tree_dict:
-        tree_sp = SamplingParams.model_validate(tree_dict)
-        for field_name in tree_dict:
+    # Layer 1: apply rhizome defaults over base
+    if rhizome_dict:
+        rhizome_sp = SamplingParams.model_validate(rhizome_dict)
+        for field_name in rhizome_dict:
             if field_name in SamplingParams.model_fields:
-                setattr(base, field_name, getattr(tree_sp, field_name))
+                setattr(base, field_name, getattr(rhizome_sp, field_name))
 
     # Layer 2: apply request overrides (only explicitly set fields)
     if request_params is not None:
@@ -63,9 +63,9 @@ def merge_sampling_params(
     return base
 
 
-def _apply_debug_context_limit(tree: dict, context_limit: int) -> int:
-    """Override context limit with debug value from tree metadata, if set."""
-    metadata = parse_json_field(tree.get("metadata")) or {}
+def _apply_debug_context_limit(rhizome: dict, context_limit: int) -> int:
+    """Override context limit with debug value from rhizome metadata, if set."""
+    metadata = parse_json_field(rhizome.get("metadata")) or {}
     debug_limit = metadata.get("debug_context_limit")
     if isinstance(debug_limit, int) and debug_limit > 0:
         return debug_limit
@@ -77,18 +77,18 @@ class GenerationService:
 
     def __init__(
         self,
-        tree_service: TreeService,
+        rhizome_service: RhizomeService,
         store: EventStore,
         projector: StateProjector,
     ) -> None:
-        self._tree_service = tree_service
+        self._rhizome_service = rhizome_service
         self._store = store
         self._projector = projector
         self._context_builder = ContextBuilder()
 
     async def generate(
         self,
-        tree_id: str,
+        rhizome_id: str,
         node_id: str,
         provider: LLMProvider,
         *,
@@ -98,12 +98,12 @@ class GenerationService:
         prefill_content: str | None = None,
     ) -> NodeResponse:
         """Generate a non-streaming response and store as a new node."""
-        (tree, nodes, resolved_model, resolved_prompt, resolved_params,
+        (rhizome, nodes, resolved_model, resolved_prompt, resolved_params,
          include_ts, include_think, excl_ids, dg_map, excl_gids,
          anchored_ids, eviction_strategy, metadata) = (
-            await self._resolve_context(tree_id, node_id, model, system_prompt, sampling_params)
+            await self._resolve_context(rhizome_id, node_id, model, system_prompt, sampling_params)
         )
-        context_limit = _apply_debug_context_limit(tree, get_model_context_limit(resolved_model))
+        context_limit = _apply_debug_context_limit(rhizome, get_model_context_limit(resolved_model))
         messages, context_usage, eviction_report = self._context_builder.build(
             nodes=nodes,
             target_node_id=node_id,
@@ -137,7 +137,7 @@ class GenerationService:
         mode = "prefill" if prefill_content else mode_hint
 
         await self._emit_generation_started(
-            tree_id, generation_id, node_id,
+            rhizome_id, generation_id, node_id,
             resolved_model, provider.name, resolved_prompt, resolved_params,
             mode=mode, prefill_content=prefill_content,
         )
@@ -155,7 +155,7 @@ class GenerationService:
             result.content = prefill_content + result.content
 
         return await self._emit_node_created(
-            tree_id, generation_id, node_id, result,
+            rhizome_id, generation_id, node_id, result,
             provider.name, resolved_prompt, resolved_params,
             context_usage=context_usage,
             include_thinking_in_context=include_think,
@@ -166,7 +166,7 @@ class GenerationService:
 
     async def generate_n(
         self,
-        tree_id: str,
+        rhizome_id: str,
         node_id: str,
         provider: LLMProvider,
         *,
@@ -177,12 +177,12 @@ class GenerationService:
         prefill_content: str | None = None,
     ) -> list[NodeResponse]:
         """Generate N responses in parallel and store as sibling nodes."""
-        (tree, nodes, resolved_model, resolved_prompt, resolved_params,
+        (rhizome, nodes, resolved_model, resolved_prompt, resolved_params,
          include_ts, include_think, excl_ids, dg_map, excl_gids,
          anchored_ids, eviction_strategy, metadata) = (
-            await self._resolve_context(tree_id, node_id, model, system_prompt, sampling_params)
+            await self._resolve_context(rhizome_id, node_id, model, system_prompt, sampling_params)
         )
-        context_limit = _apply_debug_context_limit(tree, get_model_context_limit(resolved_model))
+        context_limit = _apply_debug_context_limit(rhizome, get_model_context_limit(resolved_model))
         messages, context_usage, eviction_report = self._context_builder.build(
             nodes=nodes,
             target_node_id=node_id,
@@ -214,7 +214,7 @@ class GenerationService:
         mode = "prefill" if prefill_content else mode_hint
 
         await self._emit_generation_started(
-            tree_id, generation_id, node_id,
+            rhizome_id, generation_id, node_id,
             resolved_model, provider.name, resolved_prompt, resolved_params,
             n=n, mode=mode, prefill_content=prefill_content,
         )
@@ -233,7 +233,7 @@ class GenerationService:
             if prefill_content:
                 result.content = prefill_content + result.content
             node = await self._emit_node_created(
-                tree_id, generation_id, node_id, result,
+                rhizome_id, generation_id, node_id, result,
                 provider.name, resolved_prompt, resolved_params,
                 context_usage=context_usage,
                 include_thinking_in_context=include_think,
@@ -246,7 +246,7 @@ class GenerationService:
 
     async def generate_n_stream(
         self,
-        tree_id: str,
+        rhizome_id: str,
         node_id: str,
         provider: LLMProvider,
         *,
@@ -257,14 +257,14 @@ class GenerationService:
         prefill_content: str | None = None,
     ) -> AsyncIterator[StreamChunk]:
         """Stream N responses simultaneously, yielding tagged chunks."""
-        (tree, nodes, resolved_model, resolved_prompt, resolved_params,
+        (rhizome, nodes, resolved_model, resolved_prompt, resolved_params,
          include_ts, include_think, excl_ids, dg_map, excl_gids,
          anchored_ids, eviction_strategy, metadata) = (
             await self._resolve_context(
-                tree_id, node_id, model, system_prompt, sampling_params
+                rhizome_id, node_id, model, system_prompt, sampling_params
             )
         )
-        context_limit = _apply_debug_context_limit(tree, get_model_context_limit(resolved_model))
+        context_limit = _apply_debug_context_limit(rhizome, get_model_context_limit(resolved_model))
         messages, context_usage, eviction_report = (
             self._context_builder.build(
                 nodes=nodes,
@@ -298,7 +298,7 @@ class GenerationService:
         mode = "prefill" if prefill_content else mode_hint
 
         await self._emit_generation_started(
-            tree_id, generation_id, node_id,
+            rhizome_id, generation_id, node_id,
             resolved_model, provider.name,
             resolved_prompt, resolved_params,
             n=n, mode=mode, prefill_content=prefill_content,
@@ -325,7 +325,7 @@ class GenerationService:
                         if prefill_content:
                             chunk.result.content = prefill_content + chunk.result.content
                         node = await self._emit_node_created(
-                            tree_id, generation_id, node_id,
+                            rhizome_id, generation_id, node_id,
                             chunk.result, provider.name,
                             resolved_prompt, resolved_params,
                             context_usage=context_usage,
@@ -392,7 +392,7 @@ class GenerationService:
 
     async def generate_stream(
         self,
-        tree_id: str,
+        rhizome_id: str,
         node_id: str,
         provider: LLMProvider,
         *,
@@ -402,12 +402,12 @@ class GenerationService:
         prefill_content: str | None = None,
     ) -> AsyncIterator[StreamChunk]:
         """Generate a streaming response, yielding chunks."""
-        (tree, nodes, resolved_model, resolved_prompt, resolved_params,
+        (rhizome, nodes, resolved_model, resolved_prompt, resolved_params,
          include_ts, include_think, excl_ids, dg_map, excl_gids,
          anchored_ids, eviction_strategy, metadata) = (
-            await self._resolve_context(tree_id, node_id, model, system_prompt, sampling_params)
+            await self._resolve_context(rhizome_id, node_id, model, system_prompt, sampling_params)
         )
-        context_limit = _apply_debug_context_limit(tree, get_model_context_limit(resolved_model))
+        context_limit = _apply_debug_context_limit(rhizome, get_model_context_limit(resolved_model))
         messages, context_usage, eviction_report = self._context_builder.build(
             nodes=nodes,
             target_node_id=node_id,
@@ -439,7 +439,7 @@ class GenerationService:
         mode = "prefill" if prefill_content else mode_hint
 
         await self._emit_generation_started(
-            tree_id, generation_id, node_id,
+            rhizome_id, generation_id, node_id,
             resolved_model, provider.name, resolved_prompt, resolved_params,
             mode=mode, prefill_content=prefill_content,
         )
@@ -457,7 +457,7 @@ class GenerationService:
                 if prefill_content:
                     chunk.result.content = prefill_content + chunk.result.content
                 node = await self._emit_node_created(
-                    tree_id, generation_id, node_id, chunk.result,
+                    rhizome_id, generation_id, node_id, chunk.result,
                     provider.name, resolved_prompt, resolved_params,
                     context_usage=context_usage,
                     include_thinking_in_context=include_think,
@@ -496,7 +496,7 @@ class GenerationService:
         if not report.summary_needed or not report.evicted_content:
             return messages, context_usage
 
-        summary = await self._tree_service.generate_eviction_summary(
+        summary = await self._rhizome_service.generate_eviction_summary(
             report.evicted_content,
             model=report.summary_model,
         )
@@ -535,7 +535,7 @@ class GenerationService:
 
     async def _resolve_context(
         self,
-        tree_id: str,
+        rhizome_id: str,
         node_id: str,
         model: str | None,
         system_prompt: str | None,
@@ -544,66 +544,66 @@ class GenerationService:
         dict, list[dict], str, str | None, SamplingParams, bool, bool,
         set[str], dict, set[str], set[str], EvictionStrategy | None, dict,
     ]:
-        """Validate tree/node and resolve parameters from request or tree defaults.
+        """Validate rhizome/node and resolve parameters from request or rhizome defaults.
 
-        Returns: (tree, nodes, resolved_model, resolved_prompt, resolved_params,
+        Returns: (rhizome, nodes, resolved_model, resolved_prompt, resolved_params,
                   include_timestamps, include_thinking,
                   excluded_ids, digression_groups_map, excluded_group_ids,
                   anchored_ids, eviction_strategy, metadata)
         """
-        tree = await self._projector.get_tree(tree_id)
-        if tree is None:
-            raise TreeNotFoundForGenerationError(tree_id)
+        rhizome = await self._projector.get_rhizome(rhizome_id)
+        if rhizome is None:
+            raise RhizomeNotFoundForGenerationError(rhizome_id)
 
-        nodes = await self._projector.get_nodes(tree_id)
+        nodes = await self._projector.get_nodes(rhizome_id)
         node_ids = {n["node_id"] for n in nodes}
         if node_id not in node_ids:
             raise NodeNotFoundForGenerationError(node_id)
 
-        resolved_model = model or tree.get("default_model") or "claude-sonnet-4-5-20250929"
-        resolved_prompt = system_prompt if system_prompt is not None else tree.get(
+        resolved_model = model or rhizome.get("default_model") or "claude-sonnet-4-5-20250929"
+        resolved_prompt = system_prompt if system_prompt is not None else rhizome.get(
             "default_system_prompt"
         )
 
         # Parse metadata
-        metadata = parse_json_field(tree.get("metadata")) or {}
+        metadata = parse_json_field(rhizome.get("metadata")) or {}
 
-        # Three-layer merge: request > tree defaults > base
+        # Three-layer merge: request > rhizome defaults > base
         resolved_params = merge_sampling_params(
             sampling_params,
-            tree.get("default_sampling_params"),
+            rhizome.get("default_sampling_params"),
             metadata=metadata,
         )
 
-        # Tree-level settings from metadata
+        # Rhizome-level settings from metadata
         # Completion mode never uses timestamps — they're chat context, not prompt text
         is_completion = metadata.get("generation_mode") == "completion"
         include_timestamps = False if is_completion else bool(metadata.get("include_timestamps", False))
         include_thinking = bool(metadata.get("include_thinking_in_context", False))
 
         # Context exclusion data
-        exclusion_rows = await self._projector.get_node_exclusions(tree_id)
+        exclusion_rows = await self._projector.get_node_exclusions(rhizome_id)
         path_ids = self._get_path_node_ids(nodes, node_id)
         excluded_ids = {r["node_id"] for r in exclusion_rows if r["scope_node_id"] in path_ids}
 
-        groups = await self._projector.get_digression_groups(tree_id)
+        groups = await self._projector.get_digression_groups(rhizome_id)
         excluded_group_ids = {g["group_id"] for g in groups if not g["included"]}
         digression_groups_map = {g["group_id"]: g["node_ids"] for g in groups}
 
         # Anchored node IDs
         anchor_rows = await self._projector._db.fetchall(
-            "SELECT DISTINCT node_id FROM node_anchors WHERE tree_id = ?",
-            (tree_id,),
+            "SELECT DISTINCT node_id FROM node_anchors WHERE rhizome_id = ?",
+            (rhizome_id,),
         )
         anchored_ids = {r["node_id"] for r in anchor_rows}
 
-        # Eviction strategy from tree metadata
+        # Eviction strategy from rhizome metadata
         eviction_raw = metadata.get("eviction_strategy")
         eviction: EvictionStrategy | None = None
         if eviction_raw and isinstance(eviction_raw, dict):
             eviction = EvictionStrategy.model_validate(eviction_raw)
 
-        return (tree, nodes, resolved_model, resolved_prompt, resolved_params,
+        return (rhizome, nodes, resolved_model, resolved_prompt, resolved_params,
                 include_timestamps, include_thinking,
                 excluded_ids, digression_groups_map, excluded_group_ids,
                 anchored_ids, eviction, metadata)
@@ -665,7 +665,7 @@ class GenerationService:
 
     async def _emit_generation_started(
         self,
-        tree_id: str,
+        rhizome_id: str,
         generation_id: str,
         parent_node_id: str,
         model: str,
@@ -690,7 +690,7 @@ class GenerationService:
         )
         event = EventEnvelope(
             event_id=str(uuid4()),
-            tree_id=tree_id,
+            rhizome_id=rhizome_id,
             timestamp=datetime.now(UTC),
             device_id="local",
             event_type="GenerationStarted",
@@ -701,7 +701,7 @@ class GenerationService:
 
     async def _emit_node_created(
         self,
-        tree_id: str,
+        rhizome_id: str,
         generation_id: str,
         parent_id: str,
         result: GenerationResult,
@@ -742,7 +742,7 @@ class GenerationService:
         )
         event = EventEnvelope(
             event_id=str(uuid4()),
-            tree_id=tree_id,
+            rhizome_id=rhizome_id,
             timestamp=datetime.now(UTC),
             device_id="local",
             event_type="NodeCreated",
@@ -752,16 +752,16 @@ class GenerationService:
         await self._projector.project([event])
 
         # Read back the projected node with sibling info
-        nodes = await self._projector.get_nodes(tree_id)
-        sibling_info = TreeService._compute_sibling_info(nodes)
+        nodes = await self._projector.get_nodes(rhizome_id)
+        sibling_info = RhizomeService._compute_sibling_info(nodes)
         node_row = next(n for n in nodes if n["node_id"] == node_id)
-        return TreeService._node_from_row(node_row, sibling_info=sibling_info)
+        return RhizomeService._node_from_row(node_row, sibling_info=sibling_info)
 
 
-class TreeNotFoundForGenerationError(Exception):
-    def __init__(self, tree_id: str) -> None:
-        self.tree_id = tree_id
-        super().__init__(f"Tree not found: {tree_id}")
+class RhizomeNotFoundForGenerationError(Exception):
+    def __init__(self, rhizome_id: str) -> None:
+        self.rhizome_id = rhizome_id
+        super().__init__(f"Rhizome not found: {rhizome_id}")
 
 
 class NodeNotFoundForGenerationError(Exception):

@@ -2,31 +2,31 @@ import { useCallback, useRef, useState } from 'react'
 import * as api from '../../api/client.ts'
 import { useClickOutside } from '../../hooks/useClickOutside.ts'
 import { useEscapeKey } from '../../hooks/useEscapeKey.ts'
-import { useTreeStore } from '../../store/treeStore.ts'
-import type { TreeSummary } from '../../api/types.ts'
+import { useRhizomeStore } from '../../store/rhizomeStore.ts'
+import type { RhizomeSummary } from '../../api/types.ts'
 import { tagColor } from '../../utils/tagColor.ts'
-import './TreeContextMenu.css'
+import './RhizomeContextMenu.css'
 
 interface Props {
-  tree: TreeSummary
+  tree: RhizomeSummary
   x: number
   y: number
-  allTrees: TreeSummary[]
+  allTrees: RhizomeSummary[]
   onClose: () => void
   onRename: () => void
 }
 
 type View = 'menu' | 'folder-picker' | 'tag-picker'
 
-export function TreeContextMenu({ tree, x, y, allTrees, onClose, onRename }: Props) {
+export function RhizomeContextMenu({ tree, x, y, allTrees, onClose, onRename }: Props) {
   const ref = useRef<HTMLDivElement>(null)
   const [view, setView] = useState<View>('menu')
   const [folderInput, setFolderInput] = useState('')
   const [tagInput, setTagInput] = useState('')
 
-  const updateTree = useTreeStore(s => s.updateTree)
-  const archiveTree = useTreeStore(s => s.archiveTree)
-  const unarchiveTree = useTreeStore(s => s.unarchiveTree)
+  const updateRhizome = useRhizomeStore(s => s.updateRhizome)
+  const archiveRhizome = useRhizomeStore(s => s.archiveRhizome)
+  const unarchiveRhizome = useRhizomeStore(s => s.unarchiveRhizome)
 
   const close = useCallback(() => onClose(), [onClose])
 
@@ -43,9 +43,9 @@ export function TreeContextMenu({ tree, x, y, allTrees, onClose, onRename }: Pro
 
   // Read-merge-write: fetch full metadata, merge change, then patch
   const mergeMetadata = async (patch: Record<string, unknown>) => {
-    const full = await api.getTree(tree.tree_id)
+    const full = await api.getRhizome(tree.rhizome_id)
     const merged = { ...full.metadata, ...patch }
-    await updateTree(tree.tree_id, { metadata: merged })
+    await updateRhizome(tree.rhizome_id, { metadata: merged })
   }
 
   const addFolder = async (folder: string) => {
@@ -87,39 +87,39 @@ export function TreeContextMenu({ tree, x, y, allTrees, onClose, onRename }: Pro
   const suggestedTags = existingTags.filter(t => !currentTags.includes(t))
 
   return (
-    <div ref={ref} className="tree-context-menu" style={style}>
+    <div ref={ref} className="rhizome-context-menu" style={style}>
       {view === 'menu' && (
         <>
           <button
-            className="tree-context-item"
+            className="rhizome-context-item"
             onClick={() => { onRename(); onClose() }}
           >
             Rename
           </button>
           <button
-            className="tree-context-item"
+            className="rhizome-context-item"
             onClick={() => setView('folder-picker')}
           >
             Folders...
           </button>
           <button
-            className="tree-context-item"
+            className="rhizome-context-item"
             onClick={() => setView('tag-picker')}
           >
             Tags...
           </button>
-          <div className="tree-context-divider" />
+          <div className="rhizome-context-divider" />
           {isArchived ? (
             <button
-              className="tree-context-item"
-              onClick={() => { unarchiveTree(tree.tree_id); onClose() }}
+              className="rhizome-context-item"
+              onClick={() => { unarchiveRhizome(tree.rhizome_id); onClose() }}
             >
               Unarchive
             </button>
           ) : (
             <button
-              className="tree-context-item tree-context-item--danger"
-              onClick={() => { archiveTree(tree.tree_id); onClose() }}
+              className="rhizome-context-item rhizome-context-item--danger"
+              onClick={() => { archiveRhizome(tree.rhizome_id); onClose() }}
             >
               Archive
             </button>
@@ -128,18 +128,18 @@ export function TreeContextMenu({ tree, x, y, allTrees, onClose, onRename }: Pro
       )}
 
       {view === 'folder-picker' && (
-        <div className="tree-context-picker">
-          <div className="tree-context-picker-header">
-            <button className="tree-context-back" onClick={() => setView('menu')}>
+        <div className="rhizome-context-picker">
+          <div className="rhizome-context-picker-header">
+            <button className="rhizome-context-back" onClick={() => setView('menu')}>
               &larr;
             </button>
             <span>Folders</span>
           </div>
 
           {currentFolders.length > 0 && (
-            <div className="tree-context-current">
+            <div className="rhizome-context-current">
               {currentFolders.map(f => (
-                <span key={f} className="tree-context-folder-chip">
+                <span key={f} className="rhizome-context-folder-chip">
                   {f}
                   <button onClick={() => removeFolder(f)}>&times;</button>
                 </span>
@@ -149,7 +149,7 @@ export function TreeContextMenu({ tree, x, y, allTrees, onClose, onRename }: Pro
 
           <input
             type="text"
-            className="tree-context-input"
+            className="rhizome-context-input"
             placeholder="New folder path..."
             value={folderInput}
             onChange={e => setFolderInput(e.target.value)}
@@ -162,11 +162,11 @@ export function TreeContextMenu({ tree, x, y, allTrees, onClose, onRename }: Pro
           />
 
           {suggestedFolders.length > 0 && (
-            <div className="tree-context-suggestions">
+            <div className="rhizome-context-suggestions">
               {suggestedFolders.map(f => (
                 <button
                   key={f}
-                  className="tree-context-suggestion"
+                  className="rhizome-context-suggestion"
                   onClick={() => addFolder(f)}
                 >
                   {f}
@@ -178,23 +178,23 @@ export function TreeContextMenu({ tree, x, y, allTrees, onClose, onRename }: Pro
       )}
 
       {view === 'tag-picker' && (
-        <div className="tree-context-picker">
-          <div className="tree-context-picker-header">
-            <button className="tree-context-back" onClick={() => setView('menu')}>
+        <div className="rhizome-context-picker">
+          <div className="rhizome-context-picker-header">
+            <button className="rhizome-context-back" onClick={() => setView('menu')}>
               &larr;
             </button>
             <span>Tags</span>
           </div>
 
           {currentTags.length > 0 && (
-            <div className="tree-context-current">
+            <div className="rhizome-context-current">
               {currentTags.map(t => (
                 <span
                   key={t}
-                  className="tree-context-tag-chip"
+                  className="rhizome-context-tag-chip"
                   style={{ borderColor: tagColor(t) }}
                 >
-                  <span className="tree-context-tag-dot" style={{ background: tagColor(t) }} />
+                  <span className="rhizome-context-tag-dot" style={{ background: tagColor(t) }} />
                   {t}
                   <button onClick={() => removeTag(t)}>&times;</button>
                 </span>
@@ -204,7 +204,7 @@ export function TreeContextMenu({ tree, x, y, allTrees, onClose, onRename }: Pro
 
           <input
             type="text"
-            className="tree-context-input"
+            className="rhizome-context-input"
             placeholder="New tag..."
             value={tagInput}
             onChange={e => setTagInput(e.target.value)}
@@ -217,14 +217,14 @@ export function TreeContextMenu({ tree, x, y, allTrees, onClose, onRename }: Pro
           />
 
           {suggestedTags.length > 0 && (
-            <div className="tree-context-suggestions">
+            <div className="rhizome-context-suggestions">
               {suggestedTags.map(t => (
                 <button
                   key={t}
-                  className="tree-context-suggestion"
+                  className="rhizome-context-suggestion"
                   onClick={() => addTag(t)}
                 >
-                  <span className="tree-context-tag-dot" style={{ background: tagColor(t) }} />
+                  <span className="rhizome-context-tag-dot" style={{ background: tagColor(t) }} />
                   {t}
                 </button>
               ))}

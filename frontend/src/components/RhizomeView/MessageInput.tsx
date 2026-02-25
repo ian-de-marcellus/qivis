@@ -1,16 +1,16 @@
 import { useRef, useState } from 'react'
-import { useTreeStore, useTreeData, useStreamingState } from '../../store/treeStore.ts'
+import { useRhizomeStore, useRhizomeData, useStreamingState } from '../../store/rhizomeStore.ts'
 import './MessageInput.css'
 
 export function MessageInput() {
-  const { currentTree } = useTreeData()
+  const { currentRhizome } = useRhizomeData()
   const { isGenerating } = useStreamingState()
-  const sendMessage = useTreeStore(s => s.sendMessage)
-  const sendMessageOnly = useTreeStore(s => s.sendMessageOnly)
+  const sendMessage = useRhizomeStore(s => s.sendMessage)
+  const sendMessageOnly = useRhizomeStore(s => s.sendMessageOnly)
   const [content, setContent] = useState('')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
-  const canSend = content.trim().length > 0 && !isGenerating && currentTree != null
+  const canSend = content.trim().length > 0 && !isGenerating && currentRhizome != null
 
   const resetInput = () => {
     setContent('')
@@ -58,7 +58,7 @@ export function MessageInput() {
           onChange={handleInput}
           onKeyDown={handleKeyDown}
           placeholder={isGenerating ? 'Generating...' : 'Type a message...'}
-          disabled={isGenerating || !currentTree}
+          disabled={isGenerating || !currentRhizome}
           rows={1}
         />
         <button onClick={handleSend} disabled={!canSend}>

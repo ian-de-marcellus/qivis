@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { BookmarkResponse } from '../../api/types.ts'
-import { useTreeStore, useResearchMetadata } from '../../store/treeStore.ts'
+import { useRhizomeStore, useResearchMetadata } from '../../store/rhizomeStore.ts'
 import './ResearchPanel.css'
 
 const SUMMARY_TYPE_LABELS: Record<string, string> = {
@@ -13,24 +13,24 @@ const SUMMARY_TYPE_LABELS: Record<string, string> = {
 export function ResearchPanel() {
   const {
     bookmarks, bookmarksLoading,
-    treeNotes, treeAnnotations,
-    treeSummaries,
+    rhizomeNotes, rhizomeAnnotations,
+    rhizomeSummaries,
     researchPaneTab,
   } = useResearchMetadata()
 
-  const navigateToNode = useTreeStore(s => s.navigateToNode)
-  const removeBookmark = useTreeStore(s => s.removeBookmark)
-  const summarizeBookmark = useTreeStore(s => s.summarizeBookmark)
-  const navigateToBookmark = useTreeStore(s => s.navigateToBookmark)
-  const removeNote = useTreeStore(s => s.removeNote)
-  const removeSummary = useTreeStore(s => s.removeSummary)
-  const setResearchPaneTab = useTreeStore(s => s.setResearchPaneTab)
-  const currentTree = useTreeStore(s => s.currentTree)
+  const navigateToNode = useRhizomeStore(s => s.navigateToNode)
+  const removeBookmark = useRhizomeStore(s => s.removeBookmark)
+  const summarizeBookmark = useRhizomeStore(s => s.summarizeBookmark)
+  const navigateToBookmark = useRhizomeStore(s => s.navigateToBookmark)
+  const removeNote = useRhizomeStore(s => s.removeNote)
+  const removeSummary = useRhizomeStore(s => s.removeSummary)
+  const setResearchPaneTab = useRhizomeStore(s => s.setResearchPaneTab)
+  const currentRhizome = useRhizomeStore(s => s.currentRhizome)
 
   const [summarizingIds, setSummarizingIds] = useState<Set<string>>(new Set())
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
 
-  const totalCount = bookmarks.length + treeAnnotations.length + treeNotes.length + treeSummaries.length
+  const totalCount = bookmarks.length + rhizomeAnnotations.length + rhizomeNotes.length + rhizomeSummaries.length
 
   const handleSummarize = async (bookmark: BookmarkResponse) => {
     setSummarizingIds((prev) => new Set([...prev, bookmark.bookmark_id]))
@@ -56,8 +56,8 @@ export function ResearchPanel() {
 
   // Build a node content preview map for notes/annotations
   const nodePreviewMap = new Map<string, string>()
-  if (currentTree) {
-    for (const n of currentTree.nodes) {
+  if (currentRhizome) {
+    for (const n of currentRhizome.nodes) {
       const text = n.edited_content ?? n.content
       nodePreviewMap.set(n.node_id, text.length > 80 ? text.slice(0, 80) + '...' : text)
     }
@@ -83,19 +83,19 @@ export function ResearchPanel() {
           className={`research-tab${researchPaneTab === 'tags' ? ' active' : ''}`}
           onClick={() => setResearchPaneTab('tags')}
         >
-          Tags{treeAnnotations.length > 0 && <span className="tab-count">{treeAnnotations.length}</span>}
+          Tags{rhizomeAnnotations.length > 0 && <span className="tab-count">{rhizomeAnnotations.length}</span>}
         </button>
         <button
           className={`research-tab${researchPaneTab === 'notes' ? ' active' : ''}`}
           onClick={() => setResearchPaneTab('notes')}
         >
-          Notes{treeNotes.length > 0 && <span className="tab-count">{treeNotes.length}</span>}
+          Notes{rhizomeNotes.length > 0 && <span className="tab-count">{rhizomeNotes.length}</span>}
         </button>
         <button
           className={`research-tab${researchPaneTab === 'summaries' ? ' active' : ''}`}
           onClick={() => setResearchPaneTab('summaries')}
         >
-          Summaries{treeSummaries.length > 0 && <span className="tab-count">{treeSummaries.length}</span>}
+          Summaries{rhizomeSummaries.length > 0 && <span className="tab-count">{rhizomeSummaries.length}</span>}
         </button>
       </div>
 
@@ -171,7 +171,7 @@ export function ResearchPanel() {
         {/* Tags tab */}
         {researchPaneTab === 'tags' && (
           <div className="research-items">
-            {treeAnnotations.map((ann) => (
+            {rhizomeAnnotations.map((ann) => (
               <div key={ann.annotation_id} className="research-item clickable"
                 onClick={() => navigateToNode(ann.node_id)}
               >
@@ -188,7 +188,7 @@ export function ResearchPanel() {
               </div>
             ))}
 
-            {treeAnnotations.length === 0 && (
+            {rhizomeAnnotations.length === 0 && (
               <div className="research-empty">
                 No tags yet. Click "Tag" on any message.
               </div>
@@ -199,7 +199,7 @@ export function ResearchPanel() {
         {/* Notes tab */}
         {researchPaneTab === 'notes' && (
           <div className="research-items">
-            {treeNotes.map((note) => (
+            {rhizomeNotes.map((note) => (
               <div key={note.note_id} className="research-item">
                 <div className="research-item-header">
                   <button
@@ -224,7 +224,7 @@ export function ResearchPanel() {
               </div>
             ))}
 
-            {treeNotes.length === 0 && (
+            {rhizomeNotes.length === 0 && (
               <div className="research-empty">
                 No notes yet. Click "Note" on any message.
               </div>
@@ -235,7 +235,7 @@ export function ResearchPanel() {
         {/* Summaries tab */}
         {researchPaneTab === 'summaries' && (
           <div className="research-items">
-            {treeSummaries.map((summary) => {
+            {rhizomeSummaries.map((summary) => {
               const isExpanded = expandedIds.has(summary.summary_id)
 
               return (
@@ -273,7 +273,7 @@ export function ResearchPanel() {
               )
             })}
 
-            {treeSummaries.length === 0 && (
+            {rhizomeSummaries.length === 0 && (
               <div className="research-empty">
                 No summaries yet. Click "Summarize" on any message.
               </div>

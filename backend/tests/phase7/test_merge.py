@@ -11,8 +11,8 @@ from qivis.events.store import EventStore
 from qivis.importer.merge import MergePlan, _compute_merge_plan
 from qivis.importer.models import ImportedNode, ImportedTree
 from qivis.main import app
-from qivis.trees.router import get_tree_service
-from qivis.trees.service import TreeService
+from qivis.rhizomes.router import get_rhizome_service
+from qivis.rhizomes.service import RhizomeService
 
 
 # ---------------------------------------------------------------------------
@@ -279,8 +279,8 @@ async def setup():
     db = await Database.connect(":memory:")
     store = EventStore(db)
     projector = StateProjector(db)
-    service = TreeService(db)
-    app.dependency_overrides[get_tree_service] = lambda: service
+    service = RhizomeService(db)
+    app.dependency_overrides[get_rhizome_service] = lambda: service
 
     from qivis.importer.merge import MergeService
     from qivis.importer.merge_router import get_merge_service
@@ -302,20 +302,20 @@ async def setup():
     await db.close()
 
 
-async def _create_tree_with_messages(
+async def _create_rhizome_with_messages(
     client: AsyncClient,
     messages: list[tuple[str, str]],
 ) -> tuple[str, list[str]]:
-    """Helper: create a tree and add messages manually. Returns (tree_id, node_ids)."""
-    resp = await client.post("/api/trees", json={"title": "Test Tree"})
+    """Helper: create a tree and add messages manually. Returns (rhizome_id, node_ids)."""
+    resp = await client.post("/api/rhizomes", json={"title": "Test Rhizome"})
     assert resp.status_code == 201
-    tree_id = resp.json()["tree_id"]
+    rhizome_id = resp.json()["rhizome_id"]
 
     node_ids = []
     parent_id = None
     for role, content in messages:
         resp = await client.post(
-            f"/api/trees/{tree_id}/nodes",
+            f"/api/rhizomes/{rhizome_id}/nodes",
             json={"parent_id": parent_id, "role": role, "content": content},
         )
         assert resp.status_code == 201
@@ -323,7 +323,7 @@ async def _create_tree_with_messages(
         node_ids.append(node_id)
         parent_id = node_id
 
-    return tree_id, node_ids
+    return rhizome_id, node_ids
 
 
 class TestMergeAPI:
@@ -332,7 +332,7 @@ class TestMergeAPI:
     @pytest.mark.asyncio
     async def test_preview_returns_correct_counts(self, setup):
         client, *_ = setup
-        tree_id, node_ids = await _create_tree_with_messages(client, [
+        rhizome_id, node_ids = await _create_rhizome_with_messages(client, [
             ("user", "Hello"),
             ("assistant", "Hi there"),
         ])
@@ -346,7 +346,7 @@ class TestMergeAPI:
         ])
 
         resp = await client.post(
-            f"/api/trees/{tree_id}/merge/preview",
+            f"/api/rhizomes/{rhizome_id}/merge/preview",
             files={"file": ("test.json", file_data, "application/json")},
         )
         assert resp.status_code == 200
@@ -360,7 +360,7 @@ class TestMergeAPI:
     @pytest.mark.asyncio
     async def test_merge_creates_nodes_with_correct_parent(self, setup):
         client, *_ = setup
-        tree_id, node_ids = await _create_tree_with_messages(client, [
+        rhizome_id, node_ids = await _create_rhizome_with_messages(client, [
             ("user", "Hello"),
             ("assistant", "Hi there"),
         ])
@@ -372,7 +372,7 @@ class TestMergeAPI:
         ])
 
         resp = await client.post(
-            f"/api/trees/{tree_id}/merge",
+            f"/api/rhizomes/{rhizome_id}/merge",
             files={"file": ("test.json", file_data, "application/json")},
         )
         assert resp.status_code == 200
@@ -382,7 +382,7 @@ class TestMergeAPI:
         assert len(data["node_ids"]) == 1
 
         # Verify the new node is in the tree with correct parent
-        tree_resp = await client.get(f"/api/trees/{tree_id}")
+        tree_resp = await client.get(f"/api/rhizomes/{rhizome_id}")
         tree_data = tree_resp.json()
         new_node = next(
             n for n in tree_data["nodes"] if n["node_id"] == data["node_ids"][0]
@@ -394,7 +394,7 @@ class TestMergeAPI:
     @pytest.mark.asyncio
     async def test_merge_preserves_metadata(self, setup):
         client, *_ = setup
-        tree_id, _ = await _create_tree_with_messages(client, [
+        rhizome_id, _ = await _create_rhizome_with_messages(client, [
             ("user", "Hello"),
         ])
 
@@ -405,14 +405,14 @@ class TestMergeAPI:
         ])
 
         resp = await client.post(
-            f"/api/trees/{tree_id}/merge",
+            f"/api/rhizomes/{rhizome_id}/merge",
             files={"file": ("test.json", file_data, "application/json")},
         )
         assert resp.status_code == 200
         data = resp.json()
         assert data["created_count"] == 1
 
-        tree_resp = await client.get(f"/api/trees/{tree_id}")
+        tree_resp = await client.get(f"/api/rhizomes/{rhizome_id}")
         new_node = next(
             n for n in tree_resp.json()["nodes"]
             if n["node_id"] == data["node_ids"][0]
@@ -422,7 +422,7 @@ class TestMergeAPI:
     @pytest.mark.asyncio
     async def test_merge_events_have_device_id_merge(self, setup):
         client, _, store, db = setup
-        tree_id, _ = await _create_tree_with_messages(client, [
+        rhizome_id, _ = await _create_rhizome_with_messages(client, [
             ("user", "Hello"),
         ])
 
@@ -432,13 +432,13 @@ class TestMergeAPI:
         ])
 
         resp = await client.post(
-            f"/api/trees/{tree_id}/merge",
+            f"/api/rhizomes/{rhizome_id}/merge",
             files={"file": ("test.json", file_data, "application/json")},
         )
         assert resp.status_code == 200
 
         # Check event log
-        events = await store.get_events(tree_id)
+        events = await store.get_events(rhizome_id)
         merge_events = [e for e in events if e.device_id == "merge"]
         assert len(merge_events) == 1
         assert merge_events[0].event_type == "NodeCreated"
@@ -452,7 +452,7 @@ class TestMergeAPI:
         ])
 
         resp = await client.post(
-            "/api/trees/nonexistent-id/merge/preview",
+            "/api/rhizomes/nonexistent-id/merge/preview",
             files={"file": ("test.json", file_data, "application/json")},
         )
         assert resp.status_code == 404
@@ -460,7 +460,7 @@ class TestMergeAPI:
     @pytest.mark.asyncio
     async def test_full_overlap_returns_zero_created(self, setup):
         client, *_ = setup
-        tree_id, _ = await _create_tree_with_messages(client, [
+        rhizome_id, _ = await _create_rhizome_with_messages(client, [
             ("user", "Hello"),
             ("assistant", "Hi there"),
         ])
@@ -471,7 +471,7 @@ class TestMergeAPI:
         ])
 
         resp = await client.post(
-            f"/api/trees/{tree_id}/merge",
+            f"/api/rhizomes/{rhizome_id}/merge",
             files={"file": ("test.json", file_data, "application/json")},
         )
         assert resp.status_code == 200
@@ -483,13 +483,13 @@ class TestMergeAPI:
     @pytest.mark.asyncio
     async def test_existing_tree_unchanged_after_merge(self, setup):
         client, *_ = setup
-        tree_id, original_ids = await _create_tree_with_messages(client, [
+        rhizome_id, original_ids = await _create_rhizome_with_messages(client, [
             ("user", "Hello"),
             ("assistant", "Hi there"),
         ])
 
         # Get original tree state
-        orig_resp = await client.get(f"/api/trees/{tree_id}")
+        orig_resp = await client.get(f"/api/rhizomes/{rhizome_id}")
         orig_nodes = {
             n["node_id"]: n for n in orig_resp.json()["nodes"]
         }
@@ -502,12 +502,12 @@ class TestMergeAPI:
         ])
 
         await client.post(
-            f"/api/trees/{tree_id}/merge",
+            f"/api/rhizomes/{rhizome_id}/merge",
             files={"file": ("test.json", file_data, "application/json")},
         )
 
         # Verify original nodes unchanged
-        new_resp = await client.get(f"/api/trees/{tree_id}")
+        new_resp = await client.get(f"/api/rhizomes/{rhizome_id}")
         for node in new_resp.json()["nodes"]:
             if node["node_id"] in orig_nodes:
                 orig = orig_nodes[node["node_id"]]

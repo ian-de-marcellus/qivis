@@ -119,14 +119,14 @@ class TestProjectorThinkingContent:
         self, db, projector,
     ):
         """thinking_content should survive the projector round-trip."""
-        tree_id = str(uuid4())
+        rhizome_id = str(uuid4())
         # Create tree first
-        from qivis.models import TreeCreatedPayload
+        from qivis.models import RhizomeCreatedPayload
         tree_event = EventEnvelope(
-            event_id=str(uuid4()), tree_id=tree_id,
+            event_id=str(uuid4()), rhizome_id=rhizome_id,
             timestamp=datetime.now(UTC), device_id="local",
-            event_type="TreeCreated",
-            payload=TreeCreatedPayload(title="test").model_dump(),
+            event_type="RhizomeCreated",
+            payload=RhizomeCreatedPayload(title="test").model_dump(),
         )
         await projector.project([tree_event])
 
@@ -138,7 +138,7 @@ class TestProjectorThinkingContent:
             thinking_content=thinking,
         )
         event = EventEnvelope(
-            event_id=str(uuid4()), tree_id=tree_id,
+            event_id=str(uuid4()), rhizome_id=rhizome_id,
             timestamp=datetime.now(UTC), device_id="local",
             event_type="NodeCreated",
             payload=payload.model_dump(),
@@ -146,20 +146,20 @@ class TestProjectorThinkingContent:
         await projector.project([event])
 
         # Read back
-        nodes = await projector.get_nodes(tree_id)
+        nodes = await projector.get_nodes(rhizome_id)
         assert len(nodes) == 1
         assert nodes[0]["thinking_content"] == thinking
 
     @pytest.mark.asyncio
     async def test_node_created_without_thinking_content(self, db, projector):
         """Nodes without thinking_content should have None."""
-        tree_id = str(uuid4())
-        from qivis.models import TreeCreatedPayload
+        rhizome_id = str(uuid4())
+        from qivis.models import RhizomeCreatedPayload
         tree_event = EventEnvelope(
-            event_id=str(uuid4()), tree_id=tree_id,
+            event_id=str(uuid4()), rhizome_id=rhizome_id,
             timestamp=datetime.now(UTC), device_id="local",
-            event_type="TreeCreated",
-            payload=TreeCreatedPayload(title="test").model_dump(),
+            event_type="RhizomeCreated",
+            payload=RhizomeCreatedPayload(title="test").model_dump(),
         )
         await projector.project([tree_event])
 
@@ -168,41 +168,41 @@ class TestProjectorThinkingContent:
             node_id=node_id, role="user", content="Hello",
         )
         event = EventEnvelope(
-            event_id=str(uuid4()), tree_id=tree_id,
+            event_id=str(uuid4()), rhizome_id=rhizome_id,
             timestamp=datetime.now(UTC), device_id="local",
             event_type="NodeCreated",
             payload=payload.model_dump(),
         )
         await projector.project([event])
 
-        nodes = await projector.get_nodes(tree_id)
+        nodes = await projector.get_nodes(rhizome_id)
         assert nodes[0]["thinking_content"] is None
 
 
 class TestNodeResponseThinking:
     def test_thinking_content_field_exists(self):
-        from qivis.trees.schemas import NodeResponse
+        from qivis.rhizomes.schemas import NodeResponse
         resp = NodeResponse(
-            node_id="n1", tree_id="t1", role="assistant",
+            node_id="n1", rhizome_id="t1", role="assistant",
             content="hi", created_at="2026-02-16T00:00:00",
             thinking_content="thought process",
         )
         assert resp.thinking_content == "thought process"
 
     def test_thinking_content_default_none(self):
-        from qivis.trees.schemas import NodeResponse
+        from qivis.rhizomes.schemas import NodeResponse
         resp = NodeResponse(
-            node_id="n1", tree_id="t1", role="assistant",
+            node_id="n1", rhizome_id="t1", role="assistant",
             content="hi", created_at="2026-02-16T00:00:00",
         )
         assert resp.thinking_content is None
 
 
-class TestTreeServiceNodeFromRow:
+class TestRhizomeServiceNodeFromRow:
     def test_maps_thinking_content_from_row(self):
-        from qivis.trees.service import TreeService
+        from qivis.rhizomes.service import RhizomeService
         row = {
-            "node_id": "n1", "tree_id": "t1", "parent_id": None,
+            "node_id": "n1", "rhizome_id": "t1", "parent_id": None,
             "role": "assistant", "content": "response",
             "model": "claude", "provider": "anthropic",
             "system_prompt": None, "sampling_params": None,
@@ -212,13 +212,13 @@ class TestTreeServiceNodeFromRow:
             "participant_name": None, "created_at": "2026-02-16T00:00:00",
             "archived": 0, "thinking_content": "I thought about it",
         }
-        node = TreeService._node_from_row(row)
+        node = RhizomeService._node_from_row(row)
         assert node.thinking_content == "I thought about it"
 
     def test_maps_null_thinking_content(self):
-        from qivis.trees.service import TreeService
+        from qivis.rhizomes.service import RhizomeService
         row = {
-            "node_id": "n1", "tree_id": "t1", "parent_id": None,
+            "node_id": "n1", "rhizome_id": "t1", "parent_id": None,
             "role": "user", "content": "hello",
             "model": None, "provider": None,
             "system_prompt": None, "sampling_params": None,
@@ -228,7 +228,7 @@ class TestTreeServiceNodeFromRow:
             "participant_name": None, "created_at": "2026-02-16T00:00:00",
             "archived": 0, "thinking_content": None,
         }
-        node = TreeService._node_from_row(row)
+        node = RhizomeService._node_from_row(row)
         assert node.thinking_content is None
 
 
@@ -540,13 +540,13 @@ class TestSchemaMigration:
     @pytest.mark.asyncio
     async def test_thinking_content_column_exists(self, db):
         """The thinking_content column should exist after migration."""
-        # Create tree first (FK constraint)
+        # Create rhizome first (FK constraint)
         await db.execute(
-            "INSERT INTO trees (tree_id, title, created_at, updated_at) VALUES (?, ?, ?, ?)",
+            "INSERT INTO rhizomes (rhizome_id, title, created_at, updated_at) VALUES (?, ?, ?, ?)",
             ("test_t1", "test", "2026-02-16T00:00:00", "2026-02-16T00:00:00"),
         )
         await db.execute(
-            "INSERT INTO nodes (node_id, tree_id, role, content, created_at, thinking_content) "
+            "INSERT INTO nodes (node_id, rhizome_id, role, content, created_at, thinking_content) "
             "VALUES (?, ?, ?, ?, ?, ?)",
             ("test_n1", "test_t1", "assistant", "hi", "2026-02-16T00:00:00", "thinking text"),
         )

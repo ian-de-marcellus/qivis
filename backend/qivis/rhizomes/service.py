@@ -1,4 +1,4 @@
-"""Tree service: coordinates EventStore and StateProjector for tree/node operations."""
+"""Rhizome service: coordinates EventStore and StateProjector for rhizome/node operations."""
 
 from collections import defaultdict
 from datetime import UTC, datetime
@@ -29,12 +29,12 @@ from qivis.models import (
     NoteRemovedPayload,
     SummaryGeneratedPayload,
     SummaryRemovedPayload,
-    TreeArchivedPayload,
-    TreeCreatedPayload,
-    TreeMetadataUpdatedPayload,
-    TreeUnarchivedPayload,
+    RhizomeArchivedPayload,
+    RhizomeCreatedPayload,
+    RhizomeMetadataUpdatedPayload,
+    RhizomeUnarchivedPayload,
 )
-from qivis.trees.schemas import (
+from qivis.rhizomes.schemas import (
     AddAnnotationRequest,
     AnnotationResponse,
     BookmarkResponse,
@@ -43,7 +43,7 @@ from qivis.trees.schemas import (
     CreateNodeRequest,
     CreateNoteRequest,
     CreateSummaryRequest,
-    CreateTreeRequest,
+    CreateRhizomeRequest,
     DigressionGroupResponse,
     EditHistoryEntry,
     EditHistoryResponse,
@@ -54,19 +54,19 @@ from qivis.trees.schemas import (
     NodeResponse,
     NoteResponse,
     PatchNodeContentRequest,
-    PatchTreeRequest,
+    PatchRhizomeRequest,
     SummaryResponse,
     TaxonomyResponse,
-    TreeDetailResponse,
-    TreeSummary,
+    RhizomeDetailResponse,
+    RhizomeSummary,
 )
 from qivis.utils.json import parse_json_field, parse_json_or_none
 
 _TAXONOMY_PATH = Path(__file__).parent.parent / "annotation_taxonomy.yml"
 
 
-class TreeService:
-    """Coordinates event store and projector for tree/node CRUD."""
+class RhizomeService:
+    """Coordinates event store and projector for rhizome/node CRUD."""
 
     def __init__(self, db: Database, summary_client: object | None = None) -> None:
         self._store = EventStore(db)
@@ -74,12 +74,12 @@ class TreeService:
         self._db = db
         self._summary_client = summary_client
 
-    async def create_tree(self, request: CreateTreeRequest) -> TreeDetailResponse:
-        """Create a new tree. Emits TreeCreated, projects, returns the tree."""
-        tree_id = str(uuid4())
+    async def create_rhizome(self, request: CreateRhizomeRequest) -> RhizomeDetailResponse:
+        """Create a new rhizome. Emits RhizomeCreated, projects, returns the rhizome."""
+        rhizome_id = str(uuid4())
         now = datetime.now(UTC)
 
-        payload = TreeCreatedPayload(
+        payload = RhizomeCreatedPayload(
             title=request.title,
             default_system_prompt=request.default_system_prompt,
             default_model=request.default_model,
@@ -89,36 +89,36 @@ class TreeService:
 
         event = EventEnvelope(
             event_id=str(uuid4()),
-            tree_id=tree_id,
+            rhizome_id=rhizome_id,
             timestamp=now,
             device_id="local",
-            event_type="TreeCreated",
+            event_type="RhizomeCreated",
             payload=payload.model_dump(),
         )
 
         await self._store.append(event)
         await self._projector.project([event])
 
-        tree = await self._projector.get_tree(tree_id)
-        assert tree is not None
-        return self._tree_detail_from_row(tree, [])
+        rhizome = await self._projector.get_rhizome(rhizome_id)
+        assert rhizome is not None
+        return self._rhizome_detail_from_row(rhizome, [])
 
-    async def update_tree(
-        self, tree_id: str, request: PatchTreeRequest
-    ) -> TreeDetailResponse:
-        """Update tree metadata. Emits one TreeMetadataUpdated per changed field."""
-        tree = await self._projector.get_tree(tree_id)
-        if tree is None:
-            raise TreeNotFoundError(tree_id)
+    async def update_rhizome(
+        self, rhizome_id: str, request: PatchRhizomeRequest
+    ) -> RhizomeDetailResponse:
+        """Update rhizome metadata. Emits one RhizomeMetadataUpdated per changed field."""
+        rhizome = await self._projector.get_rhizome(rhizome_id)
+        if rhizome is None:
+            raise RhizomeNotFoundError(rhizome_id)
 
-        # Map PatchTreeRequest fields to their current projected values
+        # Map PatchRhizomeRequest fields to their current projected values
         field_to_current = {
-            "title": tree["title"],
-            "metadata": parse_json_field(tree["metadata"]) or {},
-            "default_model": tree["default_model"],
-            "default_provider": tree["default_provider"],
-            "default_system_prompt": tree["default_system_prompt"],
-            "default_sampling_params": parse_json_field(tree["default_sampling_params"]),
+            "title": rhizome["title"],
+            "metadata": parse_json_field(rhizome["metadata"]) or {},
+            "default_model": rhizome["default_model"],
+            "default_provider": rhizome["default_provider"],
+            "default_system_prompt": rhizome["default_system_prompt"],
+            "default_sampling_params": parse_json_field(rhizome["default_sampling_params"]),
         }
 
         now = datetime.now(UTC)
@@ -134,17 +134,17 @@ class TreeService:
             if new_value == old_value:
                 continue
 
-            payload = TreeMetadataUpdatedPayload(
+            payload = RhizomeMetadataUpdatedPayload(
                 field=field_name,
                 old_value=old_value,
                 new_value=new_value,
             )
             event = EventEnvelope(
                 event_id=str(uuid4()),
-                tree_id=tree_id,
+                rhizome_id=rhizome_id,
                 timestamp=now,
                 device_id="local",
-                event_type="TreeMetadataUpdated",
+                event_type="RhizomeMetadataUpdated",
                 payload=payload.model_dump(),
             )
             events.append(event)
@@ -154,65 +154,65 @@ class TreeService:
         if events:
             await self._projector.project(events)
 
-        # Read back the full tree with nodes
-        updated_tree = await self._projector.get_tree(tree_id)
-        assert updated_tree is not None
-        nodes = await self._projector.get_nodes(tree_id)
-        return self._tree_detail_from_row(updated_tree, nodes)
+        # Read back the full rhizome with nodes
+        updated_rhizome = await self._projector.get_rhizome(rhizome_id)
+        assert updated_rhizome is not None
+        nodes = await self._projector.get_nodes(rhizome_id)
+        return self._rhizome_detail_from_row(updated_rhizome, nodes)
 
-    async def get_tree(self, tree_id: str) -> TreeDetailResponse | None:
-        """Get a tree with all its nodes. Returns None if not found."""
-        tree = await self._projector.get_tree(tree_id)
-        if tree is None:
+    async def get_rhizome(self, rhizome_id: str) -> RhizomeDetailResponse | None:
+        """Get a rhizome with all its nodes. Returns None if not found."""
+        rhizome = await self._projector.get_rhizome(rhizome_id)
+        if rhizome is None:
             return None
-        nodes = await self._projector.get_nodes(tree_id)
+        nodes = await self._projector.get_nodes(rhizome_id)
 
         # Annotation counts per node
         ann_rows = await self._db.fetchall(
-            "SELECT node_id, COUNT(*) as cnt FROM annotations WHERE tree_id = ? GROUP BY node_id",
-            (tree_id,),
+            "SELECT node_id, COUNT(*) as cnt FROM annotations WHERE rhizome_id = ? GROUP BY node_id",
+            (rhizome_id,),
         )
         annotation_counts = {r["node_id"]: r["cnt"] for r in ann_rows}
 
         # Note counts per node
         note_rows = await self._db.fetchall(
-            "SELECT node_id, COUNT(*) as cnt FROM notes WHERE tree_id = ? GROUP BY node_id",
-            (tree_id,),
+            "SELECT node_id, COUNT(*) as cnt FROM notes WHERE rhizome_id = ? GROUP BY node_id",
+            (rhizome_id,),
         )
         note_counts = {r["node_id"]: r["cnt"] for r in note_rows}
 
         # Bookmarked node IDs
         bm_rows = await self._db.fetchall(
-            "SELECT DISTINCT node_id FROM bookmarks WHERE tree_id = ?",
-            (tree_id,),
+            "SELECT DISTINCT node_id FROM bookmarks WHERE rhizome_id = ?",
+            (rhizome_id,),
         )
         bookmark_node_ids = {r["node_id"] for r in bm_rows}
 
         # Excluded node IDs (any node with at least one exclusion record)
         excl_rows = await self._db.fetchall(
-            "SELECT DISTINCT node_id FROM node_exclusions WHERE tree_id = ?",
-            (tree_id,),
+            "SELECT DISTINCT node_id FROM node_exclusions WHERE rhizome_id = ?",
+            (rhizome_id,),
         )
         excluded_node_ids = {r["node_id"] for r in excl_rows}
 
         # Anchored node IDs
         anchor_rows = await self._db.fetchall(
-            "SELECT DISTINCT node_id FROM node_anchors WHERE tree_id = ?",
-            (tree_id,),
+            "SELECT DISTINCT node_id FROM node_anchors WHERE rhizome_id = ?",
+            (rhizome_id,),
         )
         anchored_node_ids = {r["node_id"] for r in anchor_rows}
 
         # Edit counts per node (from event log)
         edit_rows = await self._db.fetchall(
             "SELECT json_extract(payload, '$.node_id') as node_id, COUNT(*) as cnt "
-            "FROM events WHERE tree_id = ? AND event_type = 'NodeContentEdited' "
+            "FROM events WHERE rhizome_id = ? AND event_type = 'NodeContentEdited' "
             "GROUP BY json_extract(payload, '$.node_id')",
-            (tree_id,),
+            (rhizome_id,),
         )
         edit_counts = {r["node_id"]: r["cnt"] for r in edit_rows}
 
-        return self._tree_detail_from_row(
-            tree, nodes,
+        return self._rhizome_detail_from_row(
+            rhizome, nodes,
             annotation_counts=annotation_counts,
             note_counts=note_counts,
             bookmark_node_ids=bookmark_node_ids,
@@ -221,19 +221,19 @@ class TreeService:
             edit_counts=edit_counts,
         )
 
-    async def list_trees(self, include_archived: bool = False) -> list[TreeSummary]:
-        """List trees, optionally including archived ones."""
+    async def list_rhizomes(self, include_archived: bool = False) -> list[RhizomeSummary]:
+        """List rhizomes, optionally including archived ones."""
         condition = "" if include_archived else "WHERE archived = 0"
         rows = await self._db.fetchall(
-            f"SELECT tree_id, title, metadata, conversation_mode, "
+            f"SELECT rhizome_id, title, metadata, conversation_mode, "
             f"created_at, updated_at, archived "
-            f"FROM trees {condition} ORDER BY created_at DESC"
+            f"FROM rhizomes {condition} ORDER BY created_at DESC"
         )
         results = []
         for row in rows:
             meta = parse_json_field(row["metadata"]) or {}
-            results.append(TreeSummary(
-                tree_id=row["tree_id"],
+            results.append(RhizomeSummary(
+                rhizome_id=row["rhizome_id"],
                 title=row["title"],
                 conversation_mode=row["conversation_mode"],
                 created_at=row["created_at"],
@@ -244,68 +244,68 @@ class TreeService:
             ))
         return results
 
-    async def archive_tree(
-        self, tree_id: str, reason: str | None = None,
-    ) -> TreeDetailResponse:
-        """Archive a tree. Emits TreeArchived, projects, returns detail."""
-        tree = await self._projector.get_tree(tree_id)
-        if tree is None:
-            raise TreeNotFoundError(tree_id)
+    async def archive_rhizome(
+        self, rhizome_id: str, reason: str | None = None,
+    ) -> RhizomeDetailResponse:
+        """Archive a rhizome. Emits RhizomeArchived, projects, returns detail."""
+        rhizome = await self._projector.get_rhizome(rhizome_id)
+        if rhizome is None:
+            raise RhizomeNotFoundError(rhizome_id)
 
         now = datetime.now(UTC)
-        payload = TreeArchivedPayload(reason=reason)
+        payload = RhizomeArchivedPayload(reason=reason)
         event = EventEnvelope(
             event_id=str(uuid4()),
-            tree_id=tree_id,
+            rhizome_id=rhizome_id,
             timestamp=now,
             device_id="local",
-            event_type="TreeArchived",
+            event_type="RhizomeArchived",
             payload=payload.model_dump(),
         )
 
         await self._store.append(event)
         await self._projector.project([event])
 
-        updated = await self._projector.get_tree(tree_id)
+        updated = await self._projector.get_rhizome(rhizome_id)
         assert updated is not None
-        nodes = await self._projector.get_nodes(tree_id)
-        return self._tree_detail_from_row(updated, nodes)
+        nodes = await self._projector.get_nodes(rhizome_id)
+        return self._rhizome_detail_from_row(updated, nodes)
 
-    async def unarchive_tree(self, tree_id: str) -> TreeDetailResponse:
-        """Unarchive a tree. Emits TreeUnarchived, projects, returns detail."""
-        tree = await self._projector.get_tree(tree_id)
-        if tree is None:
-            raise TreeNotFoundError(tree_id)
+    async def unarchive_rhizome(self, rhizome_id: str) -> RhizomeDetailResponse:
+        """Unarchive a rhizome. Emits RhizomeUnarchived, projects, returns detail."""
+        rhizome = await self._projector.get_rhizome(rhizome_id)
+        if rhizome is None:
+            raise RhizomeNotFoundError(rhizome_id)
 
         now = datetime.now(UTC)
-        payload = TreeUnarchivedPayload()
+        payload = RhizomeUnarchivedPayload()
         event = EventEnvelope(
             event_id=str(uuid4()),
-            tree_id=tree_id,
+            rhizome_id=rhizome_id,
             timestamp=now,
             device_id="local",
-            event_type="TreeUnarchived",
+            event_type="RhizomeUnarchived",
             payload=payload.model_dump(),
         )
 
         await self._store.append(event)
         await self._projector.project([event])
 
-        updated = await self._projector.get_tree(tree_id)
+        updated = await self._projector.get_rhizome(rhizome_id)
         assert updated is not None
-        nodes = await self._projector.get_nodes(tree_id)
-        return self._tree_detail_from_row(updated, nodes)
+        nodes = await self._projector.get_nodes(rhizome_id)
+        return self._rhizome_detail_from_row(updated, nodes)
 
     async def create_node(
-        self, tree_id: str, request: CreateNodeRequest
+        self, rhizome_id: str, request: CreateNodeRequest
     ) -> NodeResponse:
-        """Add a user message to a tree. Validates tree exists and parent_id is valid."""
-        tree = await self._projector.get_tree(tree_id)
-        if tree is None:
-            raise TreeNotFoundError(tree_id)
+        """Add a user message to a rhizome. Validates rhizome exists and parent_id is valid."""
+        rhizome = await self._projector.get_rhizome(rhizome_id)
+        if rhizome is None:
+            raise RhizomeNotFoundError(rhizome_id)
 
         if request.parent_id is not None:
-            nodes = await self._projector.get_nodes(tree_id)
+            nodes = await self._projector.get_nodes(rhizome_id)
             node_ids = {n["node_id"] for n in nodes}
             if request.parent_id not in node_ids:
                 raise InvalidParentError(request.parent_id)
@@ -323,7 +323,7 @@ class TreeService:
 
         event = EventEnvelope(
             event_id=str(uuid4()),
-            tree_id=tree_id,
+            rhizome_id=rhizome_id,
             timestamp=now,
             device_id="local",
             event_type="NodeCreated",
@@ -334,23 +334,23 @@ class TreeService:
         await self._projector.project([event])
 
         # Read back the projected node with sibling info
-        nodes = await self._projector.get_nodes(tree_id)
+        nodes = await self._projector.get_nodes(rhizome_id)
         sibling_info = self._compute_sibling_info(nodes)
         node_row = next(n for n in nodes if n["node_id"] == node_id)
         return self._node_from_row(node_row, sibling_info=sibling_info)
 
     async def edit_node_content(
-        self, tree_id: str, node_id: str, edited_content: str | None,
+        self, rhizome_id: str, node_id: str, edited_content: str | None,
     ) -> NodeResponse:
         """Edit a node's content overlay. Emits NodeContentEdited event.
 
         Normalization: empty string -> None, same-as-original -> None.
         """
-        tree = await self._projector.get_tree(tree_id)
-        if tree is None:
-            raise TreeNotFoundError(tree_id)
+        rhizome = await self._projector.get_rhizome(rhizome_id)
+        if rhizome is None:
+            raise RhizomeNotFoundError(rhizome_id)
 
-        nodes = await self._projector.get_nodes(tree_id)
+        nodes = await self._projector.get_nodes(rhizome_id)
         node_row = next((n for n in nodes if n["node_id"] == node_id), None)
         if node_row is None:
             raise NodeNotFoundError(node_id)
@@ -371,7 +371,7 @@ class TreeService:
         )
         event = EventEnvelope(
             event_id=str(uuid4()),
-            tree_id=tree_id,
+            rhizome_id=rhizome_id,
             timestamp=now,
             device_id="local",
             event_type="NodeContentEdited",
@@ -382,25 +382,25 @@ class TreeService:
         await self._projector.project([event])
 
         # Read back with sibling info
-        nodes = await self._projector.get_nodes(tree_id)
+        nodes = await self._projector.get_nodes(rhizome_id)
         sibling_info = self._compute_sibling_info(nodes)
         updated_row = next(n for n in nodes if n["node_id"] == node_id)
         return self._node_from_row(updated_row, sibling_info=sibling_info)
 
     async def get_edit_history(
-        self, tree_id: str, node_id: str,
+        self, rhizome_id: str, node_id: str,
     ) -> EditHistoryResponse:
         """Get the edit history for a node from the event log."""
-        tree = await self._projector.get_tree(tree_id)
-        if tree is None:
-            raise TreeNotFoundError(tree_id)
+        rhizome = await self._projector.get_rhizome(rhizome_id)
+        if rhizome is None:
+            raise RhizomeNotFoundError(rhizome_id)
 
-        nodes = await self._projector.get_nodes(tree_id)
+        nodes = await self._projector.get_nodes(rhizome_id)
         node_row = next((n for n in nodes if n["node_id"] == node_id), None)
         if node_row is None:
             raise NodeNotFoundError(node_id)
 
-        events = await self._store.get_events_by_type(tree_id, "NodeContentEdited")
+        events = await self._store.get_events_by_type(rhizome_id, "NodeContentEdited")
         entries = [
             EditHistoryEntry(
                 event_id=ev.event_id,
@@ -422,18 +422,18 @@ class TreeService:
         )
 
     async def get_intervention_timeline(
-        self, tree_id: str,
+        self, rhizome_id: str,
     ) -> InterventionTimelineResponse:
-        """Get all interventions (edits + system prompt changes) for a tree."""
-        tree = await self._projector.get_tree(tree_id)
-        if tree is None:
-            raise TreeNotFoundError(tree_id)
+        """Get all interventions (edits + system prompt changes) for a rhizome."""
+        rhizome = await self._projector.get_rhizome(rhizome_id)
+        if rhizome is None:
+            raise RhizomeNotFoundError(rhizome_id)
 
         # Fetch edit events
-        edit_events = await self._store.get_events_by_type(tree_id, "NodeContentEdited")
+        edit_events = await self._store.get_events_by_type(rhizome_id, "NodeContentEdited")
 
         # Fetch metadata events, filter for system prompt only
-        metadata_events = await self._store.get_events_by_type(tree_id, "TreeMetadataUpdated")
+        metadata_events = await self._store.get_events_by_type(rhizome_id, "RhizomeMetadataUpdated")
         system_prompt_events = [
             ev for ev in metadata_events
             if ev.payload.get("field") == "default_system_prompt"
@@ -466,19 +466,19 @@ class TreeService:
         # Sort by sequence_num
         entries.sort(key=lambda e: e.sequence_num)
 
-        return InterventionTimelineResponse(tree_id=tree_id, interventions=entries)
+        return InterventionTimelineResponse(rhizome_id=rhizome_id, interventions=entries)
 
     # -- Annotation methods --
 
     async def add_annotation(
-        self, tree_id: str, node_id: str, request: AddAnnotationRequest,
+        self, rhizome_id: str, node_id: str, request: AddAnnotationRequest,
     ) -> AnnotationResponse:
         """Add an annotation to a node. Emits AnnotationAdded, projects, returns it."""
-        tree = await self._projector.get_tree(tree_id)
-        if tree is None:
-            raise TreeNotFoundError(tree_id)
+        rhizome = await self._projector.get_rhizome(rhizome_id)
+        if rhizome is None:
+            raise RhizomeNotFoundError(rhizome_id)
 
-        nodes = await self._projector.get_nodes(tree_id)
+        nodes = await self._projector.get_nodes(rhizome_id)
         if not any(n["node_id"] == node_id for n in nodes):
             raise NodeNotFoundError(node_id)
 
@@ -494,7 +494,7 @@ class TreeService:
         )
         event = EventEnvelope(
             event_id=str(uuid4()),
-            tree_id=tree_id,
+            rhizome_id=rhizome_id,
             timestamp=now,
             device_id="local",
             event_type="AnnotationAdded",
@@ -512,12 +512,12 @@ class TreeService:
         return self._annotation_from_row(row)
 
     async def remove_annotation(
-        self, tree_id: str, annotation_id: str, reason: str | None = None,
+        self, rhizome_id: str, annotation_id: str, reason: str | None = None,
     ) -> None:
         """Remove an annotation. Emits AnnotationRemoved, projects."""
         row = await self._db.fetchone(
-            "SELECT * FROM annotations WHERE annotation_id = ? AND tree_id = ?",
-            (annotation_id, tree_id),
+            "SELECT * FROM annotations WHERE annotation_id = ? AND rhizome_id = ?",
+            (annotation_id, rhizome_id),
         )
         if row is None:
             raise AnnotationNotFoundError(annotation_id)
@@ -529,7 +529,7 @@ class TreeService:
         )
         event = EventEnvelope(
             event_id=str(uuid4()),
-            tree_id=tree_id,
+            rhizome_id=rhizome_id,
             timestamp=now,
             device_id="local",
             event_type="AnnotationRemoved",
@@ -540,20 +540,20 @@ class TreeService:
         await self._projector.project([event])
 
     async def get_node_annotations(
-        self, tree_id: str, node_id: str,
+        self, rhizome_id: str, node_id: str,
     ) -> list[AnnotationResponse]:
         """Get all annotations for a node, sorted by created_at."""
         rows = await self._db.fetchall(
-            "SELECT * FROM annotations WHERE node_id = ? AND tree_id = ? ORDER BY created_at",
-            (node_id, tree_id),
+            "SELECT * FROM annotations WHERE node_id = ? AND rhizome_id = ? ORDER BY created_at",
+            (node_id, rhizome_id),
         )
         return [self._annotation_from_row(r) for r in rows]
 
-    async def get_tree_taxonomy(self, tree_id: str) -> TaxonomyResponse:
-        """Get base tags + used tags for a tree."""
-        tree = await self._projector.get_tree(tree_id)
-        if tree is None:
-            raise TreeNotFoundError(tree_id)
+    async def get_rhizome_taxonomy(self, rhizome_id: str) -> TaxonomyResponse:
+        """Get base tags + used tags for a rhizome."""
+        rhizome = await self._projector.get_rhizome(rhizome_id)
+        if rhizome is None:
+            raise RhizomeNotFoundError(rhizome_id)
 
         # Load base tags
         base_tags: list[str] = []
@@ -564,8 +564,8 @@ class TreeService:
 
         # Get used tags
         rows = await self._db.fetchall(
-            "SELECT DISTINCT tag FROM annotations WHERE tree_id = ?",
-            (tree_id,),
+            "SELECT DISTINCT tag FROM annotations WHERE rhizome_id = ?",
+            (rhizome_id,),
         )
         used_tags = [r["tag"] for r in rows]
 
@@ -574,14 +574,14 @@ class TreeService:
     # -- Note methods --
 
     async def add_note(
-        self, tree_id: str, node_id: str, request: CreateNoteRequest,
+        self, rhizome_id: str, node_id: str, request: CreateNoteRequest,
     ) -> NoteResponse:
         """Add a note to a node. Emits NoteAdded, projects, returns it."""
-        tree = await self._projector.get_tree(tree_id)
-        if tree is None:
-            raise TreeNotFoundError(tree_id)
+        rhizome = await self._projector.get_rhizome(rhizome_id)
+        if rhizome is None:
+            raise RhizomeNotFoundError(rhizome_id)
 
-        nodes = await self._projector.get_nodes(tree_id)
+        nodes = await self._projector.get_nodes(rhizome_id)
         if not any(n["node_id"] == node_id for n in nodes):
             raise NodeNotFoundError(node_id)
 
@@ -595,7 +595,7 @@ class TreeService:
         )
         event = EventEnvelope(
             event_id=str(uuid4()),
-            tree_id=tree_id,
+            rhizome_id=rhizome_id,
             timestamp=now,
             device_id="local",
             event_type="NoteAdded",
@@ -613,12 +613,12 @@ class TreeService:
         return self._note_from_row(row)
 
     async def remove_note(
-        self, tree_id: str, note_id: str,
+        self, rhizome_id: str, note_id: str,
     ) -> None:
         """Remove a note. Emits NoteRemoved, projects."""
         row = await self._db.fetchone(
-            "SELECT * FROM notes WHERE note_id = ? AND tree_id = ?",
-            (note_id, tree_id),
+            "SELECT * FROM notes WHERE note_id = ? AND rhizome_id = ?",
+            (note_id, rhizome_id),
         )
         if row is None:
             raise NoteNotFoundError(note_id)
@@ -627,7 +627,7 @@ class TreeService:
         payload = NoteRemovedPayload(note_id=note_id)
         event = EventEnvelope(
             event_id=str(uuid4()),
-            tree_id=tree_id,
+            rhizome_id=rhizome_id,
             timestamp=now,
             device_id="local",
             event_type="NoteRemoved",
@@ -638,53 +638,53 @@ class TreeService:
         await self._projector.project([event])
 
     async def get_node_notes(
-        self, tree_id: str, node_id: str,
+        self, rhizome_id: str, node_id: str,
     ) -> list[NoteResponse]:
         """Get all notes for a node, sorted by created_at."""
         rows = await self._db.fetchall(
-            "SELECT * FROM notes WHERE node_id = ? AND tree_id = ? ORDER BY created_at",
-            (node_id, tree_id),
+            "SELECT * FROM notes WHERE node_id = ? AND rhizome_id = ? ORDER BY created_at",
+            (node_id, rhizome_id),
         )
         return [self._note_from_row(r) for r in rows]
 
-    async def get_tree_notes(
-        self, tree_id: str, query: str | None = None,
+    async def get_rhizome_notes(
+        self, rhizome_id: str, query: str | None = None,
     ) -> list[NoteResponse]:
-        """Get notes for a tree, optionally filtered by content search."""
+        """Get notes for a rhizome, optionally filtered by content search."""
         if query:
             like = f"%{query}%"
             rows = await self._db.fetchall(
-                "SELECT * FROM notes WHERE tree_id = ? AND content LIKE ? ORDER BY created_at",
-                (tree_id, like),
+                "SELECT * FROM notes WHERE rhizome_id = ? AND content LIKE ? ORDER BY created_at",
+                (rhizome_id, like),
             )
         else:
             rows = await self._db.fetchall(
-                "SELECT * FROM notes WHERE tree_id = ? ORDER BY created_at",
-                (tree_id,),
+                "SELECT * FROM notes WHERE rhizome_id = ? ORDER BY created_at",
+                (rhizome_id,),
             )
         return [self._note_from_row(r) for r in rows]
 
-    async def get_tree_annotations(
-        self, tree_id: str,
+    async def get_rhizome_annotations(
+        self, rhizome_id: str,
     ) -> list[AnnotationResponse]:
-        """Get all annotations for a tree, sorted by created_at."""
+        """Get all annotations for a rhizome, sorted by created_at."""
         rows = await self._db.fetchall(
-            "SELECT * FROM annotations WHERE tree_id = ? ORDER BY created_at",
-            (tree_id,),
+            "SELECT * FROM annotations WHERE rhizome_id = ? ORDER BY created_at",
+            (rhizome_id,),
         )
         return [self._annotation_from_row(r) for r in rows]
 
     # -- Bookmark methods --
 
     async def add_bookmark(
-        self, tree_id: str, node_id: str, request: CreateBookmarkRequest,
+        self, rhizome_id: str, node_id: str, request: CreateBookmarkRequest,
     ) -> BookmarkResponse:
         """Add a bookmark to a node. Emits BookmarkCreated, projects, returns it."""
-        tree = await self._projector.get_tree(tree_id)
-        if tree is None:
-            raise TreeNotFoundError(tree_id)
+        rhizome = await self._projector.get_rhizome(rhizome_id)
+        if rhizome is None:
+            raise RhizomeNotFoundError(rhizome_id)
 
-        nodes = await self._projector.get_nodes(tree_id)
+        nodes = await self._projector.get_nodes(rhizome_id)
         if not any(n["node_id"] == node_id for n in nodes):
             raise NodeNotFoundError(node_id)
 
@@ -699,7 +699,7 @@ class TreeService:
         )
         event = EventEnvelope(
             event_id=str(uuid4()),
-            tree_id=tree_id,
+            rhizome_id=rhizome_id,
             timestamp=now,
             device_id="local",
             event_type="BookmarkCreated",
@@ -717,12 +717,12 @@ class TreeService:
         return self._bookmark_from_row(row)
 
     async def remove_bookmark(
-        self, tree_id: str, bookmark_id: str,
+        self, rhizome_id: str, bookmark_id: str,
     ) -> None:
         """Remove a bookmark. Emits BookmarkRemoved, projects."""
         row = await self._db.fetchone(
-            "SELECT * FROM bookmarks WHERE bookmark_id = ? AND tree_id = ?",
-            (bookmark_id, tree_id),
+            "SELECT * FROM bookmarks WHERE bookmark_id = ? AND rhizome_id = ?",
+            (bookmark_id, rhizome_id),
         )
         if row is None:
             raise BookmarkNotFoundError(bookmark_id)
@@ -731,7 +731,7 @@ class TreeService:
         payload = BookmarkRemovedPayload(bookmark_id=bookmark_id)
         event = EventEnvelope(
             event_id=str(uuid4()),
-            tree_id=tree_id,
+            rhizome_id=rhizome_id,
             timestamp=now,
             device_id="local",
             event_type="BookmarkRemoved",
@@ -741,24 +741,24 @@ class TreeService:
         await self._store.append(event)
         await self._projector.project([event])
 
-    async def get_tree_bookmarks(
-        self, tree_id: str, query: str | None = None,
+    async def get_rhizome_bookmarks(
+        self, rhizome_id: str, query: str | None = None,
     ) -> list[BookmarkResponse]:
-        """Get bookmarks for a tree, optionally filtered by search query."""
+        """Get bookmarks for a rhizome, optionally filtered by search query."""
         if query:
             like = f"%{query}%"
             rows = await self._db.fetchall(
                 """
                 SELECT * FROM bookmarks
-                WHERE tree_id = ? AND (label LIKE ? OR summary LIKE ? OR notes LIKE ?)
+                WHERE rhizome_id = ? AND (label LIKE ? OR summary LIKE ? OR notes LIKE ?)
                 ORDER BY created_at
                 """,
-                (tree_id, like, like, like),
+                (rhizome_id, like, like, like),
             )
         else:
             rows = await self._db.fetchall(
-                "SELECT * FROM bookmarks WHERE tree_id = ? ORDER BY created_at",
-                (tree_id,),
+                "SELECT * FROM bookmarks WHERE rhizome_id = ? ORDER BY created_at",
+                (rhizome_id,),
             )
         return [self._bookmark_from_row(r) for r in rows]
 
@@ -795,9 +795,9 @@ class TreeService:
         )
         return response.content[0].text, response.model
 
-    def _resolve_summary_model(self, tree: dict) -> str:
-        """Resolve the summary model from tree metadata, falling back to default."""
-        metadata = parse_json_field(tree.get("metadata")) or {}
+    def _resolve_summary_model(self, rhizome: dict) -> str:
+        """Resolve the summary model from rhizome metadata, falling back to default."""
+        metadata = parse_json_field(rhizome.get("metadata")) or {}
         eviction_raw = metadata.get("eviction_strategy")
         if isinstance(eviction_raw, dict) and "summary_model" in eviction_raw:
             return eviction_raw["summary_model"]
@@ -835,26 +835,26 @@ class TreeService:
     # -- Bookmark summary --
 
     async def generate_bookmark_summary(
-        self, tree_id: str, bookmark_id: str,
+        self, rhizome_id: str, bookmark_id: str,
     ) -> BookmarkResponse:
         """Generate a summary for a bookmark's branch (root -> bookmarked node)."""
         if self._summary_client is None:
             raise SummaryClientNotConfiguredError()
 
-        tree = await self._projector.get_tree(tree_id)
-        if tree is None:
-            raise TreeNotFoundError(tree_id)
+        rhizome = await self._projector.get_rhizome(rhizome_id)
+        if rhizome is None:
+            raise RhizomeNotFoundError(rhizome_id)
 
-        summary_model = self._resolve_summary_model(tree)
+        summary_model = self._resolve_summary_model(rhizome)
 
         bm_row = await self._db.fetchone(
-            "SELECT * FROM bookmarks WHERE bookmark_id = ? AND tree_id = ?",
-            (bookmark_id, tree_id),
+            "SELECT * FROM bookmarks WHERE bookmark_id = ? AND rhizome_id = ?",
+            (bookmark_id, rhizome_id),
         )
         if bm_row is None:
             raise BookmarkNotFoundError(bookmark_id)
 
-        nodes = await self._projector.get_nodes(tree_id)
+        nodes = await self._projector.get_nodes(rhizome_id)
         node_map = {n["node_id"]: n for n in nodes}
 
         path = self._walk_branch(node_map, bm_row["node_id"])
@@ -882,7 +882,7 @@ class TreeService:
         )
         event = EventEnvelope(
             event_id=str(uuid4()),
-            tree_id=tree_id,
+            rhizome_id=rhizome_id,
             timestamp=now,
             device_id="local",
             event_type="BookmarkSummaryGenerated",
@@ -927,7 +927,7 @@ class TreeService:
 
     async def generate_summary(
         self,
-        tree_id: str,
+        rhizome_id: str,
         anchor_node_id: str,
         req: CreateSummaryRequest,
     ) -> SummaryResponse:
@@ -935,16 +935,16 @@ class TreeService:
         if self._summary_client is None:
             raise SummaryClientNotConfiguredError()
 
-        tree = await self._projector.get_tree(tree_id)
-        if tree is None:
-            raise TreeNotFoundError(tree_id)
+        rhizome = await self._projector.get_rhizome(rhizome_id)
+        if rhizome is None:
+            raise RhizomeNotFoundError(rhizome_id)
 
-        nodes = await self._projector.get_nodes(tree_id)
+        nodes = await self._projector.get_nodes(rhizome_id)
         node_map = {n["node_id"]: n for n in nodes}
         if anchor_node_id not in node_map:
             raise NodeNotFoundError(anchor_node_id)
 
-        summary_model = self._resolve_summary_model(tree)
+        summary_model = self._resolve_summary_model(rhizome)
 
         # Collect nodes based on scope
         if req.scope == "subtree":
@@ -980,7 +980,7 @@ class TreeService:
         )
         event = EventEnvelope(
             event_id=str(uuid4()),
-            tree_id=tree_id,
+            rhizome_id=rhizome_id,
             timestamp=now,
             device_id="summary",
             event_type="SummaryGenerated",
@@ -995,19 +995,19 @@ class TreeService:
             ),
         )
 
-    async def list_summaries(self, tree_id: str) -> list[SummaryResponse]:
-        """List all summaries for a tree."""
+    async def list_summaries(self, rhizome_id: str) -> list[SummaryResponse]:
+        """List all summaries for a rhizome."""
         rows = await self._db.fetchall(
-            "SELECT * FROM summaries WHERE tree_id = ? ORDER BY created_at DESC",
-            (tree_id,),
+            "SELECT * FROM summaries WHERE rhizome_id = ? ORDER BY created_at DESC",
+            (rhizome_id,),
         )
         return [self._summary_from_row(r) for r in rows]
 
-    async def remove_summary(self, tree_id: str, summary_id: str) -> None:
+    async def remove_summary(self, rhizome_id: str, summary_id: str) -> None:
         """Remove a summary by emitting a SummaryRemoved event."""
         row = await self._db.fetchone(
-            "SELECT * FROM summaries WHERE summary_id = ? AND tree_id = ?",
-            (summary_id, tree_id),
+            "SELECT * FROM summaries WHERE summary_id = ? AND rhizome_id = ?",
+            (summary_id, rhizome_id),
         )
         if row is None:
             raise SummaryNotFoundError(summary_id)
@@ -1015,7 +1015,7 @@ class TreeService:
         payload = SummaryRemovedPayload(summary_id=summary_id)
         event = EventEnvelope(
             event_id=str(uuid4()),
-            tree_id=tree_id,
+            rhizome_id=rhizome_id,
             timestamp=datetime.now(UTC),
             device_id="local",
             event_type="SummaryRemoved",
@@ -1032,7 +1032,7 @@ class TreeService:
         node_ids = json_mod.loads(raw_ids) if isinstance(raw_ids, str) else (raw_ids or [])
         return SummaryResponse(
             summary_id=row["summary_id"],
-            tree_id=row["tree_id"],
+            rhizome_id=row["rhizome_id"],
             anchor_node_id=row["anchor_node_id"],
             scope=row["scope"],
             summary_type=row["summary_type"],
@@ -1074,14 +1074,14 @@ class TreeService:
     # -- Context exclusion methods --
 
     async def exclude_node(
-        self, tree_id: str, node_id: str, request: ExcludeNodeRequest,
+        self, rhizome_id: str, node_id: str, request: ExcludeNodeRequest,
     ) -> NodeExclusionResponse:
         """Exclude a node from context on a specific branch path."""
-        tree = await self._projector.get_tree(tree_id)
-        if tree is None:
-            raise TreeNotFoundError(tree_id)
+        rhizome = await self._projector.get_rhizome(rhizome_id)
+        if rhizome is None:
+            raise RhizomeNotFoundError(rhizome_id)
 
-        nodes = await self._projector.get_nodes(tree_id)
+        nodes = await self._projector.get_nodes(rhizome_id)
         node_ids = {n["node_id"] for n in nodes}
         if node_id not in node_ids:
             raise NodeNotFoundError(node_id)
@@ -1096,7 +1096,7 @@ class TreeService:
         )
         event = EventEnvelope(
             event_id=str(uuid4()),
-            tree_id=tree_id,
+            rhizome_id=rhizome_id,
             timestamp=now,
             device_id="local",
             event_type="NodeContextExcluded",
@@ -1107,7 +1107,7 @@ class TreeService:
         await self._projector.project([event])
 
         return NodeExclusionResponse(
-            tree_id=tree_id,
+            rhizome_id=rhizome_id,
             node_id=node_id,
             scope_node_id=request.scope_node_id,
             reason=request.reason,
@@ -1115,7 +1115,7 @@ class TreeService:
         )
 
     async def include_node(
-        self, tree_id: str, node_id: str, scope_node_id: str,
+        self, rhizome_id: str, node_id: str, scope_node_id: str,
     ) -> None:
         """Re-include a previously excluded node (idempotent)."""
         now = datetime.now(UTC)
@@ -1125,7 +1125,7 @@ class TreeService:
         )
         event = EventEnvelope(
             event_id=str(uuid4()),
-            tree_id=tree_id,
+            rhizome_id=rhizome_id,
             timestamp=now,
             device_id="local",
             event_type="NodeContextIncluded",
@@ -1135,17 +1135,17 @@ class TreeService:
         await self._store.append(event)
         await self._projector.project([event])
 
-    async def get_tree_exclusions(
-        self, tree_id: str,
+    async def get_rhizome_exclusions(
+        self, rhizome_id: str,
     ) -> list[NodeExclusionResponse]:
-        """Get all exclusions for a tree."""
+        """Get all exclusions for a rhizome."""
         rows = await self._db.fetchall(
-            "SELECT * FROM node_exclusions WHERE tree_id = ?",
-            (tree_id,),
+            "SELECT * FROM node_exclusions WHERE rhizome_id = ?",
+            (rhizome_id,),
         )
         return [
             NodeExclusionResponse(
-                tree_id=r["tree_id"],
+                rhizome_id=r["rhizome_id"],
                 node_id=r["node_id"],
                 scope_node_id=r["scope_node_id"],
                 reason=r["reason"],
@@ -1156,21 +1156,21 @@ class TreeService:
 
     # -- Anchor methods --
 
-    async def anchor_node(self, tree_id: str, node_id: str) -> bool:
+    async def anchor_node(self, rhizome_id: str, node_id: str) -> bool:
         """Toggle anchor on a node. Returns True if now anchored, False if unanchored."""
-        tree = await self._projector.get_tree(tree_id)
-        if tree is None:
-            raise TreeNotFoundError(tree_id)
+        rhizome = await self._projector.get_rhizome(rhizome_id)
+        if rhizome is None:
+            raise RhizomeNotFoundError(rhizome_id)
 
-        nodes = await self._projector.get_nodes(tree_id)
+        nodes = await self._projector.get_nodes(rhizome_id)
         node_ids = {n["node_id"] for n in nodes}
         if node_id not in node_ids:
             raise NodeNotFoundError(node_id)
 
         # Check current state
         row = await self._db.fetchone(
-            "SELECT * FROM node_anchors WHERE tree_id = ? AND node_id = ?",
-            (tree_id, node_id),
+            "SELECT * FROM node_anchors WHERE rhizome_id = ? AND node_id = ?",
+            (rhizome_id, node_id),
         )
         now = datetime.now(UTC)
 
@@ -1179,7 +1179,7 @@ class TreeService:
             payload = NodeUnanchoredPayload(node_id=node_id)
             event = EventEnvelope(
                 event_id=str(uuid4()),
-                tree_id=tree_id,
+                rhizome_id=rhizome_id,
                 timestamp=now,
                 device_id="local",
                 event_type="NodeUnanchored",
@@ -1193,7 +1193,7 @@ class TreeService:
             payload = NodeAnchoredPayload(node_id=node_id)
             event = EventEnvelope(
                 event_id=str(uuid4()),
-                tree_id=tree_id,
+                rhizome_id=rhizome_id,
                 timestamp=now,
                 device_id="local",
                 event_type="NodeAnchored",
@@ -1204,20 +1204,20 @@ class TreeService:
             return True
 
     async def bulk_anchor(
-        self, tree_id: str, node_ids: list[str], anchor: bool,
+        self, rhizome_id: str, node_ids: list[str], anchor: bool,
     ) -> int:
         """Anchor or unanchor multiple nodes. Returns count of nodes that changed state."""
-        tree = await self._projector.get_tree(tree_id)
-        if tree is None:
-            raise TreeNotFoundError(tree_id)
+        rhizome = await self._projector.get_rhizome(rhizome_id)
+        if rhizome is None:
+            raise RhizomeNotFoundError(rhizome_id)
 
-        nodes = await self._projector.get_nodes(tree_id)
+        nodes = await self._projector.get_nodes(rhizome_id)
         valid_ids = {n["node_id"] for n in nodes}
 
         # Get current anchor state for all requested nodes
         anchor_rows = await self._db.fetchall(
-            "SELECT DISTINCT node_id FROM node_anchors WHERE tree_id = ?",
-            (tree_id,),
+            "SELECT DISTINCT node_id FROM node_anchors WHERE rhizome_id = ?",
+            (rhizome_id,),
         )
         currently_anchored = {r["node_id"] for r in anchor_rows}
 
@@ -1232,7 +1232,7 @@ class TreeService:
                 payload = NodeAnchoredPayload(node_id=nid)
                 events.append(EventEnvelope(
                     event_id=str(uuid4()),
-                    tree_id=tree_id,
+                    rhizome_id=rhizome_id,
                     timestamp=now,
                     device_id="local",
                     event_type="NodeAnchored",
@@ -1242,7 +1242,7 @@ class TreeService:
                 payload = NodeUnanchoredPayload(node_id=nid)
                 events.append(EventEnvelope(
                     event_id=str(uuid4()),
-                    tree_id=tree_id,
+                    rhizome_id=rhizome_id,
                     timestamp=now,
                     device_id="local",
                     event_type="NodeUnanchored",
@@ -1259,17 +1259,17 @@ class TreeService:
     # -- Digression group methods --
 
     async def create_digression_group(
-        self, tree_id: str, request: CreateDigressionGroupRequest,
+        self, rhizome_id: str, request: CreateDigressionGroupRequest,
     ) -> DigressionGroupResponse:
         """Create a digression group. Validates nodes exist and are contiguous."""
-        tree = await self._projector.get_tree(tree_id)
-        if tree is None:
-            raise TreeNotFoundError(tree_id)
+        rhizome = await self._projector.get_rhizome(rhizome_id)
+        if rhizome is None:
+            raise RhizomeNotFoundError(rhizome_id)
 
-        nodes = await self._projector.get_nodes(tree_id)
+        nodes = await self._projector.get_nodes(rhizome_id)
         node_map = {n["node_id"]: n for n in nodes}
 
-        # Validate all nodes exist in this tree
+        # Validate all nodes exist in this rhizome
         for nid in request.node_ids:
             if nid not in node_map:
                 raise NodeNotFoundError(nid)
@@ -1294,7 +1294,7 @@ class TreeService:
         )
         event = EventEnvelope(
             event_id=str(uuid4()),
-            tree_id=tree_id,
+            rhizome_id=rhizome_id,
             timestamp=now,
             device_id="local",
             event_type="DigressionGroupCreated",
@@ -1306,7 +1306,7 @@ class TreeService:
 
         return DigressionGroupResponse(
             group_id=group_id,
-            tree_id=tree_id,
+            rhizome_id=rhizome_id,
             label=request.label,
             node_ids=request.node_ids,
             included=not request.excluded_by_default,
@@ -1314,14 +1314,14 @@ class TreeService:
         )
 
     async def get_digression_groups(
-        self, tree_id: str,
+        self, rhizome_id: str,
     ) -> list[DigressionGroupResponse]:
-        """Get all digression groups for a tree."""
-        groups = await self._projector.get_digression_groups(tree_id)
+        """Get all digression groups for a rhizome."""
+        groups = await self._projector.get_digression_groups(rhizome_id)
         return [
             DigressionGroupResponse(
                 group_id=g["group_id"],
-                tree_id=g["tree_id"],
+                rhizome_id=g["rhizome_id"],
                 label=g["label"],
                 node_ids=g["node_ids"],
                 included=bool(g["included"]),
@@ -1331,12 +1331,12 @@ class TreeService:
         ]
 
     async def toggle_digression_group(
-        self, tree_id: str, group_id: str, included: bool,
+        self, rhizome_id: str, group_id: str, included: bool,
     ) -> DigressionGroupResponse:
         """Toggle a digression group's included state."""
         row = await self._db.fetchone(
-            "SELECT * FROM digression_groups WHERE group_id = ? AND tree_id = ?",
-            (group_id, tree_id),
+            "SELECT * FROM digression_groups WHERE group_id = ? AND rhizome_id = ?",
+            (group_id, rhizome_id),
         )
         if row is None:
             raise DigressionGroupNotFoundError(group_id)
@@ -1348,7 +1348,7 @@ class TreeService:
         )
         event = EventEnvelope(
             event_id=str(uuid4()),
-            tree_id=tree_id,
+            rhizome_id=rhizome_id,
             timestamp=now,
             device_id="local",
             event_type="DigressionGroupToggled",
@@ -1359,11 +1359,11 @@ class TreeService:
         await self._projector.project([event])
 
         # Read back with member nodes
-        groups = await self._projector.get_digression_groups(tree_id)
+        groups = await self._projector.get_digression_groups(rhizome_id)
         group = next(g for g in groups if g["group_id"] == group_id)
         return DigressionGroupResponse(
             group_id=group["group_id"],
-            tree_id=group["tree_id"],
+            rhizome_id=group["rhizome_id"],
             label=group["label"],
             node_ids=group["node_ids"],
             included=bool(group["included"]),
@@ -1371,12 +1371,12 @@ class TreeService:
         )
 
     async def delete_digression_group(
-        self, tree_id: str, group_id: str,
+        self, rhizome_id: str, group_id: str,
     ) -> None:
         """Delete a digression group. Direct projection deletion (no event)."""
         row = await self._db.fetchone(
-            "SELECT * FROM digression_groups WHERE group_id = ? AND tree_id = ?",
-            (group_id, tree_id),
+            "SELECT * FROM digression_groups WHERE group_id = ? AND rhizome_id = ?",
+            (group_id, rhizome_id),
         )
         if row is None:
             raise DigressionGroupNotFoundError(group_id)
@@ -1396,7 +1396,7 @@ class TreeService:
         summarized = parse_json_or_none(row["summarized_node_ids"])
         return BookmarkResponse(
             bookmark_id=row["bookmark_id"],
-            tree_id=row["tree_id"],
+            rhizome_id=row["rhizome_id"],
             node_id=row["node_id"],
             label=row["label"],
             notes=row["notes"],
@@ -1411,7 +1411,7 @@ class TreeService:
         """Convert a projected note row to a response."""
         return NoteResponse(
             note_id=row["note_id"],
-            tree_id=row["tree_id"],
+            rhizome_id=row["rhizome_id"],
             node_id=row["node_id"],
             content=row["content"],
             created_at=row["created_at"],
@@ -1423,7 +1423,7 @@ class TreeService:
         value = parse_json_or_none(row["value"])
         return AnnotationResponse(
             annotation_id=row["annotation_id"],
-            tree_id=row["tree_id"],
+            rhizome_id=row["rhizome_id"],
             node_id=row["node_id"],
             tag=row["tag"],
             value=value,
@@ -1452,7 +1452,7 @@ class TreeService:
         return result
 
     @staticmethod
-    def _tree_detail_from_row(
+    def _rhizome_detail_from_row(
         row: dict,
         node_rows: list[dict],
         *,
@@ -1462,11 +1462,11 @@ class TreeService:
         excluded_node_ids: set[str] | None = None,
         anchored_node_ids: set[str] | None = None,
         edit_counts: dict[str, int] | None = None,
-    ) -> TreeDetailResponse:
-        """Convert a projected tree row + node rows to a response."""
-        sibling_info = TreeService._compute_sibling_info(node_rows)
-        return TreeDetailResponse(
-            tree_id=row["tree_id"],
+    ) -> RhizomeDetailResponse:
+        """Convert a projected rhizome row + node rows to a response."""
+        sibling_info = RhizomeService._compute_sibling_info(node_rows)
+        return RhizomeDetailResponse(
+            rhizome_id=row["rhizome_id"],
             title=row["title"],
             metadata=parse_json_field(row["metadata"]) or {},
             default_model=row["default_model"],
@@ -1478,7 +1478,7 @@ class TreeService:
             updated_at=row["updated_at"],
             archived=row["archived"],
             nodes=[
-                TreeService._node_from_row(
+                RhizomeService._node_from_row(
                     n,
                     sibling_info=sibling_info,
                     annotation_counts=annotation_counts,
@@ -1535,7 +1535,7 @@ class TreeService:
 
         return NodeResponse(
             node_id=row["node_id"],
-            tree_id=row["tree_id"],
+            rhizome_id=row["rhizome_id"],
             parent_id=row["parent_id"],
             role=row["role"],
             content=row["content"],
@@ -1570,10 +1570,10 @@ class TreeService:
         )
 
 
-class TreeNotFoundError(Exception):
-    def __init__(self, tree_id: str) -> None:
-        self.tree_id = tree_id
-        super().__init__(f"Tree not found: {tree_id}")
+class RhizomeNotFoundError(Exception):
+    def __init__(self, rhizome_id: str) -> None:
+        self.rhizome_id = rhizome_id
+        super().__init__(f"Rhizome not found: {rhizome_id}")
 
 
 class NodeNotFoundError(Exception):

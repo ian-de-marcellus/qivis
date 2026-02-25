@@ -2,7 +2,7 @@
 
 import aiosqlite
 
-from qivis.db.schema import SCHEMA_SQL, run_migrations
+from qivis.db.schema import INDEX_SQL, TABLES_SQL, run_migrations
 
 
 class Database:
@@ -24,10 +24,34 @@ class Database:
         return db
 
     async def _ensure_schema(self) -> None:
-        """Create tables if they don't exist. Idempotent."""
-        await self._conn.executescript(SCHEMA_SQL)
+        """Create tables if they don't exist. Idempotent.
+
+        Handles three database states:
+        1. Fresh DB: TABLES_SQL creates everything, migrations no-op, INDEX_SQL
+        2. Existing DB (pre-rename): migrations rename tree→rhizome first,
+           then TABLES_SQL no-ops (tables already exist), then INDEX_SQL
+        3. Existing DB (post-rename): everything no-ops
+
+        Migrations must run before TABLES_SQL on pre-rename DBs, otherwise
+        TABLES_SQL creates an empty 'rhizomes' table that blocks the rename.
+        """
+        # Check if this is a pre-rename database (old 'trees' table exists)
+        cursor = await self._conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='trees'"
+        )
+        if await cursor.fetchone():
+            # Old DB: run migrations first to rename tables/columns.
+            # If a previous failed startup already created an empty 'rhizomes'
+            # table via TABLES_SQL, drop it so the rename migration can proceed.
+            await self._conn.execute("DROP TABLE IF EXISTS rhizomes")
+            await self._conn.commit()
+            await run_migrations(self)
+
+        await self._conn.executescript(TABLES_SQL)
         await self._conn.commit()
-        await run_migrations(self)
+        await run_migrations(self)  # idempotent — skips already-applied
+        await self._conn.executescript(INDEX_SQL)
+        await self._conn.commit()
 
     async def execute(self, sql: str, params: tuple | None = None) -> aiosqlite.Cursor:
         """Execute a single SQL statement."""

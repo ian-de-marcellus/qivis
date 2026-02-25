@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { CreateSummaryRequest, SummaryResponse } from '../../api/types.ts'
-import { useTreeStore } from '../../store/treeStore.ts'
+import { useRhizomeStore } from '../../store/rhizomeStore.ts'
 import './SummarizePanel.css'
 
 type Scope = 'branch' | 'subtree'
@@ -19,7 +19,7 @@ export function SummarizePanel({ nodeId, onClose }: SummarizePanelProps) {
   const [result, setResult] = useState<SummaryResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  const generateSummary = useTreeStore(s => s.generateSummary)
+  const generateSummary = useRhizomeStore(s => s.generateSummary)
 
   const handleGenerate = async () => {
     setGenerating(true)

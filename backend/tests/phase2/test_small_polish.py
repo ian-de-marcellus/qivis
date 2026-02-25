@@ -11,9 +11,9 @@ import pytest
 
 from qivis.generation.context import ContextBuilder
 from tests.fixtures import (
-    create_test_tree,
-    make_tree_created_envelope,
-    make_tree_metadata_updated_envelope,
+    create_test_rhizome,
+    make_rhizome_created_envelope,
+    make_rhizome_metadata_updated_envelope,
 )
 
 
@@ -146,15 +146,15 @@ class TestContextTimestamps:
 
 
 class TestMetadataPatch:
-    """PATCH /api/trees/{id} supports metadata field."""
+    """PATCH /api/rhizomes/{id} supports metadata field."""
 
     async def test_patch_metadata_sets_value(self, client):
         """PATCH with metadata field updates tree metadata."""
-        tree = await create_test_tree(client)
-        tree_id = tree["tree_id"]
+        tree = await create_test_rhizome(client)
+        rhizome_id = tree["rhizome_id"]
 
         resp = await client.patch(
-            f"/api/trees/{tree_id}",
+            f"/api/rhizomes/{rhizome_id}",
             json={"metadata": {"include_timestamps": True}},
         )
         assert resp.status_code == 200
@@ -163,32 +163,32 @@ class TestMetadataPatch:
 
     async def test_patch_metadata_roundtrips(self, client):
         """Metadata set via PATCH is visible on GET."""
-        tree = await create_test_tree(client)
-        tree_id = tree["tree_id"]
+        tree = await create_test_rhizome(client)
+        rhizome_id = tree["rhizome_id"]
 
         await client.patch(
-            f"/api/trees/{tree_id}",
+            f"/api/rhizomes/{rhizome_id}",
             json={"metadata": {"include_timestamps": True}},
         )
 
-        resp = await client.get(f"/api/trees/{tree_id}")
+        resp = await client.get(f"/api/rhizomes/{rhizome_id}")
         assert resp.status_code == 200
         data = resp.json()
         assert data["metadata"]["include_timestamps"] is True
 
     async def test_patch_metadata_preserves_other_fields(self, client):
         """PATCH metadata doesn't clobber other tree fields."""
-        tree = await create_test_tree(client)
-        tree_id = tree["tree_id"]
+        tree = await create_test_rhizome(client)
+        rhizome_id = tree["rhizome_id"]
 
         await client.patch(
-            f"/api/trees/{tree_id}",
+            f"/api/rhizomes/{rhizome_id}",
             json={"metadata": {"include_timestamps": True}},
         )
 
-        resp = await client.get(f"/api/trees/{tree_id}")
+        resp = await client.get(f"/api/rhizomes/{rhizome_id}")
         data = resp.json()
-        assert data["title"] == "Test Tree"
+        assert data["title"] == "Test Rhizome"
 
 
 class TestMetadataProjector:
@@ -196,9 +196,9 @@ class TestMetadataProjector:
 
     async def test_projector_updates_metadata(self, event_store, projector):
         """TreeMetadataUpdated for 'metadata' updates the projected tree."""
-        tree_event = make_tree_created_envelope()
-        update_event = make_tree_metadata_updated_envelope(
-            tree_id=tree_event.tree_id,
+        tree_event = make_rhizome_created_envelope()
+        update_event = make_rhizome_metadata_updated_envelope(
+            rhizome_id=tree_event.rhizome_id,
             field="metadata",
             old_value={},
             new_value={"include_timestamps": True},
@@ -208,7 +208,7 @@ class TestMetadataProjector:
         await event_store.append(update_event)
         await projector.project([tree_event, update_event])
 
-        tree = await projector.get_tree(tree_event.tree_id)
+        tree = await projector.get_rhizome(tree_event.rhizome_id)
         assert tree is not None
         metadata = json.loads(tree["metadata"])
         assert metadata["include_timestamps"] is True

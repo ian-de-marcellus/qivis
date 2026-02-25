@@ -1,9 +1,9 @@
 import { useDraggable } from '@dnd-kit/core'
-import type { TreeSummary } from '../../api/types.ts'
+import type { RhizomeSummary } from '../../api/types.ts'
 import { tagColor } from '../../utils/tagColor.ts'
 
 interface Props {
-  tree: TreeSummary
+  tree: RhizomeSummary
   isSelected: boolean
   showCheckboxes: boolean
   onSelect: (id: string, e: React.MouseEvent) => void
@@ -14,11 +14,11 @@ interface Props {
   onContextMenu: (e: React.MouseEvent, treeId: string) => void
 }
 
-export function DraggableTreeCard({
+export function DraggableRhizomeCard({
   tree, isSelected, showCheckboxes, onSelect, onClick, onRemoveFolder, onArchive, onUnarchive, onContextMenu,
 }: Props) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
-    id: `tree:${tree.tree_id}`,
+    id: `tree:${tree.rhizome_id}`,
   })
 
   const style = transform ? {
@@ -28,11 +28,11 @@ export function DraggableTreeCard({
   const isArchived = tree.archived === 1
 
   const classes = [
-    'tree-card',
-    isSelected ? 'tree-card--selected' : '',
-    isDragging ? 'tree-card--dragging' : '',
-    isArchived ? 'tree-card--archived' : '',
-    showCheckboxes ? 'tree-card--show-checkboxes' : '',
+    'rhizome-card',
+    isSelected ? 'rhizome-card--selected' : '',
+    isDragging ? 'rhizome-card--dragging' : '',
+    isArchived ? 'rhizome-card--archived' : '',
+    showCheckboxes ? 'rhizome-card--show-checkboxes' : '',
   ].filter(Boolean).join(' ')
 
   return (
@@ -42,41 +42,41 @@ export function DraggableTreeCard({
       style={style}
       {...listeners}
       {...attributes}
-      onContextMenu={(e) => { e.preventDefault(); onContextMenu(e, tree.tree_id) }}
+      onContextMenu={(e) => { e.preventDefault(); onContextMenu(e, tree.rhizome_id) }}
       onClick={(e) => {
         if (e.metaKey || e.ctrlKey || e.shiftKey) {
-          onSelect(tree.tree_id, e)
+          onSelect(tree.rhizome_id, e)
         } else {
-          onClick(tree.tree_id)
+          onClick(tree.rhizome_id)
         }
       }}
     >
       {/* Checkbox */}
       <span
-        className={`tree-card-checkbox ${isSelected ? 'checked' : ''}`}
+        className={`rhizome-card-checkbox ${isSelected ? 'checked' : ''}`}
         onClick={(e) => {
           e.stopPropagation()
-          onSelect(tree.tree_id, e)
+          onSelect(tree.rhizome_id, e)
         }}
       >
         {isSelected ? '\u2713' : ''}
       </span>
 
       {/* Title */}
-      <span className="tree-card-title">{tree.title || 'Untitled'}</span>
+      <span className="rhizome-card-title">{tree.title || 'Untitled'}</span>
 
       {/* Meta row: date + tags */}
-      <span className="tree-card-meta">
-        <span className="tree-card-date">
+      <span className="rhizome-card-meta">
+        <span className="rhizome-card-date">
           {new Date(tree.updated_at).toLocaleDateString()}
         </span>
-        {isArchived && <span className="tree-card-archived-label">archived</span>}
+        {isArchived && <span className="rhizome-card-archived-label">archived</span>}
         {tree.tags.length > 0 && (
-          <span className="tree-card-tags">
+          <span className="rhizome-card-tags">
             {tree.tags.map(t => (
               <span
                 key={t}
-                className="tree-card-tag-dot"
+                className="rhizome-card-tag-dot"
                 style={{ background: tagColor(t) }}
                 title={t}
               />
@@ -86,14 +86,14 @@ export function DraggableTreeCard({
       </span>
 
       {/* Folder chips + archive action */}
-      <span className="tree-card-bottom">
+      <span className="rhizome-card-bottom">
         {tree.folders.length > 0 && (
-          <span className="tree-card-folders">
+          <span className="rhizome-card-folders">
             {tree.folders.map(f => (
-              <span key={f} className="tree-card-folder-chip">
+              <span key={f} className="rhizome-card-folder-chip">
                 {f.split('/').pop()}
                 <button
-                  onClick={(e) => { e.stopPropagation(); onRemoveFolder(tree.tree_id, f) }}
+                  onClick={(e) => { e.stopPropagation(); onRemoveFolder(tree.rhizome_id, f) }}
                   title={`Remove from ${f}`}
                 >
                   &times;
@@ -104,16 +104,16 @@ export function DraggableTreeCard({
         )}
         {isArchived ? (
           <button
-            className="tree-card-archive-btn"
-            onClick={(e) => { e.stopPropagation(); onUnarchive(tree.tree_id) }}
+            className="rhizome-card-archive-btn"
+            onClick={(e) => { e.stopPropagation(); onUnarchive(tree.rhizome_id) }}
             title="Unarchive"
           >
             Unarchive
           </button>
         ) : (
           <button
-            className="tree-card-archive-btn"
-            onClick={(e) => { e.stopPropagation(); onArchive(tree.tree_id) }}
+            className="rhizome-card-archive-btn"
+            onClick={(e) => { e.stopPropagation(); onArchive(tree.rhizome_id) }}
             title="Archive"
           >
             Archive

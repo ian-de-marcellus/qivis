@@ -20,7 +20,7 @@ from qivis.importer.schemas import (
     ImportResult,
     MessagePreview,
 )
-from qivis.models import EventEnvelope, NodeCreatedPayload, TreeCreatedPayload
+from qivis.models import EventEnvelope, NodeCreatedPayload, RhizomeCreatedPayload
 
 
 class ImportService:
@@ -39,19 +39,19 @@ class ImportService:
         """Parse file and return preview without creating anything."""
         data = self._load_json(content)
         fmt = detect_format(data)
-        trees = self._parse(fmt, data)
+        rhizomes = self._parse(fmt, data)
 
         conversations = []
-        for i, tree in enumerate(trees):
+        for i, rhizome in enumerate(rhizomes):
             # Count fork points (nodes with multiple children)
             children_count: dict[str | None, int] = defaultdict(int)
-            for node in tree.nodes:
+            for node in rhizome.nodes:
                 children_count[node.parent_temp_id] += 1
             branch_count = sum(1 for c in children_count.values() if c > 1)
 
             # Unique models
             model_names = sorted({
-                n.model for n in tree.nodes if n.model
+                n.model for n in rhizome.nodes if n.model
             })
 
             # First few messages
@@ -60,31 +60,31 @@ class ImportService:
                     role=n.role,
                     content_preview=n.content[:200],
                 )
-                for n in tree.nodes[:5]
+                for n in rhizome.nodes[:5]
             ]
 
             conversations.append(ConversationPreview(
                 index=i,
-                title=tree.title,
-                message_count=len(tree.nodes),
+                title=rhizome.title,
+                message_count=len(rhizome.nodes),
                 has_branches=branch_count > 0,
                 branch_count=branch_count,
                 model_names=model_names,
                 system_prompt_preview=(
-                    tree.default_system_prompt[:200]
-                    if tree.default_system_prompt else None
+                    rhizome.default_system_prompt[:200]
+                    if rhizome.default_system_prompt else None
                 ),
                 first_messages=first_messages,
-                warnings=tree.warnings,
+                warnings=rhizome.warnings,
             ))
 
         return ImportPreviewResponse(
             format_detected=fmt,
             conversations=conversations,
-            total_conversations=len(trees),
+            total_conversations=len(rhizomes),
         )
 
-    async def import_trees(
+    async def import_rhizomes(
         self,
         content: bytes,
         filename: str,
@@ -95,16 +95,19 @@ class ImportService:
         """Parse and import conversations, returning results."""
         data = self._load_json(content)
         fmt = format_hint or detect_format(data)
-        trees = self._parse(fmt, data)
+        rhizomes = self._parse(fmt, data)
 
         if selected_indices is not None:
-            trees = [trees[i] for i in selected_indices if i < len(trees)]
+            rhizomes = [rhizomes[i] for i in selected_indices if i < len(rhizomes)]
 
         results = []
-        for tree in trees:
-            result = await self._import_single(tree)
+        for rhizome in rhizomes:
+            result = await self._import_single(rhizome)
             results.append(result)
         return results
+
+    # Keep old name as alias for backward compatibility
+    import_trees = import_rhizomes
 
     # ------------------------------------------------------------------
     # Internal
@@ -132,11 +135,11 @@ class ImportService:
         raise ImportFormatError(f"Unknown format: {fmt}")
 
     @staticmethod
-    def _topological_sort(tree: ImportedTree) -> list[ImportedNode]:
+    def _topological_sort(imported: ImportedTree) -> list[ImportedNode]:
         """Sort nodes so that parents come before children."""
-        by_id = {n.temp_id: n for n in tree.nodes}
+        by_id = {n.temp_id: n for n in imported.nodes}
         children_of: dict[str | None, list[str]] = defaultdict(list)
-        for n in tree.nodes:
+        for n in imported.nodes:
             children_of[n.parent_temp_id].append(n.temp_id)
 
         result: list[ImportedNode] = []
@@ -155,24 +158,24 @@ class ImportService:
             visit(root_id)
 
         # Also visit any orphans not reachable from roots
-        for n in tree.nodes:
+        for n in imported.nodes:
             if n.temp_id not in visited:
                 visit(n.temp_id)
 
         return result
 
     async def _import_single(self, imported: ImportedTree) -> ImportResult:
-        """Emit TreeCreated + NodeCreated events for one conversation."""
-        tree_id = str(uuid4())
+        """Emit RhizomeCreated + NodeCreated events for one conversation."""
+        rhizome_id = str(uuid4())
 
-        tree_timestamp = (
+        rhizome_timestamp = (
             datetime.fromtimestamp(imported.created_at, tz=UTC)
             if imported.created_at
             else datetime.now(UTC)
         )
 
-        # 1. Emit TreeCreated
-        tree_payload = TreeCreatedPayload(
+        # 1. Emit RhizomeCreated
+        rhizome_payload = RhizomeCreatedPayload(
             title=imported.title or "Imported Conversation",
             default_system_prompt=imported.default_system_prompt,
             default_model=imported.default_model,
@@ -184,16 +187,16 @@ class ImportService:
                 "import_warnings": imported.warnings,
             },
         )
-        tree_event = EventEnvelope(
+        rhizome_event = EventEnvelope(
             event_id=str(uuid4()),
-            tree_id=tree_id,
-            timestamp=tree_timestamp,
+            rhizome_id=rhizome_id,
+            timestamp=rhizome_timestamp,
             device_id="import",
-            event_type="TreeCreated",
-            payload=tree_payload.model_dump(),
+            event_type="RhizomeCreated",
+            payload=rhizome_payload.model_dump(),
         )
-        await self._store.append(tree_event)
-        await self._projector.project([tree_event])
+        await self._store.append(rhizome_event)
+        await self._projector.project([rhizome_event])
 
         # 2. Topological sort + emit NodeCreated events
         sorted_nodes = self._topological_sort(imported)
@@ -212,7 +215,7 @@ class ImportService:
             node_timestamp = (
                 datetime.fromtimestamp(node.timestamp, tz=UTC)
                 if node.timestamp
-                else tree_timestamp
+                else rhizome_timestamp
             )
 
             node_payload = NodeCreatedPayload(
@@ -227,7 +230,7 @@ class ImportService:
             )
             node_event = EventEnvelope(
                 event_id=str(uuid4()),
-                tree_id=tree_id,
+                rhizome_id=rhizome_id,
                 timestamp=node_timestamp,
                 device_id="import",
                 event_type="NodeCreated",
@@ -237,7 +240,7 @@ class ImportService:
             await self._projector.project([node_event])
 
         return ImportResult(
-            tree_id=tree_id,
+            rhizome_id=rhizome_id,
             title=imported.title,
             node_count=len(sorted_nodes),
             warnings=imported.warnings,

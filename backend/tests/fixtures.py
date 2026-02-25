@@ -23,27 +23,27 @@ from qivis.models import (
     NodeContextIncludedPayload,
     NodeCreatedPayload,
     NodeUnanchoredPayload,
+    RhizomeArchivedPayload,
+    RhizomeCreatedPayload,
+    RhizomeMetadataUpdatedPayload,
+    RhizomeUnarchivedPayload,
     SamplingParams,
     SummaryGeneratedPayload,
     SummaryRemovedPayload,
-    TreeArchivedPayload,
-    TreeCreatedPayload,
-    TreeMetadataUpdatedPayload,
-    TreeUnarchivedPayload,
 )
 
 
-def make_tree_created_envelope(
-    tree_id: str | None = None,
-    title: str = "Test Tree",
+def make_rhizome_created_envelope(
+    rhizome_id: str | None = None,
+    title: str = "Test Rhizome",
     default_model: str | None = "claude-sonnet-4-5-20250929",
     default_provider: str | None = "anthropic",
     default_system_prompt: str | None = "You are helpful.",
     **payload_overrides: Any,
 ) -> EventEnvelope:
-    """Create a TreeCreated EventEnvelope for testing."""
-    tree_id = tree_id or str(uuid4())
-    payload = TreeCreatedPayload(
+    """Create a RhizomeCreated EventEnvelope for testing."""
+    rhizome_id = rhizome_id or str(uuid4())
+    payload = RhizomeCreatedPayload(
         title=title,
         default_model=default_model,
         default_provider=default_provider,
@@ -52,16 +52,16 @@ def make_tree_created_envelope(
     )
     return EventEnvelope(
         event_id=str(uuid4()),
-        tree_id=tree_id,
+        rhizome_id=rhizome_id,
         timestamp=datetime.now(UTC),
         device_id="test",
-        event_type="TreeCreated",
+        event_type="RhizomeCreated",
         payload=payload.model_dump(),
     )
 
 
 def make_node_created_envelope(
-    tree_id: str,
+    rhizome_id: str,
     node_id: str | None = None,
     parent_id: str | None = None,
     role: Literal["system", "user", "assistant", "tool", "researcher_note"] = "user",
@@ -79,7 +79,7 @@ def make_node_created_envelope(
     )
     return EventEnvelope(
         event_id=str(uuid4()),
-        tree_id=tree_id,
+        rhizome_id=rhizome_id,
         timestamp=datetime.now(UTC),
         device_id="test",
         event_type="NodeCreated",
@@ -87,7 +87,7 @@ def make_node_created_envelope(
     )
 
 
-def make_full_node_created_envelope(tree_id: str, parent_id: str | None = None) -> EventEnvelope:
+def make_full_node_created_envelope(rhizome_id: str, parent_id: str | None = None) -> EventEnvelope:
     """Create a NodeCreated envelope with all generation fields populated."""
     from qivis.models import ContextUsage, LogprobData
 
@@ -119,7 +119,7 @@ def make_full_node_created_envelope(tree_id: str, parent_id: str | None = None) 
     )
     return EventEnvelope(
         event_id=str(uuid4()),
-        tree_id=tree_id,
+        rhizome_id=rhizome_id,
         timestamp=datetime.now(UTC),
         device_id="test",
         event_type="NodeCreated",
@@ -128,7 +128,7 @@ def make_full_node_created_envelope(tree_id: str, parent_id: str | None = None) 
 
 
 def make_node_content_edited_envelope(
-    tree_id: str,
+    rhizome_id: str,
     node_id: str,
     original_content: str,
     new_content: str | None,
@@ -141,7 +141,7 @@ def make_node_content_edited_envelope(
     )
     return EventEnvelope(
         event_id=str(uuid4()),
-        tree_id=tree_id,
+        rhizome_id=rhizome_id,
         timestamp=datetime.now(UTC),
         device_id="test",
         event_type="NodeContentEdited",
@@ -149,24 +149,24 @@ def make_node_content_edited_envelope(
     )
 
 
-def make_tree_metadata_updated_envelope(
-    tree_id: str,
+def make_rhizome_metadata_updated_envelope(
+    rhizome_id: str,
     field: str,
     old_value: Any = None,
     new_value: Any = None,
 ) -> EventEnvelope:
-    """Create a TreeMetadataUpdated EventEnvelope for testing."""
-    payload = TreeMetadataUpdatedPayload(
+    """Create a RhizomeMetadataUpdated EventEnvelope for testing."""
+    payload = RhizomeMetadataUpdatedPayload(
         field=field,
         old_value=old_value,
         new_value=new_value,
     )
     return EventEnvelope(
         event_id=str(uuid4()),
-        tree_id=tree_id,
+        rhizome_id=rhizome_id,
         timestamp=datetime.now(UTC),
         device_id="test",
-        event_type="TreeMetadataUpdated",
+        event_type="RhizomeMetadataUpdated",
         payload=payload.model_dump(),
     )
 
@@ -174,13 +174,13 @@ def make_tree_metadata_updated_envelope(
 # -- API-level helpers (available from Phase 0.3 onward) --
 
 
-async def create_test_tree(
+async def create_test_rhizome(
     client: AsyncClient,
-    title: str = "Test Tree",
+    title: str = "Test Rhizome",
     system_prompt: str = "You are helpful.",
 ) -> dict:
-    """Create a tree via the API and return the response JSON."""
-    resp = await client.post("/api/trees", json={
+    """Create a rhizome via the API and return the response JSON."""
+    resp = await client.post("/api/rhizomes", json={
         "title": title,
         "default_system_prompt": system_prompt,
     })
@@ -188,19 +188,19 @@ async def create_test_tree(
     return resp.json()
 
 
-async def create_tree_with_messages(
+async def create_rhizome_with_messages(
     client: AsyncClient,
     n_messages: int = 4,
-    title: str = "Test Tree",
+    title: str = "Test Rhizome",
     system_prompt: str = "You are helpful.",
 ) -> dict:
-    """Create a tree with N alternating user/assistant messages.
+    """Create a rhizome with N alternating user/assistant messages.
 
-    Returns {"tree_id": str, "node_ids": [str, ...]} where node_ids
+    Returns {"rhizome_id": str, "node_ids": [str, ...]} where node_ids
     are in creation order.
     """
-    tree = await create_test_tree(client, title=title, system_prompt=system_prompt)
-    tree_id = tree["tree_id"]
+    rhizome = await create_test_rhizome(client, title=title, system_prompt=system_prompt)
+    rhizome_id = rhizome["rhizome_id"]
     node_ids: list[str] = []
     parent_id: str | None = None
 
@@ -209,20 +209,20 @@ async def create_tree_with_messages(
         body: dict = {"content": f"Message {i + 1}", "role": role}
         if parent_id is not None:
             body["parent_id"] = parent_id
-        resp = await client.post(f"/api/trees/{tree_id}/nodes", json=body)
+        resp = await client.post(f"/api/rhizomes/{rhizome_id}/nodes", json=body)
         assert resp.status_code == 201
         node = resp.json()
         node_ids.append(node["node_id"])
         parent_id = node["node_id"]
 
-    return {"tree_id": tree_id, "node_ids": node_ids}
+    return {"rhizome_id": rhizome_id, "node_ids": node_ids}
 
 
 # -- Branching helpers (available from Phase 1.1 onward) --
 
 
 def make_annotation_added_envelope(
-    tree_id: str,
+    rhizome_id: str,
     node_id: str,
     tag: str,
     annotation_id: str | None = None,
@@ -240,7 +240,7 @@ def make_annotation_added_envelope(
     )
     return EventEnvelope(
         event_id=str(uuid4()),
-        tree_id=tree_id,
+        rhizome_id=rhizome_id,
         timestamp=datetime.now(UTC),
         device_id="test",
         event_type="AnnotationAdded",
@@ -249,7 +249,7 @@ def make_annotation_added_envelope(
 
 
 def make_annotation_removed_envelope(
-    tree_id: str,
+    rhizome_id: str,
     annotation_id: str,
     reason: str | None = None,
 ) -> EventEnvelope:
@@ -260,7 +260,7 @@ def make_annotation_removed_envelope(
     )
     return EventEnvelope(
         event_id=str(uuid4()),
-        tree_id=tree_id,
+        rhizome_id=rhizome_id,
         timestamp=datetime.now(UTC),
         device_id="test",
         event_type="AnnotationRemoved",
@@ -269,7 +269,7 @@ def make_annotation_removed_envelope(
 
 
 def make_bookmark_created_envelope(
-    tree_id: str,
+    rhizome_id: str,
     node_id: str,
     label: str = "Bookmark",
     bookmark_id: str | None = None,
@@ -285,7 +285,7 @@ def make_bookmark_created_envelope(
     )
     return EventEnvelope(
         event_id=str(uuid4()),
-        tree_id=tree_id,
+        rhizome_id=rhizome_id,
         timestamp=datetime.now(UTC),
         device_id="test",
         event_type="BookmarkCreated",
@@ -294,7 +294,7 @@ def make_bookmark_created_envelope(
 
 
 def make_bookmark_removed_envelope(
-    tree_id: str,
+    rhizome_id: str,
     bookmark_id: str,
 ) -> EventEnvelope:
     """Create a BookmarkRemoved EventEnvelope for testing."""
@@ -303,7 +303,7 @@ def make_bookmark_removed_envelope(
     )
     return EventEnvelope(
         event_id=str(uuid4()),
-        tree_id=tree_id,
+        rhizome_id=rhizome_id,
         timestamp=datetime.now(UTC),
         device_id="test",
         event_type="BookmarkRemoved",
@@ -312,7 +312,7 @@ def make_bookmark_removed_envelope(
 
 
 def make_bookmark_summary_generated_envelope(
-    tree_id: str,
+    rhizome_id: str,
     bookmark_id: str,
     summary: str = "A concise summary of the branch.",
     model: str = "claude-haiku-4-5",
@@ -327,7 +327,7 @@ def make_bookmark_summary_generated_envelope(
     )
     return EventEnvelope(
         event_id=str(uuid4()),
-        tree_id=tree_id,
+        rhizome_id=rhizome_id,
         timestamp=datetime.now(UTC),
         device_id="test",
         event_type="BookmarkSummaryGenerated",
@@ -336,7 +336,7 @@ def make_bookmark_summary_generated_envelope(
 
 
 def make_node_context_excluded_envelope(
-    tree_id: str,
+    rhizome_id: str,
     node_id: str,
     scope_node_id: str,
     reason: str | None = None,
@@ -349,7 +349,7 @@ def make_node_context_excluded_envelope(
     )
     return EventEnvelope(
         event_id=str(uuid4()),
-        tree_id=tree_id,
+        rhizome_id=rhizome_id,
         timestamp=datetime.now(UTC),
         device_id="test",
         event_type="NodeContextExcluded",
@@ -358,7 +358,7 @@ def make_node_context_excluded_envelope(
 
 
 def make_node_context_included_envelope(
-    tree_id: str,
+    rhizome_id: str,
     node_id: str,
     scope_node_id: str,
 ) -> EventEnvelope:
@@ -369,7 +369,7 @@ def make_node_context_included_envelope(
     )
     return EventEnvelope(
         event_id=str(uuid4()),
-        tree_id=tree_id,
+        rhizome_id=rhizome_id,
         timestamp=datetime.now(UTC),
         device_id="test",
         event_type="NodeContextIncluded",
@@ -378,7 +378,7 @@ def make_node_context_included_envelope(
 
 
 def make_digression_group_created_envelope(
-    tree_id: str,
+    rhizome_id: str,
     group_id: str | None = None,
     node_ids: list[str] | None = None,
     label: str = "Digression",
@@ -394,7 +394,7 @@ def make_digression_group_created_envelope(
     )
     return EventEnvelope(
         event_id=str(uuid4()),
-        tree_id=tree_id,
+        rhizome_id=rhizome_id,
         timestamp=datetime.now(UTC),
         device_id="test",
         event_type="DigressionGroupCreated",
@@ -403,7 +403,7 @@ def make_digression_group_created_envelope(
 
 
 def make_digression_group_toggled_envelope(
-    tree_id: str,
+    rhizome_id: str,
     group_id: str,
     included: bool,
 ) -> EventEnvelope:
@@ -414,7 +414,7 @@ def make_digression_group_toggled_envelope(
     )
     return EventEnvelope(
         event_id=str(uuid4()),
-        tree_id=tree_id,
+        rhizome_id=rhizome_id,
         timestamp=datetime.now(UTC),
         device_id="test",
         event_type="DigressionGroupToggled",
@@ -423,14 +423,14 @@ def make_digression_group_toggled_envelope(
 
 
 def make_node_anchored_envelope(
-    tree_id: str,
+    rhizome_id: str,
     node_id: str,
 ) -> EventEnvelope:
     """Create a NodeAnchored EventEnvelope for testing."""
     payload = NodeAnchoredPayload(node_id=node_id)
     return EventEnvelope(
         event_id=str(uuid4()),
-        tree_id=tree_id,
+        rhizome_id=rhizome_id,
         timestamp=datetime.now(UTC),
         device_id="test",
         event_type="NodeAnchored",
@@ -439,14 +439,14 @@ def make_node_anchored_envelope(
 
 
 def make_node_unanchored_envelope(
-    tree_id: str,
+    rhizome_id: str,
     node_id: str,
 ) -> EventEnvelope:
     """Create a NodeUnanchored EventEnvelope for testing."""
     payload = NodeUnanchoredPayload(node_id=node_id)
     return EventEnvelope(
         event_id=str(uuid4()),
-        tree_id=tree_id,
+        rhizome_id=rhizome_id,
         timestamp=datetime.now(UTC),
         device_id="test",
         event_type="NodeUnanchored",
@@ -455,7 +455,7 @@ def make_node_unanchored_envelope(
 
 
 def make_note_added_envelope(
-    tree_id: str,
+    rhizome_id: str,
     node_id: str,
     content: str = "A research note.",
     note_id: str | None = None,
@@ -469,7 +469,7 @@ def make_note_added_envelope(
     )
     return EventEnvelope(
         event_id=str(uuid4()),
-        tree_id=tree_id,
+        rhizome_id=rhizome_id,
         timestamp=datetime.now(UTC),
         device_id="test",
         event_type="NoteAdded",
@@ -478,7 +478,7 @@ def make_note_added_envelope(
 
 
 def make_note_removed_envelope(
-    tree_id: str,
+    rhizome_id: str,
     note_id: str,
     reason: str | None = None,
 ) -> EventEnvelope:
@@ -489,7 +489,7 @@ def make_note_removed_envelope(
     )
     return EventEnvelope(
         event_id=str(uuid4()),
-        tree_id=tree_id,
+        rhizome_id=rhizome_id,
         timestamp=datetime.now(UTC),
         device_id="test",
         event_type="NoteRemoved",
@@ -498,7 +498,7 @@ def make_note_removed_envelope(
 
 
 def make_summary_generated_envelope(
-    tree_id: str,
+    rhizome_id: str,
     anchor_node_id: str,
     scope: str = "branch",
     summary_type: str = "concise",
@@ -522,7 +522,7 @@ def make_summary_generated_envelope(
     )
     return EventEnvelope(
         event_id=str(uuid4()),
-        tree_id=tree_id,
+        rhizome_id=rhizome_id,
         timestamp=datetime.now(UTC),
         device_id="test",
         event_type="SummaryGenerated",
@@ -531,7 +531,7 @@ def make_summary_generated_envelope(
 
 
 def make_summary_removed_envelope(
-    tree_id: str,
+    rhizome_id: str,
     summary_id: str,
     reason: str | None = None,
 ) -> EventEnvelope:
@@ -542,7 +542,7 @@ def make_summary_removed_envelope(
     )
     return EventEnvelope(
         event_id=str(uuid4()),
-        tree_id=tree_id,
+        rhizome_id=rhizome_id,
         timestamp=datetime.now(UTC),
         device_id="test",
         event_type="SummaryRemoved",
@@ -550,54 +550,54 @@ def make_summary_removed_envelope(
     )
 
 
-def make_tree_archived_envelope(
-    tree_id: str,
+def make_rhizome_archived_envelope(
+    rhizome_id: str,
     reason: str | None = None,
 ) -> EventEnvelope:
-    """Create a TreeArchived EventEnvelope for testing."""
-    payload = TreeArchivedPayload(reason=reason)
+    """Create a RhizomeArchived EventEnvelope for testing."""
+    payload = RhizomeArchivedPayload(reason=reason)
     return EventEnvelope(
         event_id=str(uuid4()),
-        tree_id=tree_id,
+        rhizome_id=rhizome_id,
         timestamp=datetime.now(UTC),
         device_id="test",
-        event_type="TreeArchived",
+        event_type="RhizomeArchived",
         payload=payload.model_dump(),
     )
 
 
-def make_tree_unarchived_envelope(
-    tree_id: str,
+def make_rhizome_unarchived_envelope(
+    rhizome_id: str,
 ) -> EventEnvelope:
-    """Create a TreeUnarchived EventEnvelope for testing."""
-    payload = TreeUnarchivedPayload()
+    """Create a RhizomeUnarchived EventEnvelope for testing."""
+    payload = RhizomeUnarchivedPayload()
     return EventEnvelope(
         event_id=str(uuid4()),
-        tree_id=tree_id,
+        rhizome_id=rhizome_id,
         timestamp=datetime.now(UTC),
         device_id="test",
-        event_type="TreeUnarchived",
+        event_type="RhizomeUnarchived",
         payload=payload.model_dump(),
     )
 
 
-async def create_branching_tree(client: AsyncClient) -> dict:
-    """Create a tree with branches: root -> A -> B, root -> A -> C.
+async def create_branching_rhizome(client: AsyncClient) -> dict:
+    """Create a rhizome with branches: root -> A -> B, root -> A -> C.
 
     B and C are siblings (both children of A).
 
-    Returns {"tree_id": str, "node_ids": {"root": str, "A": str, "B": str, "C": str}}
+    Returns {"rhizome_id": str, "node_ids": {"root": str, "A": str, "B": str, "C": str}}
     """
-    tree = await create_test_tree(client, title="Branching Tree")
-    tree_id = tree["tree_id"]
+    rhizome = await create_test_rhizome(client, title="Branching Rhizome")
+    rhizome_id = rhizome["rhizome_id"]
 
-    root_resp = await client.post(f"/api/trees/{tree_id}/nodes", json={
+    root_resp = await client.post(f"/api/rhizomes/{rhizome_id}/nodes", json={
         "content": "Root message",
     })
     assert root_resp.status_code == 201
     root_id = root_resp.json()["node_id"]
 
-    a_resp = await client.post(f"/api/trees/{tree_id}/nodes", json={
+    a_resp = await client.post(f"/api/rhizomes/{rhizome_id}/nodes", json={
         "content": "Message A",
         "role": "assistant",
         "parent_id": root_id,
@@ -605,14 +605,14 @@ async def create_branching_tree(client: AsyncClient) -> dict:
     assert a_resp.status_code == 201
     a_id = a_resp.json()["node_id"]
 
-    b_resp = await client.post(f"/api/trees/{tree_id}/nodes", json={
+    b_resp = await client.post(f"/api/rhizomes/{rhizome_id}/nodes", json={
         "content": "Message B (branch 1)",
         "parent_id": a_id,
     })
     assert b_resp.status_code == 201
     b_id = b_resp.json()["node_id"]
 
-    c_resp = await client.post(f"/api/trees/{tree_id}/nodes", json={
+    c_resp = await client.post(f"/api/rhizomes/{rhizome_id}/nodes", json={
         "content": "Message C (branch 2)",
         "parent_id": a_id,
     })
@@ -620,6 +620,6 @@ async def create_branching_tree(client: AsyncClient) -> dict:
     c_id = c_resp.json()["node_id"]
 
     return {
-        "tree_id": tree_id,
+        "rhizome_id": rhizome_id,
         "node_ids": {"root": root_id, "A": a_id, "B": b_id, "C": c_id},
     }

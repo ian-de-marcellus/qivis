@@ -2,7 +2,7 @@ import { memo, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { LogprobData, NodeResponse, SamplingParams } from '../../api/types.ts'
-import { useTreeStore } from '../../store/treeStore.ts'
+import { useRhizomeStore } from '../../store/rhizomeStore.ts'
 import { ActionMenu, ActionMenuItem } from './ActionMenu.tsx'
 import { AnnotationPanel } from './AnnotationPanel.tsx'
 import { NotePanel } from './NotePanel.tsx'
@@ -96,7 +96,7 @@ export const MessageRow = memo(function MessageRow({
   const [showAnnotations, setShowAnnotations] = useState(false)
   const [showNotes, setShowNotes] = useState(false)
 
-  const editHistoryCache = useTreeStore((s) => s.editHistoryCache)
+  const editHistoryCache = useRhizomeStore((s) => s.editHistoryCache)
 
   const roleLabel = node.role === 'researcher_note'
     ? 'Researcher Note'

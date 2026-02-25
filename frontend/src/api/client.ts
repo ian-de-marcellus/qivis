@@ -9,7 +9,7 @@ import type {
   CreateNodeRequest,
   CreateNoteRequest,
   CreateSummaryRequest,
-  CreateTreeRequest,
+  CreateRhizomeRequest,
   DigressionGroupResponse,
   EditHistoryResponse,
   GenerateRequest,
@@ -22,13 +22,13 @@ import type {
   NodeExclusionResponse,
   NodeResponse,
   NoteResponse,
-  PatchTreeRequest,
+  PatchRhizomeRequest,
   ProviderInfo,
   SearchResponse,
   SummaryResponse,
   TaxonomyResponse,
-  TreeDetail,
-  TreeSummary,
+  RhizomeDetail,
+  RhizomeSummary,
 } from './types.ts'
 
 type SSEParsed = Record<string, unknown>
@@ -56,34 +56,34 @@ export function getProviders(): Promise<ProviderInfo[]> {
   return request('/providers')
 }
 
-// -- Tree CRUD --
+// -- Rhizome CRUD --
 
-export function listTrees(includeArchived?: boolean): Promise<TreeSummary[]> {
+export function listRhizomes(includeArchived?: boolean): Promise<RhizomeSummary[]> {
   const params = includeArchived ? '?include_archived=true' : ''
-  return request(`/trees${params}`)
+  return request(`/rhizomes${params}`)
 }
 
-export function archiveTree(treeId: string): Promise<TreeDetail> {
-  return request(`/trees/${treeId}/archive`, { method: 'POST' })
+export function archiveRhizome(rhizomeId: string): Promise<RhizomeDetail> {
+  return request(`/rhizomes/${rhizomeId}/archive`, { method: 'POST' })
 }
 
-export function unarchiveTree(treeId: string): Promise<TreeDetail> {
-  return request(`/trees/${treeId}/unarchive`, { method: 'POST' })
+export function unarchiveRhizome(rhizomeId: string): Promise<RhizomeDetail> {
+  return request(`/rhizomes/${rhizomeId}/unarchive`, { method: 'POST' })
 }
 
-export function createTree(req: CreateTreeRequest): Promise<TreeDetail> {
-  return request('/trees', {
+export function createRhizome(req: CreateRhizomeRequest): Promise<RhizomeDetail> {
+  return request('/rhizomes', {
     method: 'POST',
     body: JSON.stringify(req),
   })
 }
 
-export function getTree(treeId: string): Promise<TreeDetail> {
-  return request(`/trees/${treeId}`)
+export function getRhizome(rhizomeId: string): Promise<RhizomeDetail> {
+  return request(`/rhizomes/${rhizomeId}`)
 }
 
-export function updateTree(treeId: string, req: PatchTreeRequest): Promise<TreeDetail> {
-  return request(`/trees/${treeId}`, {
+export function updateRhizome(rhizomeId: string, req: PatchRhizomeRequest): Promise<RhizomeDetail> {
+  return request(`/rhizomes/${rhizomeId}`, {
     method: 'PATCH',
     body: JSON.stringify(req),
   })
@@ -92,21 +92,21 @@ export function updateTree(treeId: string, req: PatchTreeRequest): Promise<TreeD
 // -- Node CRUD --
 
 export function createNode(
-  treeId: string,
+  rhizomeId: string,
   req: CreateNodeRequest,
 ): Promise<NodeResponse> {
-  return request(`/trees/${treeId}/nodes`, {
+  return request(`/rhizomes/${rhizomeId}/nodes`, {
     method: 'POST',
     body: JSON.stringify(req),
   })
 }
 
 export function editNodeContent(
-  treeId: string,
+  rhizomeId: string,
   nodeId: string,
   editedContent: string | null,
 ): Promise<NodeResponse> {
-  return request(`/trees/${treeId}/nodes/${nodeId}/content`, {
+  return request(`/rhizomes/${rhizomeId}/nodes/${nodeId}/content`, {
     method: 'PATCH',
     body: JSON.stringify({ edited_content: editedContent }),
   })
@@ -115,129 +115,129 @@ export function editNodeContent(
 // -- Edit history --
 
 export function getEditHistory(
-  treeId: string,
+  rhizomeId: string,
   nodeId: string,
 ): Promise<EditHistoryResponse> {
-  return request(`/trees/${treeId}/nodes/${nodeId}/edit-history`)
+  return request(`/rhizomes/${rhizomeId}/nodes/${nodeId}/edit-history`)
 }
 
 // -- Intervention timeline --
 
-export function getInterventions(treeId: string): Promise<InterventionTimelineResponse> {
-  return request(`/trees/${treeId}/interventions`)
+export function getInterventions(rhizomeId: string): Promise<InterventionTimelineResponse> {
+  return request(`/rhizomes/${rhizomeId}/interventions`)
 }
 
 // -- Annotations --
 
 export function addAnnotation(
-  treeId: string,
+  rhizomeId: string,
   nodeId: string,
   req: AddAnnotationRequest,
 ): Promise<AnnotationResponse> {
-  return request(`/trees/${treeId}/nodes/${nodeId}/annotations`, {
+  return request(`/rhizomes/${rhizomeId}/nodes/${nodeId}/annotations`, {
     method: 'POST',
     body: JSON.stringify(req),
   })
 }
 
 export function getNodeAnnotations(
-  treeId: string,
+  rhizomeId: string,
   nodeId: string,
 ): Promise<AnnotationResponse[]> {
-  return request(`/trees/${treeId}/nodes/${nodeId}/annotations`)
+  return request(`/rhizomes/${rhizomeId}/nodes/${nodeId}/annotations`)
 }
 
 export function removeAnnotation(
-  treeId: string,
+  rhizomeId: string,
   annotationId: string,
 ): Promise<void> {
-  return request(`/trees/${treeId}/annotations/${annotationId}`, {
+  return request(`/rhizomes/${rhizomeId}/annotations/${annotationId}`, {
     method: 'DELETE',
   })
 }
 
-export function getTreeTaxonomy(treeId: string): Promise<TaxonomyResponse> {
-  return request(`/trees/${treeId}/taxonomy`)
+export function getRhizomeTaxonomy(rhizomeId: string): Promise<TaxonomyResponse> {
+  return request(`/rhizomes/${rhizomeId}/taxonomy`)
 }
 
 // -- Notes --
 
 export function addNote(
-  treeId: string,
+  rhizomeId: string,
   nodeId: string,
   req: CreateNoteRequest,
 ): Promise<NoteResponse> {
-  return request(`/trees/${treeId}/nodes/${nodeId}/notes`, {
+  return request(`/rhizomes/${rhizomeId}/nodes/${nodeId}/notes`, {
     method: 'POST',
     body: JSON.stringify(req),
   })
 }
 
 export function getNodeNotes(
-  treeId: string,
+  rhizomeId: string,
   nodeId: string,
 ): Promise<NoteResponse[]> {
-  return request(`/trees/${treeId}/nodes/${nodeId}/notes`)
+  return request(`/rhizomes/${rhizomeId}/nodes/${nodeId}/notes`)
 }
 
-export function getTreeNotes(
-  treeId: string,
+export function getRhizomeNotes(
+  rhizomeId: string,
   query?: string,
 ): Promise<NoteResponse[]> {
   const params = query ? `?q=${encodeURIComponent(query)}` : ''
-  return request(`/trees/${treeId}/notes${params}`)
+  return request(`/rhizomes/${rhizomeId}/notes${params}`)
 }
 
 export function removeNote(
-  treeId: string,
+  rhizomeId: string,
   noteId: string,
 ): Promise<void> {
-  return request(`/trees/${treeId}/notes/${noteId}`, {
+  return request(`/rhizomes/${rhizomeId}/notes/${noteId}`, {
     method: 'DELETE',
   })
 }
 
-export function getTreeAnnotations(
-  treeId: string,
+export function getRhizomeAnnotations(
+  rhizomeId: string,
 ): Promise<AnnotationResponse[]> {
-  return request(`/trees/${treeId}/annotations`)
+  return request(`/rhizomes/${rhizomeId}/annotations`)
 }
 
 // -- Bookmarks --
 
 export function addBookmark(
-  treeId: string,
+  rhizomeId: string,
   nodeId: string,
   req: CreateBookmarkRequest,
 ): Promise<BookmarkResponse> {
-  return request(`/trees/${treeId}/nodes/${nodeId}/bookmarks`, {
+  return request(`/rhizomes/${rhizomeId}/nodes/${nodeId}/bookmarks`, {
     method: 'POST',
     body: JSON.stringify(req),
   })
 }
 
-export function getTreeBookmarks(
-  treeId: string,
+export function getRhizomeBookmarks(
+  rhizomeId: string,
   query?: string,
 ): Promise<BookmarkResponse[]> {
   const params = query ? `?q=${encodeURIComponent(query)}` : ''
-  return request(`/trees/${treeId}/bookmarks${params}`)
+  return request(`/rhizomes/${rhizomeId}/bookmarks${params}`)
 }
 
 export function removeBookmark(
-  treeId: string,
+  rhizomeId: string,
   bookmarkId: string,
 ): Promise<void> {
-  return request(`/trees/${treeId}/bookmarks/${bookmarkId}`, {
+  return request(`/rhizomes/${rhizomeId}/bookmarks/${bookmarkId}`, {
     method: 'DELETE',
   })
 }
 
 export function summarizeBookmark(
-  treeId: string,
+  rhizomeId: string,
   bookmarkId: string,
 ): Promise<BookmarkResponse> {
-  return request(`/trees/${treeId}/bookmarks/${bookmarkId}/summarize`, {
+  return request(`/rhizomes/${rhizomeId}/bookmarks/${bookmarkId}/summarize`, {
     method: 'POST',
   })
 }
@@ -245,49 +245,49 @@ export function summarizeBookmark(
 // -- Context exclusion --
 
 export function excludeNode(
-  treeId: string,
+  rhizomeId: string,
   nodeId: string,
   scopeNodeId: string,
   reason?: string,
 ): Promise<NodeExclusionResponse> {
-  return request(`/trees/${treeId}/nodes/${nodeId}/exclude`, {
+  return request(`/rhizomes/${rhizomeId}/nodes/${nodeId}/exclude`, {
     method: 'POST',
     body: JSON.stringify({ scope_node_id: scopeNodeId, reason }),
   })
 }
 
 export function includeNode(
-  treeId: string,
+  rhizomeId: string,
   nodeId: string,
   scopeNodeId: string,
 ): Promise<void> {
-  return request(`/trees/${treeId}/nodes/${nodeId}/include`, {
+  return request(`/rhizomes/${rhizomeId}/nodes/${nodeId}/include`, {
     method: 'POST',
     body: JSON.stringify({ scope_node_id: scopeNodeId }),
   })
 }
 
-export function getExclusions(treeId: string): Promise<NodeExclusionResponse[]> {
-  return request(`/trees/${treeId}/exclusions`)
+export function getExclusions(rhizomeId: string): Promise<NodeExclusionResponse[]> {
+  return request(`/rhizomes/${rhizomeId}/exclusions`)
 }
 
 // -- Anchors --
 
 export function toggleAnchor(
-  treeId: string,
+  rhizomeId: string,
   nodeId: string,
 ): Promise<{ is_anchored: boolean }> {
-  return request(`/trees/${treeId}/nodes/${nodeId}/anchor`, {
+  return request(`/rhizomes/${rhizomeId}/nodes/${nodeId}/anchor`, {
     method: 'POST',
   })
 }
 
 export function bulkAnchor(
-  treeId: string,
+  rhizomeId: string,
   nodeIds: string[],
   anchor: boolean,
 ): Promise<{ changed: number; anchor: boolean }> {
-  return request(`/trees/${treeId}/bulk-anchor`, {
+  return request(`/rhizomes/${rhizomeId}/bulk-anchor`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ node_ids: nodeIds, anchor }),
@@ -297,49 +297,49 @@ export function bulkAnchor(
 // -- Digression groups --
 
 export function createDigressionGroup(
-  treeId: string,
+  rhizomeId: string,
   req: CreateDigressionGroupRequest,
 ): Promise<DigressionGroupResponse> {
-  return request(`/trees/${treeId}/digression-groups`, {
+  return request(`/rhizomes/${rhizomeId}/digression-groups`, {
     method: 'POST',
     body: JSON.stringify(req),
   })
 }
 
-export function getDigressionGroups(treeId: string): Promise<DigressionGroupResponse[]> {
-  return request(`/trees/${treeId}/digression-groups`)
+export function getDigressionGroups(rhizomeId: string): Promise<DigressionGroupResponse[]> {
+  return request(`/rhizomes/${rhizomeId}/digression-groups`)
 }
 
 export function toggleDigressionGroup(
-  treeId: string,
+  rhizomeId: string,
   groupId: string,
   included: boolean,
 ): Promise<DigressionGroupResponse> {
-  return request(`/trees/${treeId}/digression-groups/${groupId}/toggle`, {
+  return request(`/rhizomes/${rhizomeId}/digression-groups/${groupId}/toggle`, {
     method: 'POST',
     body: JSON.stringify({ included }),
   })
 }
 
 export function deleteDigressionGroup(
-  treeId: string,
+  rhizomeId: string,
   groupId: string,
 ): Promise<void> {
-  return request(`/trees/${treeId}/digression-groups/${groupId}`, {
+  return request(`/rhizomes/${rhizomeId}/digression-groups/${groupId}`, {
     method: 'DELETE',
   })
 }
 
 // -- Export --
 
-export async function exportTree(
-  treeId: string,
+export async function exportRhizome(
+  rhizomeId: string,
   format: 'json' | 'csv' = 'json',
   includeEvents = false,
 ): Promise<void> {
   const params = new URLSearchParams({ format })
   if (includeEvents) params.set('include_events', 'true')
-  const res = await fetch(`${BASE}/trees/${treeId}/export?${params}`)
+  const res = await fetch(`${BASE}/rhizomes/${rhizomeId}/export?${params}`)
   if (!res.ok) throw new Error(`Export failed: ${res.status}`)
 
   const blob = await res.blob()
@@ -347,27 +347,27 @@ export async function exportTree(
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = `${treeId}.${ext}`
+  a.download = `${rhizomeId}.${ext}`
   document.body.appendChild(a)
   a.click()
   document.body.removeChild(a)
   URL.revokeObjectURL(url)
 }
 
-export function getTreePaths(
-  treeId: string,
+export function getRhizomePaths(
+  rhizomeId: string,
 ): Promise<{ paths: string[][] }> {
-  return request(`/trees/${treeId}/paths`)
+  return request(`/rhizomes/${rhizomeId}/paths`)
 }
 
 // -- Generation (non-streaming) --
 
 export function generate(
-  treeId: string,
+  rhizomeId: string,
   nodeId: string,
   req: GenerateRequest = {},
 ): Promise<NodeResponse> {
-  return request(`/trees/${treeId}/nodes/${nodeId}/generate`, {
+  return request(`/rhizomes/${rhizomeId}/nodes/${nodeId}/generate`, {
     method: 'POST',
     body: JSON.stringify({ ...req, stream: false }),
   })
@@ -376,7 +376,7 @@ export function generate(
 // -- Generation (streaming via SSE) --
 
 export async function generateStream(
-  treeId: string,
+  rhizomeId: string,
   nodeId: string,
   req: GenerateRequest,
   onDelta: (text: string) => void,
@@ -386,7 +386,7 @@ export async function generateStream(
   signal?: AbortSignal,
 ): Promise<void> {
   try {
-    const res = await fetch(`${BASE}/trees/${treeId}/nodes/${nodeId}/generate`, {
+    const res = await fetch(`${BASE}/rhizomes/${rhizomeId}/nodes/${nodeId}/generate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...req, stream: true }),
@@ -465,7 +465,7 @@ export async function generateStream(
 // -- Generation (multi-stream n>1 via SSE) --
 
 export async function generateMultiStream(
-  treeId: string,
+  rhizomeId: string,
   nodeId: string,
   req: GenerateRequest,
   onDelta: (text: string, completionIndex: number) => void,
@@ -476,7 +476,7 @@ export async function generateMultiStream(
   signal?: AbortSignal,
 ): Promise<void> {
   try {
-    const res = await fetch(`${BASE}/trees/${treeId}/nodes/${nodeId}/generate`, {
+    const res = await fetch(`${BASE}/rhizomes/${rhizomeId}/nodes/${nodeId}/generate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...req, stream: true }),
@@ -587,10 +587,10 @@ export async function importConversations(
 
 // -- Merge --
 
-export async function previewMerge(treeId: string, file: File): Promise<MergePreviewResponse> {
+export async function previewMerge(rhizomeId: string, file: File): Promise<MergePreviewResponse> {
   const formData = new FormData()
   formData.append('file', file)
-  const res = await fetch(`${BASE}/trees/${treeId}/merge/preview`, {
+  const res = await fetch(`${BASE}/rhizomes/${rhizomeId}/merge/preview`, {
     method: 'POST',
     body: formData,
   })
@@ -602,7 +602,7 @@ export async function previewMerge(treeId: string, file: File): Promise<MergePre
 }
 
 export async function executeMerge(
-  treeId: string,
+  rhizomeId: string,
   file: File,
   conversationIndex?: number,
 ): Promise<MergeResult> {
@@ -611,7 +611,7 @@ export async function executeMerge(
   const qs = params.toString() ? `?${params}` : ''
   const formData = new FormData()
   formData.append('file', file)
-  const res = await fetch(`${BASE}/trees/${treeId}/merge${qs}`, {
+  const res = await fetch(`${BASE}/rhizomes/${rhizomeId}/merge${qs}`, {
     method: 'POST',
     body: formData,
   })
@@ -625,22 +625,22 @@ export async function executeMerge(
 // -- Summaries --
 
 export function generateSummary(
-  treeId: string,
+  rhizomeId: string,
   nodeId: string,
   req: CreateSummaryRequest,
 ): Promise<SummaryResponse> {
-  return request(`/trees/${treeId}/nodes/${nodeId}/summarize`, {
+  return request(`/rhizomes/${rhizomeId}/nodes/${nodeId}/summarize`, {
     method: 'POST',
     body: JSON.stringify(req),
   })
 }
 
-export function getTreeSummaries(treeId: string): Promise<SummaryResponse[]> {
-  return request(`/trees/${treeId}/summaries`)
+export function getRhizomeSummaries(rhizomeId: string): Promise<SummaryResponse[]> {
+  return request(`/rhizomes/${rhizomeId}/summaries`)
 }
 
-export function removeSummary(treeId: string, summaryId: string): Promise<void> {
-  return request(`/trees/${treeId}/summaries/${summaryId}`, {
+export function removeSummary(rhizomeId: string, summaryId: string): Promise<void> {
+  return request(`/rhizomes/${rhizomeId}/summaries/${summaryId}`, {
     method: 'DELETE',
   })
 }
@@ -649,7 +649,7 @@ export function removeSummary(treeId: string, summaryId: string): Promise<void> 
 
 export function searchNodes(params: {
   q: string
-  tree_ids?: string
+  rhizome_ids?: string
   models?: string
   providers?: string
   roles?: string
@@ -660,7 +660,7 @@ export function searchNodes(params: {
 }): Promise<SearchResponse> {
   const searchParams = new URLSearchParams()
   searchParams.set('q', params.q)
-  if (params.tree_ids) searchParams.set('tree_ids', params.tree_ids)
+  if (params.rhizome_ids) searchParams.set('rhizome_ids', params.rhizome_ids)
   if (params.models) searchParams.set('models', params.models)
   if (params.providers) searchParams.set('providers', params.providers)
   if (params.roles) searchParams.set('roles', params.roles)

@@ -7,7 +7,7 @@
  */
 
 import type { InterventionEntry, NodeResponse } from '../../api/types.ts'
-import type { TreeDefaults } from '../TreeView/contextDiffs.ts'
+import type { RhizomeDefaults } from '../RhizomeView/contextDiffs.ts'
 
 // -- Types --
 
@@ -73,7 +73,7 @@ function computeLastActiveRow(
 export function computeCanvasGrid(
   pathNodes: NodeResponse[],
   interventions: InterventionEntry[],
-  treeDefaults: TreeDefaults,
+  rhizomeDefaults: RhizomeDefaults,
 ): CanvasGrid {
   // Build row labels: system prompt row + one per path node
   const rowLabels: RowLabel[] = [
@@ -90,7 +90,7 @@ export function computeCanvasGrid(
   // Cumulative edit state: nodeId -> edited content
   const editMap = new Map<string, string>()
   // Track system prompt separately
-  let currentSystemPrompt = treeDefaults.default_system_prompt ?? ''
+  let currentSystemPrompt = rhizomeDefaults.default_system_prompt ?? ''
   // Track excluded node IDs
   let currentExcludedIds = new Set<string>()
 
@@ -107,7 +107,7 @@ export function computeCanvasGrid(
     type: 'system-prompt',
     nodeId: null,
     role: 'system',
-    content: treeDefaults.default_system_prompt ?? '',
+    content: rhizomeDefaults.default_system_prompt ?? '',
     isChanged: true, // First appearance — always show content
     isExcluded: false,
   })

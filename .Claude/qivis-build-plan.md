@@ -12,16 +12,16 @@ Detailed breakdown of the architecture document's build phases into discrete, im
 
 _Goal: Talk to Claude through your own tool._
 
-All subphases (0.1–0.6) complete. Event sourcing with CQRS, SQLite/WAL, tree/node CRUD, Anthropic provider with streaming, basic context builder with boundary-safe truncation, minimal React frontend with Zustand state management. 115 tests at completion.
+All subphases (0.1–0.6) complete. Event sourcing with CQRS, SQLite/WAL, rhizome/node CRUD, Anthropic provider with streaming, basic context builder with boundary-safe truncation, minimal React frontend with Zustand state management. 115 tests at completion.
 
 **What was built:**
 - Event store (append-only, sequence numbers, JSON payloads)
 - State projector (incremental materialization of events into trees/nodes tables)
 - Pydantic models for all event types and canonical data structures
-- FastAPI routes: tree CRUD, node creation, generation with SSE streaming
+- FastAPI routes: rhizome CRUD, node creation, generation with SSE streaming
 - `AnthropicProvider` implementing `LLMProvider` ABC
 - `ContextBuilder.build()` with boundary-safe truncation and `ContextUsage` tracking
-- React frontend: tree list, linear chat view, message input, system prompt input, streaming display
+- React frontend: rhizome list, linear chat view, message input, system prompt input, streaming display
 
 ### Phase 1: Branching + Provider Selection ✅
 
@@ -55,16 +55,16 @@ _Goal: Make the existing tool properly usable._
 
 The gaps identified during Phase 1 manual testing. Small phase, focused on filling holes before building new features.
 
-### 2.1 — Tree Settings ✅
+### 2.1 — Rhizome Settings ✅
 
-Allow editing a tree's defaults after creation. `PATCH /api/trees/{id}` with `TreeMetadataUpdated` events (one per changed field, preserving old/new values). Projector handler with field allowlist. Settings panel UI: inline-editable title, gear icon expands provider/model/system prompt form. Provider/model selection on tree creation. 20 tests. 184 tests at completion.
+Allow editing a rhizome's defaults after creation. `PATCH /api/rhizomes/{id}` with `RhizomeMetadataUpdated` events (one per changed field, preserving old/new values). Projector handler with field allowlist. Settings panel UI: inline-editable title, gear icon expands provider/model/system prompt form. Provider/model selection on rhizome creation. 20 tests. 184 tests at completion.
 
 ### 2.2 — Generation UX ✅
 
 Error recovery, smarter defaults, batch generation.
 
 - **Error recovery**: `generationError` store state preserves failed attempt params (provider, model, system prompt, parent node ID, error message). Inline error panel at path leaf with Retry / Change settings / Dismiss. Retry uses saved params. Change settings opens ForkPanel in regenerate mode.
-- **Branch-local model default**: Walk active path backwards to find last assistant node's provider/model. Use as defaults for `sendMessage`, ForkPanel, and regenerate. Falls back to tree defaults.
+- **Branch-local model default**: Walk active path backwards to find last assistant node's provider/model. Use as defaults for `sendMessage`, ForkPanel, and regenerate. Falls back to rhizome defaults.
 - **n>1 generation**: `n: int = Field(default=1, ge=1, le=10)` on `GenerateRequest`. `generate_n()` service method uses `asyncio.gather` for parallel generation. All N results share same `generation_id`. Router returns first node. Frontend: count input in ForkPanel settings, n>1 forces non-streaming. Streaming + n>1 rejected with 400.
 
 12 new tests. 196 tests at completion.
@@ -83,7 +83,7 @@ Stream all N responses simultaneously with live branch navigation.
 
 Two independent quality-of-life features.
 
-- **Message timestamps**: `formatTimestamp()` helper in MessageRow — relative when recent ("2m ago"), absolute when older ("Feb 15, 2:30 PM"). Shown on all messages in hover-revealed `.message-meta`. Tree-level "Include timestamps in context" setting (stored in tree `metadata` JSON blob): when enabled, ContextBuilder prepends `[YYYY-MM-DD HH:MM]` to each message sent to the LLM. `metadata` added to `PatchTreeRequest` and projector `_UPDATABLE_TREE_FIELDS` allowlist. Checkbox in TreeSettings panel.
+- **Message timestamps**: `formatTimestamp()` helper in MessageRow — relative when recent ("2m ago"), absolute when older ("Feb 15, 2:30 PM"). Shown on all messages in hover-revealed `.message-meta`. Rhizome-level "Include timestamps in context" setting (stored in rhizome `metadata` JSON blob): when enabled, ContextBuilder prepends `[YYYY-MM-DD HH:MM]` to each message sent to the LLM. `metadata` added to `PatchRhizomeRequest` and projector `_UPDATABLE_RHIZOME_FIELDS` allowlist. Checkbox in RhizomeSettings panel.
 - **Theme toggle**: Three-state cycle button (system/light/dark) in sidebar toggle bar. `data-theme` attribute on `:root` + dual CSS selectors (`:root[data-theme="dark"]` for manual, `@media (prefers-color-scheme: dark)` with `:not()` guards for system). Persisted in `localStorage('qivis-theme')`. Unicode icons for modes.
 
 10 new tests. 211 tests at completion. **Phase 2 complete.**
@@ -120,8 +120,8 @@ See the model's reasoning process.
 - **Anthropic provider**: `_build_params` adds `thinking` parameter + forces `temperature=1` when extended thinking enabled. `_extract_thinking()` collects thinking blocks. Streaming: tracks `current_block_type` via `content_block_start`/`content_block_stop`, yields `thinking_delta` chunks for thinking blocks
 - **OpenAI provider**: `_extract_reasoning_tokens()` safely extracts `reasoning_tokens` count from `usage.completion_tokens_details` (content not exposed by API)
 - **SSE protocol**: `thinking_delta` events stream thinking content to frontend. `message_stop` includes full `thinking_content`
-- **Context builder**: `include_thinking` parameter prepends `[Model thinking: ...]` to assistant messages when tree-level `include_thinking_in_context` is enabled
-- **Frontend**: `ThinkingSection` component — collapsible display with expand/collapse toggle, word count badge, monospace rendering. Auto-expanded during streaming with cursor. Two-phase streaming in LinearView (thinking phase → text phase). Extended thinking checkbox + budget input in ForkPanel. Tree-level settings: "Extended thinking by default", "Thinking budget", "Include thinking in context"
+- **Context builder**: `include_thinking` parameter prepends `[Model thinking: ...]` to assistant messages when rhizome-level `include_thinking_in_context` is enabled
+- **Frontend**: `ThinkingSection` component — collapsible display with expand/collapse toggle, word count badge, monospace rendering. Auto-expanded during streaming with cursor. Two-phase streaming in LinearView (thinking phase → text phase). Extended thinking checkbox + budget input in ForkPanel. Rhizome-level settings: "Extended thinking by default", "Thinking budget", "Include thinking in context"
 - Graceful degradation: no ThinkingSection when `thinking_content` is null. Existing nodes unaffected.
 
 35 new tests. 246 tests at completion.
@@ -131,11 +131,11 @@ See the model's reasoning process.
 The dials on the spectrometer.
 
 **What was built:**
-- **Backend merge resolution**: `merge_sampling_params()` with three-layer merge: request overrides > tree `default_sampling_params` > `SamplingParams()` base. Uses Pydantic's `model_fields_set` to only apply explicitly-set request fields, preserving tree defaults for the rest. `_parse_json_field()` utility handles JSON strings, dicts, and malformed data gracefully.
-- **Backward compatibility**: Trees with `metadata.extended_thinking` (the old hack) still work when no `default_sampling_params` set. TreeSettings migrates metadata thinking to `default_sampling_params` on save and cleans up the old metadata keys.
+- **Backend merge resolution**: `merge_sampling_params()` with three-layer merge: request overrides > rhizome `default_sampling_params` > `SamplingParams()` base. Uses Pydantic's `model_fields_set` to only apply explicitly-set request fields, preserving rhizome defaults for the rest. `_parse_json_field()` utility handles JSON strings, dicts, and malformed data gracefully.
+- **Backward compatibility**: Rhizomes with `metadata.extended_thinking` (the old hack) still work when no `default_sampling_params` set. RhizomeSettings migrates metadata thinking to `default_sampling_params` on save and cleans up the old metadata keys.
 - **Typed `SamplingParams` interface**: Frontend TypeScript interface matching backend model. `NodeResponse.sampling_params`, `TreeDetail.default_sampling_params`, `GenerateRequest.sampling_params`, `PatchTreeRequest.default_sampling_params` all typed.
 - **Presets**: Deterministic (temp=0, top_p=1), Balanced (temp=0.7), Creative (temp=1.0, top_p=0.95). `detectPreset()` auto-detects current preset from form state. Shared between ForkPanel and TreeSettings.
-- **ForkPanel**: Full sampling controls — temperature, top_p, top_k, max_tokens, frequency_penalty, presence_penalty. Paired layout for compact display. Preset dropdown. Extended thinking + budget. All initialized from `samplingDefaults` prop (tree's `default_sampling_params`).
+- **ForkPanel**: Full sampling controls — temperature, top_p, top_k, max_tokens, frequency_penalty, presence_penalty. Paired layout for compact display. Preset dropdown. Extended thinking + budget. All initialized from `samplingDefaults` prop (rhizome's `default_sampling_params`).
 - **TreeSettings**: "Sampling defaults" section with preset dropdown, paired number inputs for all params, extended thinking toggle + budget. Saves to `default_sampling_params` via PATCH. Change detection includes sampling params.
 - **Node params display**: `formatSamplingMeta()` on assistant messages shows non-default params in the meta line (temp, top_p, top_k, max_tok, freq_pen, pres_pen, thinking). Monospace font, subtle tertiary color.
 - **Store cleanup**: `sendMessage` no longer constructs `sampling_params` from metadata — backend merge resolution handles it.
@@ -171,7 +171,7 @@ The tree topology made visible.
 - **SVG rendering** (`GraphView.tsx`): layered rendering — bezier curve edges, role-colored node circles, fork rings for branching points, single-letter role labels. Active path highlighted in warm sienna, off-path nodes ghosted at 30% opacity. Hover highlights the full path from root to hovered node.
 - **Split pane layout**: linear view on left, graph on right. Draggable divider with 200px minimum, 60% maximum. Subtle dot-grid background on graph pane evoking scientific precision. Stats badge (node count, fork count) in bottom-right corner.
 - **Click-to-navigate**: `navigateToNode(nodeId)` store action walks backward from target to root, builds complete `branchSelections` map, sets it in one call. LinearView and GraphView both react instantly. Replaces (not merges) selections — clicking is a full path commitment.
-- **Toggle button**: 28x28 branching-tree SVG icon in TreeSettings bar, same visual vocabulary as the gear icon. Active state with accent highlight when graph is open.
+- **Toggle button**: 28x28 branching-tree SVG icon in RhizomeSettings bar, same visual vocabulary as the gear icon. Active state with accent highlight when graph is open.
 - **Tooltip**: hover reveals content preview (~120 chars), role label, model name. Paper-colored overlay with editorial typography.
 - **Design**: scientific-diagram aesthetic within the existing editorial palette. Dot-grid background, organic bezier edges, warm glow on active path, ghostly off-path branches. Consistent with light/dark theme.
 
@@ -214,7 +214,7 @@ Retroactive edits as research interventions with palimpsest display and version 
 - `EventStore.get_events_by_type(tree_id, event_type)` — filtered event query for edit history reconstruction
 - `GET /api/trees/{id}/nodes/{nid}/edit-history` endpoint: `EditHistoryResponse` with `original_content`, `current_content`, and ordered `EditHistoryEntry[]` (event_id, sequence_num, timestamp, new_content)
 - `get_edit_history` service method: queries event log, filters by node_id, returns complete edit timeline
-- Frontend: `editNodeContent` API client + Zustand action (in-place node update, no tree re-fetch)
+- Frontend: `editNodeContent` API client + Zustand action (in-place node update, no rhizome re-fetch)
 - MessageRow: Edit/Restore buttons (hover-reveal), inline textarea editor (Cmd+Enter save, Esc cancel), "(edited)" indicator in meta line
 - **Palimpsest display**: original content stays in primary reading position with normal styling (the truth); edit appears below as an "overlay block" with thin accent left-border, faint bg-secondary background, and "MODEL SEES" label — visually "placed here" like a correction slip on a manuscript
 - **EditHistory component**: collapsible panel (follows ThinkingSection pattern), lazy-loads history on first expand, renders all versions as clickable rows with version number, truncated preview, relative timestamp. Synthetic "Original" (v0) entry. Click to select → highlights downstream assistants
@@ -242,7 +242,7 @@ Context modal + per-node generation flag tracking.
 Per-assistant diff badge + asymmetric split view comparing researcher's truth vs. model's received context.
 
 **What was built:**
-- `contextDiffs.ts`: `computeDiffSummary(node, path, treeDefaults)` for lightweight badge data, `buildDiffRows(node, allNodes, treeDefaults)` for full row-by-row alignment, `getTreeDefaults(tree)` helper
+- `contextDiffs.ts`: `computeDiffSummary(node, path, rhizomeDefaults)` for lightweight badge data, `buildDiffRows(node, allNodes, rhizomeDefaults)` for full row-by-row alignment, `getRhizomeDefaults(rhizome)` helper
 - `ContextDiffBadge.tsx`: inline badge (colored dot + count) in assistant message meta line. Accent dot for content changes, muted for metadata-only
 - `ContextSplitView.tsx`: asymmetric split view modal (1100px, 2fr/3fr grid). Right column = model's received context fully rendered. Left column = pregnant space (thin rule + role label) for matches, actual content at divergence points, voids where researcher's truth has content the model didn't see
 - Row types: match, edited, augmented, prefill, evicted, non-api-role, system-prompt, metadata
@@ -326,8 +326,8 @@ _Goal: Annotate, bookmark, manage context, export._
 ### 6.4 — Smart Eviction + Export 🔀
 
 **Tasks:**
-- **Smart eviction**: Protected ranges (first N turns, last N turns, bookmarked nodes), middle-turn eviction as whole messages, optional Haiku summarization of evicted content, `EvictionReport` in context panel, configurable `EvictionStrategy` per tree, warning at threshold
-- **Export**: `GET /api/trees/{id}/export?format=json|csv`, full tree with all metadata, annotations, bookmarks, logprobs. CSV flattened (one row per node). `GET /api/trees/{id}/paths` enumerates all root-to-leaf paths.
+- **Smart eviction**: Protected ranges (first N turns, last N turns, bookmarked nodes), middle-turn eviction as whole messages, optional Haiku summarization of evicted content, `EvictionReport` in context panel, configurable `EvictionStrategy` per rhizome, warning at threshold
+- **Export**: `GET /api/rhizomes/{id}/export?format=json|csv`, full rhizome with all metadata, annotations, bookmarks, logprobs. CSV flattened (one row per node). `GET /api/rhizomes/{id}/paths` enumerates all root-to-leaf paths.
 
 **Blockers:** 6.2 (bookmarks for bookmark-aware protection), 6.3 (exclusions run before eviction).
 
@@ -338,17 +338,17 @@ _Goal: Annotate, bookmark, manage context, export._
 **Tasks:**
 - `notes` table: note_id, tree_id, node_id, content, created_at
 - `NoteAdded` / `NoteRemoved` events + projector handlers
-- Note CRUD endpoints: POST/GET/DELETE per node, GET tree-wide with `?q=` search
+- Note CRUD endpoints: POST/GET/DELETE per node, GET rhizome-wide with `?q=` search
 - `note_count` on `NodeResponse` (mirrors annotation_count pattern)
-- Tree-wide annotations endpoint: `GET /api/trees/{id}/annotations`
+- Rhizome-wide annotations endpoint: `GET /api/rhizomes/{id}/annotations`
 - Frontend `NotePanel`: inline below messages (textarea + submit, list with remove)
 - Frontend `ResearchPanel`: tabbed sidebar replacing BookmarkList (Bookmarks, Tags, Notes tabs)
 - Click-to-navigate from any research item to its source node
-- 18 new backend tests (projection, CRUD, note_count, tree annotations, event replay)
+- 18 new backend tests (projection, CRUD, note_count, rhizome annotations, event replay)
 
 **Design notes:** Notes are simpler than annotations (no tag/value taxonomy) and bookmarks (no summary generation). Pure free-form text commentary — "this is where the model started hedging," "compare with the other branch." The research panel unifies all three metadata types into a single navigable sidebar view.
 
-✅ Can add free-form notes on any node. Research panel shows bookmarks, tags, and notes for the current tree. 523 tests.
+✅ Can add free-form notes on any node. Research panel shows bookmarks, tags, and notes for the current rhizome. 523 tests.
 
 ---
 
@@ -382,9 +382,9 @@ Six small-to-medium UI bugs, rapid-fire.
 
 - **Context bar clickable size**: increase hit target for the context usage bar on assistant messages
 - **Regen dialog position**: should appear above the message, not below (current placement pushes content off-screen)
-- **Extended thinking override on regenerate**: turning thinking off in regen dialog may not override tree default due to sampling param merge backward-compat hack
-- **TreeSettings save consistency**: some fields save immediately (checkboxes), others buffer and require explicit Save button. Fix: either auto-save all, or make all fields buffer with clear dirty indicators and a single Save
-- **Center button for collapsed tree panel**: when sidebar is collapsed, add a centered expand button
+- **Extended thinking override on regenerate**: turning thinking off in regen dialog may not override rhizome default due to sampling param merge backward-compat hack
+- **RhizomeSettings save consistency**: some fields save immediately (checkboxes), others buffer and require explicit Save button. Fix: either auto-save all, or make all fields buffer with clear dirty indicators and a single Save
+- **Center button for collapsed rhizome panel**: when sidebar is collapsed, add a centered expand button
 - **Markdown rendering**: message content should render markdown (bold, italic, code blocks, lists). Double asterisks currently display raw
 
 ### Chunk 4 — Documentation & Infrastructure (backend + docs)
@@ -408,31 +408,31 @@ Extracted 5 shared utilities to `index.css`: `.badge`, `.inline-panel`, `.hover-
 
 ### Chunk 2 — Store Helpers ✅
 
-Four helpers extracted above `create()`: `STREAMING_RESET`/`MULTI_STREAMING_RESET` constants (replaced ~14 streaming state resets), `refreshTree`/`refreshTreeSelectNewest` (replaced 7 getTree+listTrees pairs), `fetchTreeData` generic (consolidated 7 fetch actions to 3 lines each), `updateNode` (replaced 11 node-field update patterns). Store reduced from 1603 to 1420 lines. JS bundle reduced ~3.4KB.
+Four helpers extracted above `create()`: `STREAMING_RESET`/`MULTI_STREAMING_RESET` constants (replaced ~14 streaming state resets), `refreshRhizome`/`refreshRhizomeSelectNewest` (replaced 7 getRhizome+listRhizomes pairs), `fetchRhizomeData` generic (consolidated 7 fetch actions to 3 lines each), `updateNode` (replaced 11 node-field update patterns). Store reduced from 1603 to 1420 lines. JS bundle reduced ~3.4KB.
 
 ### Chunk 3 — Component Extraction ✅
 
-Extracted `IconToggleButton` component (`shared/IconToggleButton.tsx` + `.css`) — replaces 5 identical icon toggle buttons in TreeSettings (graph, canvas, digressions, research, gear) and their two duplicate CSS blocks (`.graph-toggle` + `.tree-settings-gear`). Extracted `useEscapeKey` and `useClickOutside` hooks — replaced ActionMenu's inline useEffects (20 lines -> 2 hook calls) and refactored `useModalBehavior` to consume `useEscapeKey` internally. NotePanel/AnnotationPanel convergence evaluated and deliberately passed — ~40% structural similarity but AnnotationPanel's complexity is genuinely different, not duplicated. CSS: 99.99 KB (-0.5KB from Chunk 2).
+Extracted `IconToggleButton` component (`shared/IconToggleButton.tsx` + `.css`) — replaces 5 identical icon toggle buttons in RhizomeSettings (graph, canvas, digressions, research, gear) and their two duplicate CSS blocks (`.graph-toggle` + `.rhizome-settings-gear`). Extracted `useEscapeKey` and `useClickOutside` hooks — replaced ActionMenu's inline useEffects (20 lines -> 2 hook calls) and refactored `useModalBehavior` to consume `useEscapeKey` internally. NotePanel/AnnotationPanel convergence evaluated and deliberately passed — ~40% structural similarity but AnnotationPanel's complexity is genuinely different, not duplicated. CSS: 99.99 KB (-0.5KB from Chunk 2).
 
 ---
 
 ## Phase 7: Corpus & Search
 
-_Goal: Build and search a research corpus. Organize trees. Import external conversations._
+_Goal: Build and search a research corpus. Organize rhizomes. Import external conversations._
 
 ### 7.1 — FTS5 Search ✅
 
-FTS5 virtual table with external content (`content='nodes'`, porter + unicode61 tokenizer). Three SQL triggers (INSERT/DELETE/UPDATE) keep index in sync — no projector changes. `SearchService` with dynamic query building: FTS5 MATCH + optional filters (tree_ids, models, providers, roles, annotation tags, date range). Snippet markers `[[mark]]/[[/mark]]` for safe frontend rendering. `GET /api/search?q=keyword` with comma-separated filter params. Persistent search input at top of sidebar — results replace tree list while searching. `navigateToSearchResult` handles cross-tree navigation (first cross-tree store action). 20 new tests. 472 tests at completion.
+FTS5 virtual table with external content (`content='nodes'`, porter + unicode61 tokenizer). Three SQL triggers (INSERT/DELETE/UPDATE) keep index in sync — no projector changes. `SearchService` with dynamic query building: FTS5 MATCH + optional filters (rhizome_ids, models, providers, roles, annotation tags, date range). Snippet markers `[[mark]]/[[/mark]]` for safe frontend rendering. `GET /api/search?q=keyword` with comma-separated filter params. Persistent search input at top of sidebar — results replace rhizome list while searching. `navigateToSearchResult` handles cross-rhizome navigation (first cross-rhizome store action). 20 new tests. 472 tests at completion.
 
 ### 7.2 — Conversation Import ✅
 
-Importer package (`qivis.importer`) with intermediate representation (`ImportedNode`/`ImportedTree` dataclasses), auto-format detection, and two parsers: ChatGPT (tree-native with `mapping` dict, branch preservation, null-message reparenting, system prompt extraction, model/provider inference) and generic linear (ShareGPT `{from,value}` + generic `{role,content}`). `ImportService` with preview (parse without creating) and import (emit `TreeCreated` + `NodeCreated` events with `device_id="import"`, preserved source timestamps, topological sort for parent-before-child ordering). `POST /api/import/preview` and `POST /api/import` with `UploadFile` + optional format/selected params. Import wizard modal in sidebar: drag-and-drop file input, format badge, conversation list with checkboxes, per-conversation preview (title, message count, branch count, models, system prompt, first messages, warnings), import progress, results with "Open" navigation. 25 new tests. 497 tests at completion.
+Importer package (`qivis.importer`) with intermediate representation (`ImportedNode`/`ImportedTree` dataclasses), auto-format detection, and two parsers: ChatGPT (tree-native with `mapping` dict, branch preservation, null-message reparenting, system prompt extraction, model/provider inference) and generic linear (ShareGPT `{from,value}` + generic `{role,content}`). `ImportService` with preview (parse without creating) and import (emit `RhizomeCreated` + `NodeCreated` events with `device_id="import"`, preserved source timestamps, topological sort for parent-before-child ordering). `POST /api/import/preview` and `POST /api/import` with `UploadFile` + optional format/selected params. Import wizard modal in sidebar: drag-and-drop file input, format badge, conversation list with checkboxes, per-conversation preview (title, message count, branch count, models, system prompt, first messages, warnings), import progress, results with "Open" navigation. 25 new tests. 497 tests at completion.
 
-**Key decisions:** `mode="chat"` (not `"manual"` — avoids "researcher authored" overlay), system messages extracted to tree property only (not as nodes), import provenance via `metadata.imported=True` + `device_id="import"` (not new event types). Tree merge/reconciliation deferred to 7.2b.
+**Key decisions:** `mode="chat"` (not `"manual"` — avoids "researcher authored" overlay), system messages extracted to rhizome property only (not as nodes), import provenance via `metadata.imported=True` + `device_id="import"` (not new event types). Rhizome merge/reconciliation deferred to 7.2b.
 
-### 7.2b — Tree Merge ✅
+### 7.2b — Rhizome Merge ✅
 
-Merge an imported conversation file into an existing tree without duplicating already-present messages. Tree-local workflow: toolbar button opens merge panel, upload file, preview match results, merge. Reuses import parsers and topological sort from 7.2.
+Merge an imported conversation file into an existing rhizome without duplicating already-present messages. Rhizome-local workflow: toolbar button opens merge panel, upload file, preview match results, merge. Reuses import parsers and topological sort from 7.2.
 
 **Matching algorithm:** "Longest common prefix" match on each branch. Index existing nodes by `(parent_id, role, normalized_content.strip())`. Walk imported nodes in topological order — if parent matched, try to match this node; if parent is new, this node is new. Matches against `edited_content` if set (what the researcher sees). Naturally handles extend (add suffix), diverge (fork at mismatch), no overlap (all new), full overlap (nothing to merge), and branching imports.
 
@@ -448,21 +448,21 @@ General-purpose summarization system: summarize any branch or subtree with confi
 
 **Frontend:** `SummarizePanel` inline component (ForkPanel pattern) with config/generating/result states. "Summarize" item in ActionMenu research group (quill). `summarizeTargetId` state in LinearView toggles panel. ResearchPanel gets "Summaries" tab (4th tab) showing scope/type badges, expandable summary text, model attribution, navigate-to-anchor, remove button. Store: `treeSummaries` state, `fetchTreeSummaries`/`generateSummary`/`removeSummary` actions.
 
-### 7.4 — Tree Organization ✅
+### 7.4 — Rhizome Organization ✅
 
-Hierarchical folders and flat tags stored in tree metadata JSON (`folders: string[]`, `tags: string[]`). No new tables or event types — uses existing `PatchTreeRequest` with read-merge-write pattern.
+Hierarchical folders and flat tags stored in rhizome metadata JSON (`folders: string[]`, `tags: string[]`). No new tables or event types — uses existing `PatchRhizomeRequest` with read-merge-write pattern.
 
-**Backend:** Wired up orphaned `TreeArchived`/`TreeUnarchived` events (projector handlers, service methods, two new POST endpoints). Updated `list_trees` with `include_archived` query param and enriched `TreeSummary` (folders, tags, archived parsed from metadata JSON). 13 new tests. 568 tests at completion.
+**Backend:** Wired up orphaned `RhizomeArchived`/`RhizomeUnarchived` events (projector handlers, service methods, two new POST endpoints). Updated `list_rhizomes` with `include_archived` query param and enriched `RhizomeSummary` (folders, tags, archived parsed from metadata JSON). 13 new tests. 568 tests at completion.
 
-**Frontend:** Right-click context menu (`TreeContextMenu`) with state machine (menu → folder-picker / tag-picker). Inline rename on double-click or from context menu. View mode toggle (flat list / folder groups) persisted to localStorage. Folder view builds a trie from hierarchical path strings — trees with multiple folders appear in each group. Tag filter bar with deterministic hash-colored pills (intersection filtering). Archive toggle at sidebar bottom. `tagColor` utility: djb2 hash into 12-color muted palette.
+**Frontend:** Right-click context menu (`RhizomeContextMenu`) with state machine (menu → folder-picker / tag-picker). Inline rename on double-click or from context menu. View mode toggle (flat list / folder groups) persisted to localStorage. Folder view builds a trie from hierarchical path strings — rhizomes with multiple folders appear in each group. Tag filter bar with deterministic hash-colored pills (intersection filtering). Archive toggle at sidebar bottom. `tagColor` utility: djb2 hash into 12-color muted palette.
 
-**Key decisions:** Folders as multi-assignable hierarchical tags ("dressed up like folders"), client-side derivation of folder/tag registries from TreeSummary data (no new endpoints), read-merge-write on metadata updates to avoid clobbering `include_timestamps`/`stream_responses`/etc, duplicate and folder rename deferred.
+**Key decisions:** Folders as multi-assignable hierarchical tags ("dressed up like folders"), client-side derivation of folder/tag registries from RhizomeSummary data (no new endpoints), read-merge-write on metadata updates to avoid clobbering `include_timestamps`/`stream_responses`/etc, duplicate and folder rename deferred.
 
-✅ Trees organized into folders and tags. Sidebar filterable. Right-click actions work.
+✅ Rhizomes organized into folders and tags. Sidebar filterable. Right-click actions work.
 
 ### 7.4b — Full-Screen Library View ✅
 
-Full-screen overlay for visual corpus organization. Two-panel layout: folder tree (left, 260px, droppable targets) + tree card grid (right, CSS Grid auto-fill). `@dnd-kit/core` for drag-and-drop.
+Full-screen overlay for visual corpus organization. Two-panel layout: folder tree (left, 260px, droppable targets) + rhizome card grid (right, CSS Grid auto-fill). `@dnd-kit/core` for drag-and-drop.
 
 **DnD:** `PointerSensor` with 8px distance constraint (distinguishes click from drag), `KeyboardSensor` for accessibility, `closestCenter` collision detection. Cards draggable via `useDraggable`, folders droppable via `useDroppable`. Drop = add folder; drop on "Unsorted" = clear all folders.
 
@@ -472,7 +472,7 @@ Full-screen overlay for visual corpus organization. Two-panel layout: folder tre
 
 **Entry points:** "Library" button in TreeList header, `Cmd+Shift+L` keyboard shortcut. Overlay uses `useModalBehavior()` (Escape/backdrop-click dismissal, focus trap).
 
-**Shared utility:** Extracted `FolderNode`, `buildFolderTrie`, `countTreesInFolder` from TreeList to `utils/folderTrie.ts`, added `collectTreeIds` and `findFolderNode` helpers.
+**Shared utility:** Extracted `FolderNode`, `buildFolderTrie`, `countRhizomesInFolder` from RhizomeList to `utils/folderTrie.ts`, added `collectRhizomeIds` and `findFolderNode` helpers.
 
 ✅ Full-screen library with drag-and-drop organization, multi-select, folder CRUD. **Phase 7 complete.**
 
@@ -507,7 +507,7 @@ _Goal: Prefill, base models, local inference, full-vocab logprobs. The research 
 
 ### 8.3 — Completion Mode + Full-Vocab Logprobs ✅
 
-Completion mode renders conversations as text prompts for `/completion` endpoints. Three prompt templates (ChatML, Alpaca, Llama3) as pure functions in `generation/templates.py`, selected via tree metadata `prompt_template`. `LLMProvider.supported_modes` class attribute (`["chat"]` default) for mode detection. Two normalizers: `LogprobNormalizer.from_llamacpp()` (linear prob → logprob, `full_vocab_available` when >100 alternatives) and `from_openai_completion()` (completions API dict format).
+Completion mode renders conversations as text prompts for `/completion` endpoints. Three prompt templates (ChatML, Alpaca, Llama3) as pure functions in `generation/templates.py`, selected via rhizome metadata `prompt_template`. `LLMProvider.supported_modes` class attribute (`["chat"]` default) for mode detection. Two normalizers: `LogprobNormalizer.from_llamacpp()` (linear prob → logprob, `full_vocab_available` when >100 alternatives) and `from_openai_completion()` (completions API dict format).
 
 `LlamaCppProvider` — native httpx client for llama.cpp `/completion` API. Streaming via SSE, model discovery via `/props`. OpenAI-compatible providers (OpenAI, OpenRouter, GenericOpenAI) dispatch to `client.completions.create()` when `prompt_text` is set, stay on chat path when None. Ollama stays chat-only.
 
@@ -542,7 +542,7 @@ _Goal: Systematic tools for designing and running experiments on AI conversation
 ### 9.1 — Systematic Context Interventions 🔒
 
 **Tasks:**
-- **Context packaging dialog**: configurable transforms applied to messages before sending to model. Examples: prepend timestamps, append metadata, wrap in XML tags, insert separators. Per-tree configuration with preview
+- **Context packaging dialog**: configurable transforms applied to messages before sending to model. Examples: prepend timestamps, append metadata, wrap in XML tags, insert separators. Per-rhizome configuration with preview
 - **Move context tokens out of system prompt**: option to place system-prompt-like instructions in a user message or as a context preamble instead of the system prompt field. Some models respond differently to the same instructions in different positions
 - **Long context reminder injection**: insert a configurable reminder at a specified position in the context (e.g., halfway, every N turns). Research tool for studying the effects of in-context reminders. Gated behind explicit opt-in with clear documentation of research purpose
 
@@ -553,7 +553,7 @@ _Goal: Systematic tools for designing and running experiments on AI conversation
 ### 9.2 — Conversation Replay & Perturbation 🔀
 
 **Tasks:**
-- **Replay**: take a path through a tree and replay it through a different model — same user messages, regenerate all assistant responses. Creates a new branch at each fork. Shows how different models handle the same conversation trajectory
+- **Replay**: take a path through a rhizome and replay it through a different model — same user messages, regenerate all assistant responses. Creates a new branch at each fork. Shows how different models handle the same conversation trajectory
 - **Context perturbation experiments**: automated exclude/include/regenerate/diff cycles. Toggle a digression group or exclusion, regenerate, toggle back, regenerate, diff the results. Produces a structured comparison of "what changed when this context was present vs absent"
 - **Perturbation report**: summary of which context changes had the largest effect on model output, measured by edit distance or semantic similarity
 
@@ -561,16 +561,16 @@ _Goal: Systematic tools for designing and running experiments on AI conversation
 
 ✅ Can replay conversations through different models. Can run controlled perturbation experiments.
 
-### 9.3 — Cross-Tree Reference & Display 🔀
+### 9.3 — Cross-Rhizome Reference & Display 🔀
 
 **Tasks:**
-- **Split-pane cross-tree view**: the graph/transcript pane on the right can show a different tree than the main conversation. For repeating experiments with different models or referencing other conversations while working
-- **Customizable role labels**: replace "user" and "assistant" with researcher-chosen labels. Per-tree setting. Default labels should work for non-human "user" roles (e.g., "Participant A" / "Participant B" instead of "User" / "Assistant")
-- Tree selector in the right pane header. Independent scroll, navigation, and branch selection from the main pane
+- **Split-pane cross-rhizome view**: the graph/transcript pane on the right can show a different rhizome than the main conversation. For repeating experiments with different models or referencing other conversations while working
+- **Customizable role labels**: replace "user" and "assistant" with researcher-chosen labels. Per-rhizome setting. Default labels should work for non-human "user" roles (e.g., "Participant A" / "Participant B" instead of "User" / "Assistant")
+- Rhizome selector in the right pane header. Independent scroll, navigation, and branch selection from the main pane
 
 **Blockers:** Phase 4 (graph view exists).
 
-✅ Can view two trees side by side. Role labels customizable. **Phase 9 complete.**
+✅ Can view two rhizomes side by side. Role labels customizable. **Phase 9 complete.**
 
 ---
 
@@ -582,7 +582,7 @@ _Goal: Run model-to-model conversations. Multiple models with different contexts
 
 **Tasks:**
 - Participant CRUD: model + provider + system prompt + sampling params per participant
-- `conversation_mode: "multi_agent"` on tree creation with initial participants
+- `conversation_mode: "multi_agent"` on rhizome creation with initial participants
 - Per-participant context assembly: own messages as `role: "assistant"`, others as `role: "user"` with `[Name]: ` prefix
 - `visible_to` field on researcher notes for selective visibility
 - Participant configuration panel UI
@@ -618,10 +618,10 @@ _Goal: Run model-to-model conversations. Multiple models with different contexts
 
 **Tasks:**
 - Bring two (or more) models with different prior conversation contexts into a shared group chat
-- Each participant retains access to their full prior context (from a different tree or branch) plus the shared group chat messages
+- Each participant retains access to their full prior context (from a different rhizome or branch) plus the shared group chat messages
 - Per-participant private notes: visible only to the participant they're addressed to (internal monologue / scratchpad for each model)
-- Context assembly: `[prior context from participant's source tree] + [shared group chat messages] + [private notes for this participant]`
-- UI: participant setup wizard showing which tree/branch each participant brings as "memory"
+- Context assembly: `[prior context from participant's source rhizome] + [shared group chat messages] + [private notes for this participant]`
+- UI: participant setup wizard showing which rhizome/branch each participant brings as "memory"
 
 **Blockers:** 10.1, 10.2 (basic multi-agent must work first).
 
@@ -636,9 +636,9 @@ _Goal: Persistent, portable context that transcends individual conversations._
 ### 11.1 — Portable Digression Groups 🔒
 
 **Tasks:**
-- **Memory bank**: a tree-independent store of context snippets. Each memory has: content (from digression group nodes), label, source tree/branch, tags, created_at
-- Promote any digression group to a "memory" — copies the content into the memory bank, decoupled from the source tree
-- **Memory injection**: when creating or continuing a tree, select memories to include in context. Injected as a preamble or at a configurable position
+- **Memory bank**: a rhizome-independent store of context snippets. Each memory has: content (from digression group nodes), label, source rhizome/branch, tags, created_at
+- Promote any digression group to a "memory" — copies the content into the memory bank, decoupled from the source rhizome
+- **Memory injection**: when creating or continuing a rhizome, select memories to include in context. Injected as a preamble or at a configurable position
 - Memory CRUD endpoints, memory list in sidebar
 
 **Blockers:** 6.3 (digression groups exist).
@@ -711,7 +711,7 @@ _Goal: AI-assisted corpus analysis. Behavioral pattern detection. Agent co-annot
 ### 13.1 — Agent Co-Annotation 🔒
 
 **Tasks:**
-- **Meta-conversation**: a special tree where the agent (Claude or similar) can query, view, and annotate other conversations in the corpus
+- **Meta-conversation**: a special rhizome where the agent (Claude or similar) can query, view, and annotate other conversations in the corpus
 - Qivis as MCP server: expose `search_conversations`, `get_tree`, `get_node_context`, `get_annotations`, `add_annotation`, `get_memories` as tools
 - Agent can browse trees, read branches, add annotations, create bookmarks, and write research notes — all through natural conversation
 - Researcher guides the agent's analysis through the meta-conversation, building up annotations collaboratively
@@ -740,7 +740,7 @@ _Goal: AI-assisted corpus analysis. Behavioral pattern detection. Agent co-annot
 - Built-in skills: `LinguisticMarkerSkill` (hedging, denial, defensive language), `CoherenceScoreSkill`, `LogprobAnalysisSkill` (uncertainty patterns, entropy), `TemporalMarkerSkill`, `SelfReferenceSkill`
 - Plugin system: load skills from `skills/` directory
 - Skill runner UI: select nodes, pick skill, see results (stored as annotations)
-- **Conversation templates / research protocols**: pre-built tree starters for specific research questions (sycophancy testing, persona consistency, emotional response patterns). Shareable as JSON
+- **Conversation templates / research protocols**: pre-built rhizome starters for specific research questions (sycophancy testing, persona consistency, emotional response patterns). Shareable as JSON
 
 **Blockers:** 6.1 (annotations for storing skill results).
 
@@ -796,7 +796,7 @@ Ideas noted for consideration beyond the current roadmap:
 
 - **Image generation**: support for models with image output (DALL-E, future Claude image generation). Fundamentally different generation mode — nodes would store image outputs alongside or instead of text
 - **Conversation templates marketplace**: community-contributed shareable research protocols beyond local templates
-- **Real-time collaboration**: multiple researchers on the same tree simultaneously. Event sourcing makes this architecturally straightforward to add later
+- **Real-time collaboration**: multiple researchers on the same rhizome simultaneously. Event sourcing makes this architecturally straightforward to add later
 - **Postgres migration**: for multi-user deployments. SQLite is single-researcher; Postgres enables shared instances
 - **Custom research scripting**: embedded scripting environment (Python or similar) for researchers to write custom analysis pipelines that interact with the Qivis API. Like a Jupyter notebook integrated into the tool — define custom experiments, transformations, and visualizations without modifying the codebase
 

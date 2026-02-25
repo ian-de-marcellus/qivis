@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from 'react'
 import type { NodeResponse } from '../../api/types.ts'
-import { useTreeStore } from '../../store/treeStore.ts'
+import { useRhizomeStore } from '../../store/rhizomeStore.ts'
 import { ComparisonCard } from './ComparisonCard.tsx'
 import { computeWordDiff } from './wordDiff.ts'
 import './ComparisonView.css'
@@ -13,7 +13,7 @@ interface ComparisonViewProps {
 }
 
 export function ComparisonView({ siblings, selectedNodeId, onSelect, onDismiss }: ComparisonViewProps) {
-  const setComparisonHoveredNodeId = useTreeStore((s) => s.setComparisonHoveredNodeId)
+  const setComparisonHoveredNodeId = useRhizomeStore((s) => s.setComparisonHoveredNodeId)
 
   // Clear comparison hover when unmounted (e.g. dismiss while hovering a card)
   useEffect(() => {

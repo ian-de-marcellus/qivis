@@ -14,13 +14,13 @@ import type {
   NodeExclusionResponse,
   NodeResponse,
   NoteResponse,
-  PatchTreeRequest,
+  PatchRhizomeRequest,
   ProviderInfo,
   SearchResultItem,
   SummaryResponse,
   TaxonomyResponse,
-  TreeDetail,
-  TreeSummary,
+  RhizomeDetail,
+  RhizomeSummary,
 } from '../api/types.ts'
 
 interface GenerationError {
@@ -31,11 +31,11 @@ interface GenerationError {
   errorMessage: string
 }
 
-interface TreeStore {
+interface RhizomeStore {
   // State
-  trees: TreeSummary[]
-  selectedTreeId: string | null
-  currentTree: TreeDetail | null
+  rhizomes: RhizomeSummary[]
+  selectedRhizomeId: string | null
+  currentRhizome: RhizomeDetail | null
   providers: ProviderInfo[]
   isLoading: boolean
   isGenerating: boolean
@@ -66,9 +66,9 @@ interface TreeStore {
   exclusions: NodeExclusionResponse[]
   digressionGroups: DigressionGroupResponse[]
   nodeNotes: Record<string, NoteResponse[]>
-  treeNotes: NoteResponse[]
-  treeAnnotations: AnnotationResponse[]
-  treeSummaries: SummaryResponse[]
+  rhizomeNotes: NoteResponse[]
+  rhizomeAnnotations: AnnotationResponse[]
+  rhizomeSummaries: SummaryResponse[]
   researchPaneTab: 'bookmarks' | 'tags' | 'notes' | 'summaries'
   rightPaneMode: 'graph' | 'digressions' | 'research' | null
   groupSelectionMode: boolean
@@ -82,16 +82,16 @@ interface TreeStore {
   scrollToNodeId: string | null
 
   // Actions
-  fetchTrees: (includeArchived?: boolean) => Promise<void>
+  fetchRhizomes: (includeArchived?: boolean) => Promise<void>
   fetchProviders: () => Promise<void>
-  selectTree: (treeId: string) => Promise<void>
-  createTree: (title: string, opts?: {
+  selectRhizome: (rhizomeId: string) => Promise<void>
+  createRhizome: (title: string, opts?: {
     systemPrompt?: string
     defaultProvider?: string
     defaultModel?: string
     metadata?: Record<string, unknown>
   }) => Promise<void>
-  updateTree: (treeId: string, req: PatchTreeRequest) => Promise<void>
+  updateRhizome: (rhizomeId: string, req: PatchRhizomeRequest) => Promise<void>
   sendMessage: (content: string) => Promise<void>
   sendMessageOnly: (content: string) => Promise<void>
   stopGeneration: () => void
@@ -127,8 +127,8 @@ interface TreeStore {
   addNote: (nodeId: string, content: string) => Promise<void>
   removeNote: (nodeId: string, noteId: string) => Promise<void>
   fetchNodeNotes: (nodeId: string) => Promise<void>
-  fetchTreeNotes: () => Promise<void>
-  fetchTreeAnnotations: () => Promise<void>
+  fetchRhizomeNotes: () => Promise<void>
+  fetchRhizomeAnnotations: () => Promise<void>
   setResearchPaneTab: (tab: 'bookmarks' | 'tags' | 'notes' | 'summaries') => void
   fetchBookmarks: () => Promise<void>
   addBookmark: (nodeId: string, label: string, notes?: string) => Promise<void>
@@ -153,11 +153,11 @@ interface TreeStore {
   cancelComparisonPicking: () => void
   setSearchQuery: (query: string) => void
   clearSearch: () => void
-  navigateToSearchResult: (treeId: string, nodeId: string) => Promise<void>
+  navigateToSearchResult: (rhizomeId: string, nodeId: string) => Promise<void>
   clearScrollToNode: () => void
-  archiveTree: (treeId: string) => Promise<void>
-  unarchiveTree: (treeId: string) => Promise<void>
-  fetchTreeSummaries: () => Promise<void>
+  archiveRhizome: (rhizomeId: string) => Promise<void>
+  unarchiveRhizome: (rhizomeId: string) => Promise<void>
+  fetchRhizomeSummaries: () => Promise<void>
   generateSummary: (nodeId: string, req: CreateSummaryRequest) => Promise<SummaryResponse | null>
   removeSummary: (summaryId: string) => Promise<void>
 }
@@ -207,7 +207,7 @@ export function getActivePath(
 // ---- Helpers ----
 
 type SetFn = (
-  partial: Partial<TreeStore> | ((state: TreeStore) => Partial<TreeStore>),
+  partial: Partial<RhizomeStore> | ((state: RhizomeStore) => Partial<RhizomeStore>),
 ) => void
 
 const STREAMING_RESET = {
@@ -226,46 +226,46 @@ const MULTI_STREAMING_RESET = {
   activeStreamIndex: 0,
 } as const
 
-function refreshTree(treeId: string, set: SetFn) {
-  api.getTree(treeId).then((tree) => set({ currentTree: tree }))
-  api.listTrees().then((trees) => set({ trees }))
+function refreshRhizome(rhizomeId: string, set: SetFn) {
+  api.getRhizome(rhizomeId).then((rhizome) => set({ currentRhizome: rhizome }))
+  api.listRhizomes().then((rhizomes) => set({ rhizomes }))
 }
 
-function refreshTreeSelectNewest(
-  treeId: string,
+function refreshRhizomeSelectNewest(
+  rhizomeId: string,
   parentNodeId: string,
   set: SetFn,
 ) {
-  api.getTree(treeId).then((tree) => {
-    const newChildren = tree.nodes.filter(
+  api.getRhizome(rhizomeId).then((rhizome) => {
+    const newChildren = rhizome.nodes.filter(
       (nd) => nd.parent_id === parentNodeId,
     )
     const newest = newChildren[newChildren.length - 1]
     if (newest) {
       set((state) => ({
-        currentTree: tree,
+        currentRhizome: rhizome,
         branchSelections: {
           ...state.branchSelections,
           [parentNodeId]: newest.node_id,
         },
       }))
     } else {
-      set({ currentTree: tree })
+      set({ currentRhizome: rhizome })
     }
   })
-  api.listTrees().then((trees) => set({ trees }))
+  api.listRhizomes().then((rhizomes) => set({ rhizomes }))
 }
 
-async function fetchTreeData<T>(
-  get: () => TreeStore,
+async function fetchRhizomeData<T>(
+  get: () => RhizomeStore,
   set: SetFn,
-  apiFn: (treeId: string) => Promise<T>,
-  onSuccess: (data: T, state: TreeStore) => Partial<TreeStore>,
+  apiFn: (rhizomeId: string) => Promise<T>,
+  onSuccess: (data: T, state: RhizomeStore) => Partial<RhizomeStore>,
 ) {
-  const { currentTree } = get()
-  if (!currentTree) return
+  const { currentRhizome } = get()
+  if (!currentRhizome) return
   try {
-    const data = await apiFn(currentTree.tree_id)
+    const data = await apiFn(currentRhizome.rhizome_id)
     set((state) => onSuccess(data, state))
   } catch (e) {
     set({ error: String(e) })
@@ -273,16 +273,16 @@ async function fetchTreeData<T>(
 }
 
 function updateNode(
-  tree: TreeDetail | null,
+  rhizome: RhizomeDetail | null,
   nodeId: string,
   update:
     | Partial<NodeResponse>
     | ((node: NodeResponse) => Partial<NodeResponse>),
-): TreeDetail | null {
-  if (!tree) return null
+): RhizomeDetail | null {
+  if (!rhizome) return null
   return {
-    ...tree,
-    nodes: tree.nodes.map((n) =>
+    ...rhizome,
+    nodes: rhizome.nodes.map((n) =>
       n.node_id === nodeId
         ? { ...n, ...(typeof update === 'function' ? update(n) : update) }
         : n,
@@ -290,10 +290,10 @@ function updateNode(
   }
 }
 
-export const useTreeStore = create<TreeStore>((set, get) => ({
-  trees: [],
-  selectedTreeId: null,
-  currentTree: null,
+export const useRhizomeStore = create<RhizomeStore>((set, get) => ({
+  rhizomes: [],
+  selectedRhizomeId: null,
+  currentRhizome: null,
   providers: [],
   isLoading: false,
   isGenerating: false,
@@ -324,9 +324,9 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
   exclusions: [],
   digressionGroups: [],
   nodeNotes: {},
-  treeNotes: [],
-  treeAnnotations: [],
-  treeSummaries: [],
+  rhizomeNotes: [],
+  rhizomeAnnotations: [],
+  rhizomeSummaries: [],
   researchPaneTab: 'bookmarks',
   rightPaneMode: null,
   groupSelectionMode: false,
@@ -345,18 +345,18 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
       _abortController.abort()
       set({ _abortController: null })
     }
-    // Streaming reset + tree refresh happen in the abort error handler
+    // Streaming reset + rhizome refresh happen in the abort error handler
     // of each generation method, but force reset here as a safety net
     set({ ...STREAMING_RESET, regeneratingParentId: null })
-    const { currentTree } = get()
-    if (currentTree) refreshTree(currentTree.tree_id, set)
+    const { currentRhizome } = get()
+    if (currentRhizome) refreshRhizome(currentRhizome.rhizome_id, set)
   },
 
-  fetchTrees: async (includeArchived?: boolean) => {
+  fetchRhizomes: async (includeArchived?: boolean) => {
     set({ isLoading: true, error: null })
     try {
-      const trees = await api.listTrees(includeArchived)
-      set({ trees, isLoading: false })
+      const rhizomes = await api.listRhizomes(includeArchived)
+      set({ rhizomes, isLoading: false })
     } catch (e) {
       set({ error: String(e), isLoading: false })
     }
@@ -373,11 +373,11 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
     }
   },
 
-  selectTree: async (treeId: string) => {
+  selectRhizome: async (rhizomeId: string) => {
     set({
       isLoading: true,
       error: null,
-      selectedTreeId: treeId,
+      selectedRhizomeId: rhizomeId,
       systemPromptOverride: null,
       branchSelections: {},
       inspectedNodeId: null,
@@ -391,9 +391,9 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
       exclusions: [],
       digressionGroups: [],
       nodeNotes: {},
-      treeNotes: [],
-      treeAnnotations: [],
-      treeSummaries: [],
+      rhizomeNotes: [],
+      rhizomeAnnotations: [],
+      rhizomeSummaries: [],
       rightPaneMode: null,
       groupSelectionMode: false,
       selectedGroupNodeIds: [],
@@ -402,33 +402,33 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
       comparisonPickingSourceId: null,
     })
     try {
-      const tree = await api.getTree(treeId)
-      set({ currentTree: tree, isLoading: false })
-      // Fetch bookmarks and exclusions for the new tree in the background
-      api.getTreeBookmarks(treeId).then((bookmarks) => {
+      const rhizome = await api.getRhizome(rhizomeId)
+      set({ currentRhizome: rhizome, isLoading: false })
+      // Fetch bookmarks and exclusions for the new rhizome in the background
+      api.getRhizomeBookmarks(rhizomeId).then((bookmarks) => {
         set({ bookmarks })
       }).catch(() => {/* ignore bookmark fetch errors */})
-      api.getExclusions(treeId).then((exclusions) => {
+      api.getExclusions(rhizomeId).then((exclusions) => {
         set({ exclusions })
       }).catch(() => {/* ignore exclusion fetch errors */})
-      api.getDigressionGroups(treeId).then((digressionGroups) => {
+      api.getDigressionGroups(rhizomeId).then((digressionGroups) => {
         set({ digressionGroups })
       }).catch(() => {/* ignore group fetch errors */})
-      api.getTreeNotes(treeId).then((treeNotes) => {
-        set({ treeNotes })
+      api.getRhizomeNotes(rhizomeId).then((rhizomeNotes) => {
+        set({ rhizomeNotes })
       }).catch(() => {/* ignore */})
-      api.getTreeAnnotations(treeId).then((treeAnnotations) => {
-        set({ treeAnnotations })
+      api.getRhizomeAnnotations(rhizomeId).then((rhizomeAnnotations) => {
+        set({ rhizomeAnnotations })
       }).catch(() => {/* ignore */})
-      api.getTreeSummaries(treeId).then((treeSummaries) => {
-        set({ treeSummaries })
+      api.getRhizomeSummaries(rhizomeId).then((rhizomeSummaries) => {
+        set({ rhizomeSummaries })
       }).catch(() => {/* ignore */})
     } catch (e) {
       set({ error: String(e), isLoading: false })
     }
   },
 
-  createTree: async (title: string, opts?: {
+  createRhizome: async (title: string, opts?: {
     systemPrompt?: string
     defaultProvider?: string
     defaultModel?: string
@@ -436,20 +436,20 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
   }) => {
     set({ isLoading: true, error: null })
     try {
-      let tree = await api.createTree({
+      let rhizome = await api.createRhizome({
         title,
         default_system_prompt: opts?.systemPrompt,
         default_provider: opts?.defaultProvider,
         default_model: opts?.defaultModel,
       })
       if (opts?.metadata) {
-        tree = await api.updateTree(tree.tree_id, { metadata: opts.metadata })
+        rhizome = await api.updateRhizome(rhizome.rhizome_id, { metadata: opts.metadata })
       }
-      const trees = await api.listTrees()
+      const rhizomes = await api.listRhizomes()
       set({
-        trees,
-        selectedTreeId: tree.tree_id,
-        currentTree: tree,
+        rhizomes,
+        selectedRhizomeId: rhizome.rhizome_id,
+        currentRhizome: rhizome,
         isLoading: false,
         systemPromptOverride: null,
         branchSelections: {},
@@ -459,15 +459,15 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
     }
   },
 
-  updateTree: async (treeId: string, req: PatchTreeRequest) => {
+  updateRhizome: async (rhizomeId: string, req: PatchRhizomeRequest) => {
     set({ error: null })
     try {
-      const updated = await api.updateTree(treeId, req)
+      const updated = await api.updateRhizome(rhizomeId, req)
       const meta = updated.metadata ?? {}
       set((state) => ({
-        currentTree: state.currentTree?.tree_id === treeId ? updated : state.currentTree,
-        trees: state.trees.map((t) =>
-          t.tree_id === treeId
+        currentRhizome: state.currentRhizome?.rhizome_id === rhizomeId ? updated : state.currentRhizome,
+        rhizomes: state.rhizomes.map((t) =>
+          t.rhizome_id === rhizomeId
             ? {
                 ...t,
                 title: updated.title,
@@ -484,41 +484,41 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
   },
 
   sendMessage: async (content: string) => {
-    const { currentTree, systemPromptOverride, branchSelections } = get()
-    if (!currentTree) return
+    const { currentRhizome, systemPromptOverride, branchSelections } = get()
+    if (!currentRhizome) return
 
-    const treeId = currentTree.tree_id
+    const rhizomeId = currentRhizome.rhizome_id
     set({ error: null, generationError: null })
 
     try {
       // Find the leaf node of the active path
-      const activePath = getActivePath(currentTree.nodes, branchSelections)
+      const activePath = getActivePath(currentRhizome.nodes, branchSelections)
       const leafNode = activePath.length > 0 ? activePath[activePath.length - 1] : null
       const parentId = leafNode?.node_id
 
       // Create user node
-      const userNode = await api.createNode(treeId, {
+      const userNode = await api.createNode(rhizomeId, {
         content,
         role: 'user',
         parent_id: parentId,
       })
 
-      // Optimistically add user node to current tree
+      // Optimistically add user node to current rhizome
       set((state) => ({
-        currentTree: state.currentTree
-          ? { ...state.currentTree, nodes: [...state.currentTree.nodes, userNode] }
+        currentRhizome: state.currentRhizome
+          ? { ...state.currentRhizome, nodes: [...state.currentRhizome.nodes, userNode] }
           : null,
       }))
 
       const ac = new AbortController()
       set({ ...STREAMING_RESET, isGenerating: true, _abortController: ac })
 
-      // Branch-local defaults: prefer last assistant's provider/model over tree defaults
+      // Branch-local defaults: prefer last assistant's provider/model over rhizome defaults
       const lastAssistant = [...activePath].reverse().find((n) => n.role === 'assistant')
-      const resolvedProvider = lastAssistant?.provider ?? currentTree.default_provider
-      const resolvedModel = lastAssistant?.model ?? currentTree.default_model
+      const resolvedProvider = lastAssistant?.provider ?? currentRhizome.default_provider
+      const resolvedModel = lastAssistant?.model ?? currentRhizome.default_model
 
-      // Backend handles merge resolution: tree defaults > base
+      // Backend handles merge resolution: rhizome defaults > base
       // Only pass explicit overrides here (provider, model, system_prompt)
       const generateReq: GenerateRequest = {
         ...(resolvedProvider ? { provider: resolvedProvider } : {}),
@@ -526,11 +526,11 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
         ...(systemPromptOverride != null ? { system_prompt: systemPromptOverride } : {}),
       }
 
-      const shouldStream = currentTree.metadata?.stream_responses !== false
+      const shouldStream = currentRhizome.metadata?.stream_responses !== false
 
       if (shouldStream) {
         await api.generateStream(
-          treeId,
+          rhizomeId,
           userNode.node_id,
           generateReq,
           (text) => {
@@ -538,7 +538,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
           },
           () => {
             set({ ...STREAMING_RESET })
-            refreshTree(treeId, set)
+            refreshRhizome(rhizomeId, set)
           },
           (error) => {
             set({
@@ -562,9 +562,9 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
         )
       } else {
         try {
-          await api.generate(treeId, userNode.node_id, generateReq)
+          await api.generate(rhizomeId, userNode.node_id, generateReq)
           set({ ...STREAMING_RESET })
-          refreshTree(treeId, set)
+          refreshRhizome(rhizomeId, set)
         } catch (error) {
           set({
             ...STREAMING_RESET,
@@ -585,26 +585,26 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
   },
 
   sendMessageOnly: async (content: string) => {
-    const { currentTree, branchSelections } = get()
-    if (!currentTree) return
+    const { currentRhizome, branchSelections } = get()
+    if (!currentRhizome) return
 
-    const treeId = currentTree.tree_id
+    const rhizomeId = currentRhizome.rhizome_id
     set({ error: null })
 
     try {
-      const activePath = getActivePath(currentTree.nodes, branchSelections)
+      const activePath = getActivePath(currentRhizome.nodes, branchSelections)
       const leafNode = activePath.length > 0 ? activePath[activePath.length - 1] : null
       const parentId = leafNode?.node_id
 
-      const userNode = await api.createNode(treeId, {
+      const userNode = await api.createNode(rhizomeId, {
         content,
         role: 'user',
         parent_id: parentId,
       })
 
       set((state) => ({
-        currentTree: state.currentTree
-          ? { ...state.currentTree, nodes: [...state.currentTree.nodes, userNode] }
+        currentRhizome: state.currentRhizome
+          ? { ...state.currentRhizome, nodes: [...state.currentRhizome.nodes, userNode] }
           : null,
       }))
     } catch (e) {
@@ -627,9 +627,9 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
   },
 
   navigateToNode: (nodeId: string) => {
-    const { currentTree } = get()
-    if (!currentTree) return
-    const nodeMap = new Map(currentTree.nodes.map((n) => [n.node_id, n]))
+    const { currentRhizome } = get()
+    if (!currentRhizome) return
+    const nodeMap = new Map(currentRhizome.nodes.map((n) => [n.node_id, n]))
     const selections: Record<string, string> = {}
     let current = nodeMap.get(nodeId)
     while (current) {
@@ -645,20 +645,20 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
   },
 
   editNodeContent: async (nodeId: string, editedContent: string | null) => {
-    const { currentTree } = get()
-    if (!currentTree) return
+    const { currentRhizome } = get()
+    if (!currentRhizome) return
 
     try {
-      const updated = await api.editNodeContent(currentTree.tree_id, nodeId, editedContent)
-      // Update node in tree, then re-fetch edit history so the section stays visible
+      const updated = await api.editNodeContent(currentRhizome.rhizome_id, nodeId, editedContent)
+      // Update node in rhizome, then re-fetch edit history so the section stays visible
       // even after restoring to original (edited_content=null but history exists)
       set((state) => ({
-        currentTree: updateNode(state.currentTree, nodeId, {
+        currentRhizome: updateNode(state.currentRhizome, nodeId, {
           edited_content: updated.edited_content,
         }),
       }))
       // Re-fetch edit history in background to keep cache populated
-      api.getEditHistory(currentTree.tree_id, nodeId).then((history) => {
+      api.getEditHistory(currentRhizome.rhizome_id, nodeId).then((history) => {
         set((state) => ({
           editHistoryCache: { ...state.editHistoryCache, [nodeId]: history.entries },
         }))
@@ -701,15 +701,15 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
   },
 
   forkAndGenerate: async (parentId: string, content: string, overrides: GenerateRequest) => {
-    const { currentTree } = get()
-    if (!currentTree) return
+    const { currentRhizome } = get()
+    if (!currentRhizome) return
 
-    const treeId = currentTree.tree_id
+    const rhizomeId = currentRhizome.rhizome_id
     set({ error: null, generationError: null })
 
     try {
       // Create user node as new child of parentId (sibling of existing children)
-      const userNode = await api.createNode(treeId, {
+      const userNode = await api.createNode(rhizomeId, {
         content,
         role: 'user',
         parent_id: parentId || undefined,
@@ -717,8 +717,8 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
 
       // Update branchSelections to follow this new fork + add node optimistically
       set((state) => ({
-        currentTree: state.currentTree
-          ? { ...state.currentTree, nodes: [...state.currentTree.nodes, userNode] }
+        currentRhizome: state.currentRhizome
+          ? { ...state.currentRhizome, nodes: [...state.currentRhizome.nodes, userNode] }
           : null,
         branchSelections: {
           ...state.branchSelections,
@@ -734,7 +734,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
       if (shouldStream && n > 1) {
         set({ ...MULTI_STREAMING_RESET, isGenerating: true, streamingTotal: n, _abortController: ac })
         await api.generateMultiStream(
-          treeId,
+          rhizomeId,
           userNode.node_id,
           overrides,
           (text, idx) => {
@@ -757,7 +757,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
           },
           () => {
             set({ ...MULTI_STREAMING_RESET })
-            refreshTree(treeId, set)
+            refreshRhizome(rhizomeId, set)
           },
           (error) => {
             set({
@@ -785,7 +785,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
       } else if (shouldStream) {
         set({ ...STREAMING_RESET, isGenerating: true, _abortController: ac })
         await api.generateStream(
-          treeId,
+          rhizomeId,
           userNode.node_id,
           { ...overrides, stream: true },
           (text) => {
@@ -793,7 +793,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
           },
           () => {
             set({ ...STREAMING_RESET })
-            refreshTree(treeId, set)
+            refreshRhizome(rhizomeId, set)
           },
           (error) => {
             set({
@@ -818,9 +818,9 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
       } else {
         set({ ...STREAMING_RESET, isGenerating: true })
         try {
-          await api.generate(treeId, userNode.node_id, { ...overrides, n })
+          await api.generate(rhizomeId, userNode.node_id, { ...overrides, n })
           set({ ...STREAMING_RESET })
-          refreshTree(treeId, set)
+          refreshRhizome(rhizomeId, set)
         } catch (error) {
           set({
             ...STREAMING_RESET,
@@ -841,10 +841,10 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
   },
 
   regenerate: async (parentNodeId: string, overrides: GenerateRequest) => {
-    const { currentTree } = get()
-    if (!currentTree) return
+    const { currentRhizome } = get()
+    if (!currentRhizome) return
 
-    const treeId = currentTree.tree_id
+    const rhizomeId = currentRhizome.rhizome_id
     const ac = new AbortController()
     set({
       error: null, generationError: null,
@@ -873,7 +873,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
           activeStreamIndex: 0,
         })
         await api.generateMultiStream(
-          treeId,
+          rhizomeId,
           parentNodeId,
           overrides,
           (text, idx) => {
@@ -896,7 +896,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
           },
           () => {
             set({ ...MULTI_STREAMING_RESET, regeneratingParentId: null })
-            refreshTreeSelectNewest(treeId, parentNodeId, set)
+            refreshRhizomeSelectNewest(rhizomeId, parentNodeId, set)
           },
           (error) => {
             set({
@@ -918,7 +918,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
         )
       } else if (shouldStream) {
         await api.generateStream(
-          treeId,
+          rhizomeId,
           parentNodeId,
           { ...overrides, stream: true },
           (text) => {
@@ -926,7 +926,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
           },
           () => {
             set({ ...STREAMING_RESET, regeneratingParentId: null })
-            refreshTreeSelectNewest(treeId, parentNodeId, set)
+            refreshRhizomeSelectNewest(rhizomeId, parentNodeId, set)
           },
           (error) => {
             set({
@@ -945,9 +945,9 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
         )
       } else {
         try {
-          await api.generate(treeId, parentNodeId, { ...overrides, n })
+          await api.generate(rhizomeId, parentNodeId, { ...overrides, n })
           set({ ...STREAMING_RESET, regeneratingParentId: null })
-          refreshTreeSelectNewest(treeId, parentNodeId, set)
+          refreshRhizomeSelectNewest(rhizomeId, parentNodeId, set)
         } catch (error) {
           set({
             ...STREAMING_RESET,
@@ -963,14 +963,14 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
   },
 
   prefillAssistant: async (parentId: string, content: string) => {
-    const { currentTree } = get()
-    if (!currentTree) return
+    const { currentRhizome } = get()
+    if (!currentRhizome) return
 
-    const treeId = currentTree.tree_id
+    const rhizomeId = currentRhizome.rhizome_id
     set({ error: null })
 
     try {
-      const node = await api.createNode(treeId, {
+      const node = await api.createNode(rhizomeId, {
         content,
         role: 'assistant',
         parent_id: parentId || undefined,
@@ -978,8 +978,8 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
       })
 
       set((state) => ({
-        currentTree: state.currentTree
-          ? { ...state.currentTree, nodes: [...state.currentTree.nodes, node] }
+        currentRhizome: state.currentRhizome
+          ? { ...state.currentRhizome, nodes: [...state.currentRhizome.nodes, node] }
           : null,
         branchSelections: {
           ...state.branchSelections,
@@ -992,10 +992,10 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
   },
 
   prefillAndGenerate: async (parentId: string, prefillContent: string, overrides: GenerateRequest) => {
-    const { currentTree } = get()
-    if (!currentTree) return
+    const { currentRhizome } = get()
+    if (!currentRhizome) return
 
-    const treeId = currentTree.tree_id
+    const rhizomeId = currentRhizome.rhizome_id
     set({ error: null, generationError: null })
 
     const shouldStream = overrides.stream !== false
@@ -1008,7 +1008,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
         // Initialize streaming content with the prefill text so it appears immediately
         set({ ...STREAMING_RESET, isGenerating: true, streamingContent: prefillContent, _abortController: ac })
         await api.generateStream(
-          treeId,
+          rhizomeId,
           parentId,
           { ...reqWithPrefill, stream: true },
           (text) => {
@@ -1016,7 +1016,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
           },
           () => {
             set({ ...STREAMING_RESET })
-            refreshTreeSelectNewest(treeId, parentId, set)
+            refreshRhizomeSelectNewest(rhizomeId, parentId, set)
           },
           (error) => {
             set({
@@ -1041,9 +1041,9 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
       } else {
         set({ ...STREAMING_RESET, isGenerating: true })
         try {
-          await api.generate(treeId, parentId, reqWithPrefill)
+          await api.generate(rhizomeId, parentId, reqWithPrefill)
           set({ ...STREAMING_RESET })
-          refreshTreeSelectNewest(treeId, parentId, set)
+          refreshRhizomeSelectNewest(rhizomeId, parentId, set)
         } catch (error) {
           set({
             ...STREAMING_RESET,
@@ -1064,11 +1064,11 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
   },
 
   addAnnotation: async (nodeId: string, tag: string, value?: unknown, notes?: string) => {
-    const { currentTree } = get()
-    if (!currentTree) return
+    const { currentRhizome } = get()
+    if (!currentRhizome) return
 
     try {
-      const annotation = await api.addAnnotation(currentTree.tree_id, nodeId, {
+      const annotation = await api.addAnnotation(currentRhizome.rhizome_id, nodeId, {
         tag,
         value,
         notes,
@@ -1078,7 +1078,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
           ...state.nodeAnnotations,
           [nodeId]: [...(state.nodeAnnotations[nodeId] ?? []), annotation],
         },
-        currentTree: updateNode(state.currentTree, nodeId, (n) => ({
+        currentRhizome: updateNode(state.currentRhizome, nodeId, (n) => ({
           annotation_count: n.annotation_count + 1,
         })),
         // Add tag to taxonomy used_tags if not already there
@@ -1097,11 +1097,11 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
   },
 
   removeAnnotation: async (nodeId: string, annotationId: string) => {
-    const { currentTree } = get()
-    if (!currentTree) return
+    const { currentRhizome } = get()
+    if (!currentRhizome) return
 
     try {
-      await api.removeAnnotation(currentTree.tree_id, annotationId)
+      await api.removeAnnotation(currentRhizome.rhizome_id, annotationId)
       set((state) => ({
         nodeAnnotations: {
           ...state.nodeAnnotations,
@@ -1109,7 +1109,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
             (a) => a.annotation_id !== annotationId,
           ),
         },
-        currentTree: updateNode(state.currentTree, nodeId, (n) => ({
+        currentRhizome: updateNode(state.currentRhizome, nodeId, (n) => ({
           annotation_count: Math.max(0, n.annotation_count - 1),
         })),
       }))
@@ -1118,29 +1118,29 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
     }
   },
 
-  fetchNodeAnnotations: (nodeId: string) => fetchTreeData(get, set,
+  fetchNodeAnnotations: (nodeId: string) => fetchRhizomeData(get, set,
     (id) => api.getNodeAnnotations(id, nodeId),
     (annotations, s) => ({ nodeAnnotations: { ...s.nodeAnnotations, [nodeId]: annotations } }),
   ),
 
-  fetchTaxonomy: () => fetchTreeData(get, set,
-    (id) => api.getTreeTaxonomy(id),
+  fetchTaxonomy: () => fetchRhizomeData(get, set,
+    (id) => api.getRhizomeTaxonomy(id),
     (taxonomy) => ({ taxonomy }),
   ),
 
   addNote: async (nodeId: string, content: string) => {
-    const { currentTree } = get()
-    if (!currentTree) return
+    const { currentRhizome } = get()
+    if (!currentRhizome) return
 
     try {
-      const note = await api.addNote(currentTree.tree_id, nodeId, { content })
+      const note = await api.addNote(currentRhizome.rhizome_id, nodeId, { content })
       set((state) => ({
         nodeNotes: {
           ...state.nodeNotes,
           [nodeId]: [...(state.nodeNotes[nodeId] ?? []), note],
         },
-        treeNotes: [...state.treeNotes, note],
-        currentTree: updateNode(state.currentTree, nodeId, (n) => ({
+        rhizomeNotes: [...state.rhizomeNotes, note],
+        currentRhizome: updateNode(state.currentRhizome, nodeId, (n) => ({
           note_count: n.note_count + 1,
         })),
       }))
@@ -1150,11 +1150,11 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
   },
 
   removeNote: async (nodeId: string, noteId: string) => {
-    const { currentTree } = get()
-    if (!currentTree) return
+    const { currentRhizome } = get()
+    if (!currentRhizome) return
 
     try {
-      await api.removeNote(currentTree.tree_id, noteId)
+      await api.removeNote(currentRhizome.rhizome_id, noteId)
       set((state) => ({
         nodeNotes: {
           ...state.nodeNotes,
@@ -1162,8 +1162,8 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
             (n) => n.note_id !== noteId,
           ),
         },
-        treeNotes: state.treeNotes.filter((n) => n.note_id !== noteId),
-        currentTree: updateNode(state.currentTree, nodeId, (n) => ({
+        rhizomeNotes: state.rhizomeNotes.filter((n) => n.note_id !== noteId),
+        currentRhizome: updateNode(state.currentRhizome, nodeId, (n) => ({
           note_count: Math.max(0, n.note_count - 1),
         })),
       }))
@@ -1172,19 +1172,19 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
     }
   },
 
-  fetchNodeNotes: (nodeId: string) => fetchTreeData(get, set,
+  fetchNodeNotes: (nodeId: string) => fetchRhizomeData(get, set,
     (id) => api.getNodeNotes(id, nodeId),
     (notes, s) => ({ nodeNotes: { ...s.nodeNotes, [nodeId]: notes } }),
   ),
 
-  fetchTreeNotes: () => fetchTreeData(get, set,
-    (id) => api.getTreeNotes(id),
-    (treeNotes) => ({ treeNotes }),
+  fetchRhizomeNotes: () => fetchRhizomeData(get, set,
+    (id) => api.getRhizomeNotes(id),
+    (rhizomeNotes) => ({ rhizomeNotes }),
   ),
 
-  fetchTreeAnnotations: () => fetchTreeData(get, set,
-    (id) => api.getTreeAnnotations(id),
-    (treeAnnotations) => ({ treeAnnotations }),
+  fetchRhizomeAnnotations: () => fetchRhizomeData(get, set,
+    (id) => api.getRhizomeAnnotations(id),
+    (rhizomeAnnotations) => ({ rhizomeAnnotations }),
   ),
 
   setResearchPaneTab: (tab: 'bookmarks' | 'tags' | 'notes' | 'summaries') => {
@@ -1192,12 +1192,12 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
   },
 
   fetchBookmarks: async () => {
-    const { currentTree } = get()
-    if (!currentTree) return
+    const { currentRhizome } = get()
+    if (!currentRhizome) return
 
     set({ bookmarksLoading: true })
     try {
-      const bookmarks = await api.getTreeBookmarks(currentTree.tree_id)
+      const bookmarks = await api.getRhizomeBookmarks(currentRhizome.rhizome_id)
       set({ bookmarks, bookmarksLoading: false })
     } catch (e) {
       set({ error: String(e), bookmarksLoading: false })
@@ -1205,14 +1205,14 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
   },
 
   addBookmark: async (nodeId: string, label: string, notes?: string) => {
-    const { currentTree } = get()
-    if (!currentTree) return
+    const { currentRhizome } = get()
+    if (!currentRhizome) return
 
     try {
-      const bookmark = await api.addBookmark(currentTree.tree_id, nodeId, { label, notes })
+      const bookmark = await api.addBookmark(currentRhizome.rhizome_id, nodeId, { label, notes })
       set((state) => ({
         bookmarks: [...state.bookmarks, bookmark],
-        currentTree: updateNode(state.currentTree, nodeId, { is_bookmarked: true }),
+        currentRhizome: updateNode(state.currentRhizome, nodeId, { is_bookmarked: true }),
       }))
     } catch (e) {
       set({ error: String(e) })
@@ -1220,22 +1220,22 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
   },
 
   removeBookmark: async (bookmarkId: string) => {
-    const { currentTree, bookmarks } = get()
-    if (!currentTree) return
+    const { currentRhizome, bookmarks } = get()
+    if (!currentRhizome) return
 
     const bookmark = bookmarks.find((b) => b.bookmark_id === bookmarkId)
     if (!bookmark) return
 
     try {
-      await api.removeBookmark(currentTree.tree_id, bookmarkId)
+      await api.removeBookmark(currentRhizome.rhizome_id, bookmarkId)
       const remaining = bookmarks.filter((b) => b.bookmark_id !== bookmarkId)
       // Only set is_bookmarked=false if no other bookmarks reference the same node
       const nodeStillBookmarked = remaining.some((b) => b.node_id === bookmark.node_id)
       set((state) => ({
         bookmarks: remaining,
-        currentTree: !nodeStillBookmarked
-          ? updateNode(state.currentTree, bookmark.node_id, { is_bookmarked: false })
-          : state.currentTree,
+        currentRhizome: !nodeStillBookmarked
+          ? updateNode(state.currentRhizome, bookmark.node_id, { is_bookmarked: false })
+          : state.currentRhizome,
       }))
     } catch (e) {
       set({ error: String(e) })
@@ -1243,11 +1243,11 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
   },
 
   summarizeBookmark: async (bookmarkId: string) => {
-    const { currentTree } = get()
-    if (!currentTree) return
+    const { currentRhizome } = get()
+    if (!currentRhizome) return
 
     try {
-      const updated = await api.summarizeBookmark(currentTree.tree_id, bookmarkId)
+      const updated = await api.summarizeBookmark(currentRhizome.rhizome_id, bookmarkId)
       set((state) => ({
         bookmarks: state.bookmarks.map((b) =>
           b.bookmark_id === bookmarkId ? updated : b,
@@ -1262,20 +1262,20 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
     get().navigateToNode(bookmark.node_id)
   },
 
-  fetchExclusions: () => fetchTreeData(get, set,
+  fetchExclusions: () => fetchRhizomeData(get, set,
     (id) => api.getExclusions(id),
     (exclusions) => ({ exclusions }),
   ),
 
   excludeNode: async (nodeId: string, scopeNodeId: string, reason?: string) => {
-    const { currentTree } = get()
-    if (!currentTree) return
+    const { currentRhizome } = get()
+    if (!currentRhizome) return
 
     try {
-      const exclusion = await api.excludeNode(currentTree.tree_id, nodeId, scopeNodeId, reason)
+      const exclusion = await api.excludeNode(currentRhizome.rhizome_id, nodeId, scopeNodeId, reason)
       set((state) => ({
         exclusions: [...state.exclusions, exclusion],
-        currentTree: updateNode(state.currentTree, nodeId, { is_excluded: true }),
+        currentRhizome: updateNode(state.currentRhizome, nodeId, { is_excluded: true }),
       }))
     } catch (e) {
       set({ error: String(e) })
@@ -1283,11 +1283,11 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
   },
 
   includeNode: async (nodeId: string, scopeNodeId: string) => {
-    const { currentTree } = get()
-    if (!currentTree) return
+    const { currentRhizome } = get()
+    if (!currentRhizome) return
 
     try {
-      await api.includeNode(currentTree.tree_id, nodeId, scopeNodeId)
+      await api.includeNode(currentRhizome.rhizome_id, nodeId, scopeNodeId)
       set((state) => {
         const remaining = state.exclusions.filter(
           (ex) => !(ex.node_id === nodeId && ex.scope_node_id === scopeNodeId),
@@ -1295,7 +1295,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
         const stillExcluded = remaining.some((ex) => ex.node_id === nodeId)
         return {
           exclusions: remaining,
-          currentTree: updateNode(state.currentTree, nodeId, { is_excluded: stillExcluded }),
+          currentRhizome: updateNode(state.currentRhizome, nodeId, { is_excluded: stillExcluded }),
         }
       })
     } catch (e) {
@@ -1303,17 +1303,17 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
     }
   },
 
-  fetchDigressionGroups: () => fetchTreeData(get, set,
+  fetchDigressionGroups: () => fetchRhizomeData(get, set,
     (id) => api.getDigressionGroups(id),
     (digressionGroups) => ({ digressionGroups }),
   ),
 
   createDigressionGroup: async (req: CreateDigressionGroupRequest) => {
-    const { currentTree } = get()
-    if (!currentTree) return false
+    const { currentRhizome } = get()
+    if (!currentRhizome) return false
 
     try {
-      const group = await api.createDigressionGroup(currentTree.tree_id, req)
+      const group = await api.createDigressionGroup(currentRhizome.rhizome_id, req)
       set((state) => ({
         digressionGroups: [...state.digressionGroups, group],
       }))
@@ -1332,11 +1332,11 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
   },
 
   toggleDigressionGroup: async (groupId: string, included: boolean) => {
-    const { currentTree } = get()
-    if (!currentTree) return
+    const { currentRhizome } = get()
+    if (!currentRhizome) return
 
     try {
-      const updated = await api.toggleDigressionGroup(currentTree.tree_id, groupId, included)
+      const updated = await api.toggleDigressionGroup(currentRhizome.rhizome_id, groupId, included)
       set((state) => ({
         digressionGroups: state.digressionGroups.map((g) =>
           g.group_id === groupId ? updated : g,
@@ -1348,11 +1348,11 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
   },
 
   deleteDigressionGroup: async (groupId: string) => {
-    const { currentTree } = get()
-    if (!currentTree) return
+    const { currentRhizome } = get()
+    if (!currentRhizome) return
 
     try {
-      await api.deleteDigressionGroup(currentTree.tree_id, groupId)
+      await api.deleteDigressionGroup(currentRhizome.rhizome_id, groupId)
       set((state) => ({
         digressionGroups: state.digressionGroups.filter((g) => g.group_id !== groupId),
       }))
@@ -1375,13 +1375,13 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
   })),
 
   toggleAnchor: async (nodeId: string) => {
-    const { currentTree } = get()
-    if (!currentTree) return
+    const { currentRhizome } = get()
+    if (!currentRhizome) return
 
     try {
-      const result = await api.toggleAnchor(currentTree.tree_id, nodeId)
+      const result = await api.toggleAnchor(currentRhizome.rhizome_id, nodeId)
       set((state) => ({
-        currentTree: updateNode(state.currentTree, nodeId, { is_anchored: result.is_anchored }),
+        currentRhizome: updateNode(state.currentRhizome, nodeId, { is_anchored: result.is_anchored }),
       }))
     } catch (e) {
       set({ error: String(e) })
@@ -1389,8 +1389,8 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
   },
 
   anchorGroup: async (groupId: string) => {
-    const { currentTree, digressionGroups } = get()
-    if (!currentTree) return
+    const { currentRhizome, digressionGroups } = get()
+    if (!currentRhizome) return
 
     const group = digressionGroups.find((g) => g.group_id === groupId)
     if (!group) return
@@ -1398,18 +1398,18 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
     try {
       // If all nodes in the group are already anchored, unanchor all; otherwise anchor all
       const allAnchored = group.node_ids.every((nid) => {
-        const node = currentTree.nodes.find((n) => n.node_id === nid)
+        const node = currentRhizome.nodes.find((n) => n.node_id === nid)
         return node?.is_anchored ?? false
       })
       const anchor = !allAnchored
-      await api.bulkAnchor(currentTree.tree_id, group.node_ids, anchor)
+      await api.bulkAnchor(currentRhizome.rhizome_id, group.node_ids, anchor)
       // Update local state
       const anchoredSet = new Set(group.node_ids)
       set((state) => ({
-        currentTree: state.currentTree
+        currentRhizome: state.currentRhizome
           ? {
-              ...state.currentTree,
-              nodes: state.currentTree.nodes.map((n) =>
+              ...state.currentRhizome,
+              nodes: state.currentRhizome.nodes.map((n) =>
                 anchoredSet.has(n.node_id) ? { ...n, is_anchored: anchor } : n,
               ),
             }
@@ -1468,10 +1468,10 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
     set({ searchQuery: '', searchResults: [], searchLoading: false })
   },
 
-  navigateToSearchResult: async (treeId: string, nodeId: string) => {
-    const { selectedTreeId } = get()
-    if (selectedTreeId !== treeId) {
-      await get().selectTree(treeId)
+  navigateToSearchResult: async (rhizomeId: string, nodeId: string) => {
+    const { selectedRhizomeId } = get()
+    if (selectedRhizomeId !== rhizomeId) {
+      await get().selectRhizome(rhizomeId)
     }
     get().navigateToNode(nodeId)
     set({ scrollToNodeId: nodeId })
@@ -1481,48 +1481,48 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
     set({ scrollToNodeId: null })
   },
 
-  archiveTree: async (treeId: string) => {
+  archiveRhizome: async (rhizomeId: string) => {
     try {
-      await api.archiveTree(treeId)
+      await api.archiveRhizome(rhizomeId)
       set((state) => ({
-        trees: state.trees.filter((t) => t.tree_id !== treeId),
-        selectedTreeId: state.selectedTreeId === treeId ? null : state.selectedTreeId,
-        currentTree: state.selectedTreeId === treeId ? null : state.currentTree,
+        rhizomes: state.rhizomes.filter((t) => t.rhizome_id !== rhizomeId),
+        selectedRhizomeId: state.selectedRhizomeId === rhizomeId ? null : state.selectedRhizomeId,
+        currentRhizome: state.selectedRhizomeId === rhizomeId ? null : state.currentRhizome,
       }))
     } catch (e) {
       set({ error: String(e) })
     }
   },
 
-  unarchiveTree: async (treeId: string) => {
+  unarchiveRhizome: async (rhizomeId: string) => {
     try {
-      await api.unarchiveTree(treeId)
+      await api.unarchiveRhizome(rhizomeId)
       set((state) => ({
-        trees: state.trees.filter((t) => t.tree_id !== treeId),
+        rhizomes: state.rhizomes.filter((t) => t.rhizome_id !== rhizomeId),
       }))
     } catch (e) {
       set({ error: String(e) })
     }
   },
 
-  fetchTreeSummaries: async () => {
-    const { currentTree } = get()
-    if (!currentTree) return
+  fetchRhizomeSummaries: async () => {
+    const { currentRhizome } = get()
+    if (!currentRhizome) return
     try {
-      const treeSummaries = await api.getTreeSummaries(currentTree.tree_id)
-      set({ treeSummaries })
+      const rhizomeSummaries = await api.getRhizomeSummaries(currentRhizome.rhizome_id)
+      set({ rhizomeSummaries })
     } catch {
       /* ignore fetch errors */
     }
   },
 
   generateSummary: async (nodeId: string, req: CreateSummaryRequest) => {
-    const { currentTree } = get()
-    if (!currentTree) return null
+    const { currentRhizome } = get()
+    if (!currentRhizome) return null
     try {
-      const summary = await api.generateSummary(currentTree.tree_id, nodeId, req)
+      const summary = await api.generateSummary(currentRhizome.rhizome_id, nodeId, req)
       set((state) => ({
-        treeSummaries: [...state.treeSummaries, summary],
+        rhizomeSummaries: [...state.rhizomeSummaries, summary],
       }))
       return summary
     } catch (e) {
@@ -1532,12 +1532,12 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
   },
 
   removeSummary: async (summaryId: string) => {
-    const { currentTree } = get()
-    if (!currentTree) return
+    const { currentRhizome } = get()
+    if (!currentRhizome) return
     try {
-      await api.removeSummary(currentTree.tree_id, summaryId)
+      await api.removeSummary(currentRhizome.rhizome_id, summaryId)
       set((state) => ({
-        treeSummaries: state.treeSummaries.filter((s) => s.summary_id !== summaryId),
+        rhizomeSummaries: state.rhizomeSummaries.filter((s) => s.summary_id !== summaryId),
       }))
     } catch (e) {
       set({ error: String(e) })
@@ -1550,16 +1550,16 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
 // Actions are stable references and safe to select individually.
 // ---------------------------------------------------------------------------
 
-export const useTreeData = () => useTreeStore(useShallow(s => ({
-  trees: s.trees,
-  selectedTreeId: s.selectedTreeId,
-  currentTree: s.currentTree,
+export const useRhizomeData = () => useRhizomeStore(useShallow(s => ({
+  rhizomes: s.rhizomes,
+  selectedRhizomeId: s.selectedRhizomeId,
+  currentRhizome: s.currentRhizome,
   providers: s.providers,
   isLoading: s.isLoading,
   error: s.error,
 })))
 
-export const useStreamingState = () => useTreeStore(useShallow(s => ({
+export const useStreamingState = () => useRhizomeStore(useShallow(s => ({
   isGenerating: s.isGenerating,
   streamingContent: s.streamingContent,
   streamingThinkingContent: s.streamingThinkingContent,
@@ -1573,11 +1573,11 @@ export const useStreamingState = () => useTreeStore(useShallow(s => ({
   stopGeneration: s.stopGeneration,
 })))
 
-export const useNavigation = () => useTreeStore(useShallow(s => ({
+export const useNavigation = () => useRhizomeStore(useShallow(s => ({
   branchSelections: s.branchSelections,
 })))
 
-export const useComparison = () => useTreeStore(useShallow(s => ({
+export const useComparison = () => useRhizomeStore(useShallow(s => ({
   splitViewNodeId: s.splitViewNodeId,
   comparisonNodeId: s.comparisonNodeId,
   comparisonHoveredNodeId: s.comparisonHoveredNodeId,
@@ -1586,13 +1586,13 @@ export const useComparison = () => useTreeStore(useShallow(s => ({
   inspectedNodeId: s.inspectedNodeId,
 })))
 
-export const useDigressionState = () => useTreeStore(useShallow(s => ({
+export const useDigressionState = () => useRhizomeStore(useShallow(s => ({
   digressionGroups: s.digressionGroups,
   groupSelectionMode: s.groupSelectionMode,
   selectedGroupNodeIds: s.selectedGroupNodeIds,
 })))
 
-export const useResearchMetadata = () => useTreeStore(useShallow(s => ({
+export const useResearchMetadata = () => useRhizomeStore(useShallow(s => ({
   bookmarks: s.bookmarks,
   bookmarksLoading: s.bookmarksLoading,
   exclusions: s.exclusions,
@@ -1600,14 +1600,14 @@ export const useResearchMetadata = () => useTreeStore(useShallow(s => ({
   selectedEditVersion: s.selectedEditVersion,
   nodeAnnotations: s.nodeAnnotations,
   nodeNotes: s.nodeNotes,
-  treeNotes: s.treeNotes,
-  treeAnnotations: s.treeAnnotations,
-  treeSummaries: s.treeSummaries,
+  rhizomeNotes: s.rhizomeNotes,
+  rhizomeAnnotations: s.rhizomeAnnotations,
+  rhizomeSummaries: s.rhizomeSummaries,
   researchPaneTab: s.researchPaneTab,
   taxonomy: s.taxonomy,
 })))
 
-export const useRightPane = () => useTreeStore(useShallow(s => ({
+export const useRightPane = () => useRhizomeStore(useShallow(s => ({
   rightPaneMode: s.rightPaneMode,
   canvasOpen: s.canvasOpen,
   libraryOpen: s.libraryOpen,

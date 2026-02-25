@@ -20,12 +20,12 @@ class EventStore:
         cursor = await self._db.execute(
             """
             INSERT INTO events
-                (event_id, tree_id, timestamp, device_id, user_id, event_type, payload)
+                (event_id, rhizome_id, timestamp, device_id, user_id, event_type, payload)
             VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 envelope.event_id,
-                envelope.tree_id,
+                envelope.rhizome_id,
                 envelope.timestamp.isoformat(),
                 envelope.device_id,
                 envelope.user_id,
@@ -36,27 +36,27 @@ class EventStore:
         assert cursor.lastrowid is not None
         return cursor.lastrowid
 
-    async def get_events(self, tree_id: str) -> list[EventEnvelope]:
-        """Get all events for a tree, ordered by sequence_num."""
+    async def get_events(self, rhizome_id: str) -> list[EventEnvelope]:
+        """Get all events for a rhizome, ordered by sequence_num."""
         rows = await self._db.fetchall(
-            "SELECT * FROM events WHERE tree_id = ? ORDER BY sequence_num",
-            (tree_id,),
+            "SELECT * FROM events WHERE rhizome_id = ? ORDER BY sequence_num",
+            (rhizome_id,),
         )
         return [self._row_to_envelope(row) for row in rows]
 
     async def get_events_by_type(
-        self, tree_id: str, event_type: str,
+        self, rhizome_id: str, event_type: str,
     ) -> list[EventEnvelope]:
-        """Get all events of a given type for a tree, ordered by sequence_num."""
+        """Get all events of a given type for a rhizome, ordered by sequence_num."""
         rows = await self._db.fetchall(
-            "SELECT * FROM events WHERE tree_id = ? AND event_type = ? "
+            "SELECT * FROM events WHERE rhizome_id = ? AND event_type = ? "
             "ORDER BY sequence_num",
-            (tree_id, event_type),
+            (rhizome_id, event_type),
         )
         return [self._row_to_envelope(row) for row in rows]
 
     async def get_events_since(self, sequence_num: int) -> list[EventEnvelope]:
-        """Get all events across all trees after the given sequence_num."""
+        """Get all events across all rhizomes after the given sequence_num."""
         rows = await self._db.fetchall(
             "SELECT * FROM events WHERE sequence_num > ? ORDER BY sequence_num",
             (sequence_num,),
@@ -68,7 +68,7 @@ class EventStore:
         """Convert a database row to an EventEnvelope."""
         return EventEnvelope(
             event_id=row["event_id"],
-            tree_id=row["tree_id"],
+            rhizome_id=row["rhizome_id"],
             timestamp=row["timestamp"],
             device_id=row["device_id"],
             user_id=row["user_id"],

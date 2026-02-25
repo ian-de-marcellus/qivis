@@ -13,7 +13,7 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { NodeResponse } from '../../api/types.ts'
-import { useTreeStore, useTreeData, useStreamingState, useComparison, useResearchMetadata } from '../../store/treeStore.ts'
+import { useRhizomeStore, useRhizomeData, useStreamingState, useComparison, useResearchMetadata } from '../../store/rhizomeStore.ts'
 import { CompletionNode } from './CompletionNode.tsx'
 import { ContextModal } from './ContextModal.tsx'
 import { reconstructContext } from './contextReconstruction.ts'
@@ -26,7 +26,7 @@ import { useActivePath, useAutoScroll, useScrollToNode, useBranchDefaults, useFo
 import './ChatView.css'
 
 export function CompletionView() {
-  const { currentTree, providers } = useTreeData()
+  const { currentRhizome, providers } = useRhizomeData()
   const {
     isGenerating, streamingContent, streamingThinkingContent,
     streamingContents, streamingThinkingContents, streamingNodeIds,
@@ -35,20 +35,20 @@ export function CompletionView() {
   } = useStreamingState()
   const { inspectedNodeId } = useComparison()
   const { bookmarks, exclusions } = useResearchMetadata()
-  const digressionGroups = useTreeStore(s => s.digressionGroups)
+  const digressionGroups = useRhizomeStore(s => s.digressionGroups)
 
-  const selectBranch = useTreeStore(s => s.selectBranch)
-  const setActiveStreamIndex = useTreeStore(s => s.setActiveStreamIndex)
-  const regenerate = useTreeStore(s => s.regenerate)
-  const clearGenerationError = useTreeStore(s => s.clearGenerationError)
-  const fetchProviders = useTreeStore(s => s.fetchProviders)
-  const setInspectedNodeId = useTreeStore(s => s.setInspectedNodeId)
-  const addBookmark = useTreeStore(s => s.addBookmark)
-  const removeBookmark = useTreeStore(s => s.removeBookmark)
-  const excludeNode = useTreeStore(s => s.excludeNode)
-  const includeNode = useTreeStore(s => s.includeNode)
-  const toggleAnchor = useTreeStore(s => s.toggleAnchor)
-  const editNodeContent = useTreeStore(s => s.editNodeContent)
+  const selectBranch = useRhizomeStore(s => s.selectBranch)
+  const setActiveStreamIndex = useRhizomeStore(s => s.setActiveStreamIndex)
+  const regenerate = useRhizomeStore(s => s.regenerate)
+  const clearGenerationError = useRhizomeStore(s => s.clearGenerationError)
+  const fetchProviders = useRhizomeStore(s => s.fetchProviders)
+  const setInspectedNodeId = useRhizomeStore(s => s.setInspectedNodeId)
+  const addBookmark = useRhizomeStore(s => s.addBookmark)
+  const removeBookmark = useRhizomeStore(s => s.removeBookmark)
+  const excludeNode = useRhizomeStore(s => s.excludeNode)
+  const includeNode = useRhizomeStore(s => s.includeNode)
+  const toggleAnchor = useRhizomeStore(s => s.toggleAnchor)
+  const editNodeContent = useRhizomeStore(s => s.editNodeContent)
 
   const bottomRef = useRef<HTMLDivElement>(null)
   const [summarizeTargetId, setSummarizeTargetId] = useState<string | null>(null)
@@ -69,7 +69,7 @@ export function CompletionView() {
     fetchProviders()
   }, [fetchProviders])
 
-  if (!currentTree) return null
+  if (!currentRhizome) return null
 
   // Compute which nodes are effectively excluded on the current path
   const effectiveExcludedIds = useMemo(() => {
@@ -175,8 +175,8 @@ export function CompletionView() {
                     isGenerating={isGenerating}
                     providers={providers}
                     defaults={branchDefaults}
-                    streamDefault={currentTree.metadata?.stream_responses !== false}
-                    samplingDefaults={currentTree.default_sampling_params}
+                    streamDefault={currentRhizome.metadata?.stream_responses !== false}
+                    samplingDefaults={currentRhizome.default_sampling_params}
                   />
                 )}
                 {summarizeTargetId === node.node_id && (
@@ -251,8 +251,8 @@ export function CompletionView() {
                   isGenerating={isGenerating}
                   providers={providers}
                   defaults={branchDefaults}
-                  streamDefault={currentTree.metadata?.stream_responses !== false}
-                  samplingDefaults={currentTree.default_sampling_params}
+                  streamDefault={currentRhizome.metadata?.stream_responses !== false}
+                  samplingDefaults={currentRhizome.default_sampling_params}
                 />
               )}
               {summarizeTargetId === node.node_id && (

@@ -2,7 +2,7 @@
 
 ## Vision
 
-Qivis is an open-source research instrument for exploring AI personality, emotion, and behavior through branching conversation trees. It enables systematic comparison of model responses across different conditions (system prompts, sampling parameters, models, providers) while maintaining a complete, immutable record of every interaction.
+Qivis is an open-source research instrument for exploring AI personality, emotion, and behavior through branching conversation rhizomes. It enables systematic comparison of model responses across different conditions (system prompts, sampling parameters, models, providers) while maintaining a complete, immutable record of every interaction.
 
 Qivis is designed to be usable by individual researchers and eventually by the broader LLM research community, each running their own server instance.
 
@@ -16,7 +16,7 @@ Qivis is designed to be usable by individual researchers and eventually by the b
 
 Every mutation is an immutable event. The current state is a projection of the event log. Nothing is ever truly deleted — "deletion" is an `Archived` event that hides items from default views but preserves them in the log.
 
-**Guarantees:** no conflicts (two devices append independently; events merge by timestamp + UUID), full history (every state recoverable by replaying events), auditability (exact sequence of research actions preserved), and time travel (reconstruct any tree at any historical moment).
+**Guarantees:** no conflicts (two devices append independently; events merge by timestamp + UUID), full history (every state recoverable by replaying events), auditability (exact sequence of research actions preserved), and time travel (reconstruct any rhizome at any historical moment).
 
 **Garbage collection**: A manual "big red button" hard-deletes archived items with zero live references (no bookmarks, annotations, or non-archived children). Logged as a `GarbageCollected` event with a configurable grace period (default: 30 days) before actual purge.
 
@@ -30,7 +30,7 @@ Rich metadata on every node, structured annotation, export formats for analysis 
 
 ### 4. Provider-Agnostic, Per-Node Configurable
 
-Model and provider are configurable at the tree level (as defaults) and overridable per individual generation. A single tree can contain responses from Claude, GPT-4, Llama, a local model, etc.
+Model and provider are configurable at the rhizome level (as defaults) and overridable per individual generation. A single rhizome can contain responses from Claude, GPT-4, Llama, a local model, etc.
 
 ### 5. Multi-Researcher Ready
 
@@ -49,7 +49,7 @@ Designed so others can deploy their own server instance. Configuration, provider
 | Communication | REST + SSE | SSE for streaming tokens and multi-agent turn updates |
 | MCP | Python MCP SDK | Client + server modes |
 
-The materialized state (trees, nodes, annotations tables) serves as a fast-read projection of the event log — a CQRS pattern where events are the write model and the SQL tables are the read model. The projection is incrementally updated as events arrive and fully rebuildable from the log.
+The materialized state (rhizomes, nodes, annotations tables) serves as a fast-read projection of the event log — a CQRS pattern where events are the write model and the SQL tables are the read model. The projection is incrementally updated as events arrive and fully rebuildable from the log.
 
 ---
 
@@ -152,7 +152,7 @@ class EvictionReport:
 ```python
 @dataclass
 class Participant:
-    participant_id: str             # unique within tree
+    participant_id: str             # unique within rhizome
     display_name: str               # shown in UI
     model: str
     provider: str
@@ -171,7 +171,7 @@ class Participant:
 ```
 EventEnvelope {
   event_id: UUID              // globally unique, generated client-side
-  tree_id: UUID               // which conversation tree
+  rhizome_id: UUID            // which conversation rhizome
   timestamp: ISO-8601         // when created
   device_id: string           // originating device (for sync)
   user_id: string | null      // originating researcher (for multi-user)
@@ -180,10 +180,10 @@ EventEnvelope {
 }
 ```
 
-### Tree Lifecycle Events
+### Rhizome Lifecycle Events
 
 ```
-TreeCreated {
+RhizomeCreated {
   title: string | null
   default_system_prompt: string | null
   default_model: string | null
@@ -194,9 +194,9 @@ TreeCreated {
   participants: Participant[] | null
 }
 
-TreeMetadataUpdated { field: string, old_value: any, new_value: any }
-TreeArchived { reason: string | null }
-TreeUnarchived {}
+RhizomeMetadataUpdated { field: string, old_value: any, new_value: any }
+RhizomeArchived { reason: string | null }
+RhizomeUnarchived {}
 ```
 
 ### Node (Message) Events
@@ -205,7 +205,7 @@ TreeUnarchived {}
 GenerationStarted {
   generation_id: UUID
   parent_node_id: UUID
-  model: string                     // per-generation override or tree default
+  model: string                     // per-generation override or rhizome default
   provider: string
   system_prompt: string | null
   sampling_params: SamplingParams
@@ -238,8 +238,8 @@ NodeCreated {
 
   // Extended thinking
   thinking_content: string | null   // reasoning trace from extended thinking
-  include_thinking_in_context: bool // snapshot of tree setting at generation time
-  include_timestamps: bool          // snapshot of tree setting at generation time
+  include_thinking_in_context: bool // snapshot of rhizome setting at generation time
+  include_timestamps: bool          // snapshot of rhizome setting at generation time
 
   // Multi-agent identity
   participant_id: string | null
@@ -378,12 +378,12 @@ Manual summarization at multiple levels: branch (root → node), subtree (all br
 
 ```
 GarbageCollected {
-  deleted_node_ids: UUID[], deleted_tree_ids: UUID[]
+  deleted_node_ids: UUID[], deleted_rhizome_ids: UUID[]
   reason: "manual_gc"
   recoverable_until: ISO-8601
 }
 
-GarbagePurged { purged_node_ids: UUID[], purged_tree_ids: UUID[] }
+GarbagePurged { purged_node_ids: UUID[], purged_rhizome_ids: UUID[] }
 ```
 
 ---
@@ -418,7 +418,7 @@ OpenAI and OpenRouter share a base class `OpenAICompatibleProvider` that handles
 | OpenAI | `openai_provider.py` | yes (0-20) | Extends `OpenAICompatibleProvider` |
 | OpenRouter | `openrouter_provider.py` | varies | Extends `OpenAICompatibleProvider`, routes to many models |
 
-Future providers (not yet implemented): Ollama, llama.cpp, Generic OpenAI-compatible.
+Other providers: Ollama (`OllamaProvider`), llama.cpp (`LlamaCppProvider`), Generic OpenAI-compatible (`GenericOpenAIProvider`).
 
 ### Provider Configuration
 
@@ -523,7 +523,7 @@ The single component responsible for assembling messages. Handles all concerns i
 class ContextBuilder:
     def build(
         self,
-        nodes: list[dict],              # all nodes in tree (projected rows)
+        nodes: list[dict],              # all nodes in rhizome (projected rows)
         target_node_id: str,            # leaf of path to build context for
         system_prompt: str | None,
         model_context_limit: int,
@@ -672,16 +672,16 @@ Each participant sees the conversation from its own perspective. The context bui
 
 ```python
 class ConversationRunner:
-    async def generate_from(self, tree_id, parent_node_id, participant_id) -> NodeCreated:
+    async def generate_from(self, rhizome_id, parent_node_id, participant_id) -> NodeCreated:
         """Researcher directs a specific participant to respond."""
         ...
-    
-    async def run_auto(self, tree_id, n_turns, starting_node_id, 
+
+    async def run_auto(self, rhizome_id, n_turns, starting_node_id,
                        turn_order: list[str] | None = None) -> list[NodeCreated]:
         """Run N turns with specified or round-robin ordering."""
         ...
-    
-    async def researcher_inject(self, tree_id, parent_node_id, content,
+
+    async def researcher_inject(self, rhizome_id, parent_node_id, content,
                                 visible_to: list[str] | None = None) -> NodeCreated:
         """Inject a message visible to all or only specific participants."""
         ...
@@ -717,7 +717,7 @@ class SearchQuery:
     tags: dict[str, any] | None = None
     models: list[str] | None = None
     providers: list[str] | None = None
-    tree_ids: list[str] | None = None
+    rhizome_ids: list[str] | None = None
     date_range: tuple[str, str] | None = None
     roles: list[str] | None = None
     limit: int = 50
@@ -787,7 +787,7 @@ servers:
 
 ### Qivis as MCP Server
 
-Exposes the research corpus to external LLM agents via MCP tools: `search_conversations`, `get_tree`, `get_node_context`, `get_annotations`, `add_annotation`. Enables AI-assisted analysis of AI behavior.
+Exposes the research corpus to external LLM agents via MCP tools: `search_conversations`, `get_rhizome`, `get_node_context`, `get_annotations`, `add_annotation`. Enables AI-assisted analysis of AI behavior.
 
 ### Skills Architecture
 
@@ -813,22 +813,22 @@ Skills can run manually, automatically on new nodes, or be exposed as MCP tools.
 
 ## API Design
 
-### Trees
+### Rhizomes
 
 ```
-GET    /api/trees                              # list (paginated, filterable)
-POST   /api/trees                              # create
-GET    /api/trees/{id}                         # full projected state
-GET    /api/trees/{id}/events                  # raw event log
-PATCH  /api/trees/{id}                         # update metadata/defaults
-DELETE /api/trees/{id}                         # archive
+GET    /api/rhizomes                              # list (paginated, filterable)
+POST   /api/rhizomes                              # create
+GET    /api/rhizomes/{id}                         # full projected state
+GET    /api/rhizomes/{id}/events                  # raw event log
+PATCH  /api/rhizomes/{id}                         # update metadata/defaults
+DELETE /api/rhizomes/{id}                         # archive
 ```
 
 ### Nodes & Generation
 
 ```
-POST   /api/trees/{id}/nodes                  # add user message or researcher note
-POST   /api/trees/{id}/nodes/{nid}/generate   # generate response(s)
+POST   /api/rhizomes/{id}/nodes                  # add user message or researcher note
+POST   /api/rhizomes/{id}/nodes/{nid}/generate   # generate response(s)
   Body: {
     "model": "...",                            // optional per-generation override
     "provider": "...",
@@ -839,53 +839,53 @@ POST   /api/trees/{id}/nodes/{nid}/generate   # generate response(s)
     "mode": "chat" | "completion",
     "mcp_servers": ["web_search"]
   }
-DELETE /api/trees/{id}/nodes/{nid}             # archive
+DELETE /api/rhizomes/{id}/nodes/{nid}             # archive
 ```
 
 ### Multi-Agent
 
 ```
-POST   /api/trees/{id}/participants            # add/update participants
-DELETE /api/trees/{id}/participants/{pid}       # remove
-POST   /api/trees/{id}/multi/run               # auto-run N turns
-POST   /api/trees/{id}/multi/inject            # researcher injects (visibility control)
+POST   /api/rhizomes/{id}/participants            # add/update participants
+DELETE /api/rhizomes/{id}/participants/{pid}       # remove
+POST   /api/rhizomes/{id}/multi/run               # auto-run N turns
+POST   /api/rhizomes/{id}/multi/inject            # researcher injects (visibility control)
 ```
 
 ### Node Editing & History
 
 ```
-PATCH  /api/trees/{id}/nodes/{nid}/content     # edit node content
-GET    /api/trees/{id}/nodes/{nid}/edit-history # get edit history
-GET    /api/trees/{id}/interventions            # intervention timeline
+PATCH  /api/rhizomes/{id}/nodes/{nid}/content     # edit node content
+GET    /api/rhizomes/{id}/nodes/{nid}/edit-history # get edit history
+GET    /api/rhizomes/{id}/interventions            # intervention timeline
 ```
 
 ### Context Management
 
 ```
-POST   /api/trees/{id}/nodes/{nid}/exclude     # exclude from context
-POST   /api/trees/{id}/nodes/{nid}/include     # re-include
-GET    /api/trees/{id}/exclusions               # get exclusion state
-POST   /api/trees/{id}/nodes/{nid}/anchor      # toggle anchor (eviction protection)
-POST   /api/trees/{id}/bulk-anchor              # bulk anchor/unanchor
-POST   /api/trees/{id}/digression-groups       # create group
-POST   /api/trees/{id}/digression-groups/{gid}/toggle  # toggle inclusion
-GET    /api/trees/{id}/digression-groups        # list groups
-DELETE /api/trees/{id}/digression-groups/{gid}  # delete group
+POST   /api/rhizomes/{id}/nodes/{nid}/exclude     # exclude from context
+POST   /api/rhizomes/{id}/nodes/{nid}/include     # re-include
+GET    /api/rhizomes/{id}/exclusions               # get exclusion state
+POST   /api/rhizomes/{id}/nodes/{nid}/anchor      # toggle anchor (eviction protection)
+POST   /api/rhizomes/{id}/bulk-anchor              # bulk anchor/unanchor
+POST   /api/rhizomes/{id}/digression-groups       # create group
+POST   /api/rhizomes/{id}/digression-groups/{gid}/toggle  # toggle inclusion
+GET    /api/rhizomes/{id}/digression-groups        # list groups
+DELETE /api/rhizomes/{id}/digression-groups/{gid}  # delete group
 ```
 
 ### Annotations, Bookmarks & Summarization
 
 ```
-POST   /api/trees/{id}/nodes/{nid}/annotations # add annotation
-GET    /api/trees/{id}/nodes/{nid}/annotations # get node annotations
-DELETE /api/trees/{id}/annotations/{aid}       # remove annotation
-GET    /api/trees/{id}/taxonomy                # get tree's taxonomy
+POST   /api/rhizomes/{id}/nodes/{nid}/annotations # add annotation
+GET    /api/rhizomes/{id}/nodes/{nid}/annotations # get node annotations
+DELETE /api/rhizomes/{id}/annotations/{aid}       # remove annotation
+GET    /api/rhizomes/{id}/taxonomy                # get rhizome's taxonomy
 
-POST   /api/trees/{id}/nodes/{nid}/bookmarks   # create bookmark
-GET    /api/trees/{id}/bookmarks               # list bookmarks (with optional search)
+POST   /api/rhizomes/{id}/nodes/{nid}/bookmarks   # create bookmark
+GET    /api/rhizomes/{id}/bookmarks               # list bookmarks (with optional search)
 
 # Not yet implemented: global annotation search, summary generation
-POST   /api/trees/{id}/summarize
+POST   /api/rhizomes/{id}/summarize
   Body: { "type": "branch"|"subtree"|"selection", "node_ids": [...],
           "summary_type": "concise"|"detailed"|"key_points"|"custom",
           "custom_prompt": "..." }
@@ -903,10 +903,10 @@ POST   /api/search                             # complex structured query
 ### Export
 
 ```
-GET    /api/trees/{id}/export?format=json
-GET    /api/trees/{id}/export?format=csv
-GET    /api/trees/{id}/paths                   # all root-to-leaf paths
-GET    /api/trees/{id}/compare?nodes=a,b,c
+GET    /api/rhizomes/{id}/export?format=json
+GET    /api/rhizomes/{id}/export?format=csv
+GET    /api/rhizomes/{id}/paths                   # all root-to-leaf paths
+GET    /api/rhizomes/{id}/compare?nodes=a,b,c
 ```
 
 ### Providers, MCP & Maintenance
@@ -949,9 +949,9 @@ qivis/
 │   │   ├── config.py                    # settings, env vars
 │   │   ├── models.py                    # canonical data structures (Pydantic)
 │   │   │
-│   │   ├── api/                         # FastAPI routers (trees, generation, providers, etc.)
+│   │   ├── api/                         # FastAPI routers (rhizomes, generation, providers, etc.)
 │   │   ├── events/                      # event store, projector
-│   │   ├── trees/                       # tree/node CRUD, service
+│   │   ├── rhizomes/                    # rhizome/node CRUD, service
 │   │   ├── providers/                   # LLMProvider adapters, registry, logprob normalizer
 │   │   ├── generation/                  # generation orchestration, streaming, context builder
 │   │   ├── export/                      # JSON, CSV exporters
@@ -964,10 +964,10 @@ qivis/
 │   ├── src/
 │   │   ├── api/                         # API client, TypeScript types
 │   │   ├── hooks/                       # shared hooks (useModalBehavior, etc.)
-│   │   ├── store/                       # Zustand store (treeStore)
+│   │   ├── store/                       # Zustand store (rhizomeStore)
 │   │   ├── components/
-│   │   │   ├── Library/                 # tree listing, bookmarks
-│   │   │   ├── TreeView/                # LinearView, MessageRow, ForkPanel, ContextBar, etc.
+│   │   │   ├── Library/                 # rhizome listing, bookmarks
+│   │   │   ├── RhizomeView/            # LinearView, MessageRow, ForkPanel, ContextBar, etc.
 │   │   │   ├── GraphView/              # Force-directed graph visualization
 │   │   │   ├── CanvasView/             # Palimpsest (era-based intervention timeline)
 │   │   │   └── shared/                 # SamplingParamsPanel, etc.

@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState } from 'react'
 import * as api from '../../api/client.ts'
 import type { ConversationPreview, ImportResult } from '../../api/types.ts'
-import { useTreeStore } from '../../store/treeStore.ts'
+import { useRhizomeStore } from '../../store/rhizomeStore.ts'
 import './ImportWizard.css'
 
 type WizardState = 'idle' | 'previewing' | 'preview' | 'importing' | 'done' | 'error'
@@ -21,8 +21,8 @@ export function ImportWizard({ onDismiss }: ImportWizardProps) {
   const [dragOver, setDragOver] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const fetchTrees = useTreeStore(s => s.fetchTrees)
-  const selectTree = useTreeStore(s => s.selectTree)
+  const fetchRhizomes = useRhizomeStore(s => s.fetchRhizomes)
+  const selectRhizome = useRhizomeStore(s => s.selectRhizome)
 
   const handleFile = useCallback(async (f: File) => {
     setFile(f)
@@ -82,17 +82,17 @@ export function ImportWizard({ onDismiss }: ImportWizardProps) {
       })
       setResults(resp.results)
       setState('done')
-      fetchTrees()
+      fetchRhizomes()
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
       setState('error')
     }
-  }, [file, selected, fetchTrees])
+  }, [file, selected, fetchRhizomes])
 
   const handleGoToTree = useCallback((treeId: string) => {
-    selectTree(treeId)
+    selectRhizome(treeId)
     onDismiss()
-  }, [selectTree, onDismiss])
+  }, [selectRhizome, onDismiss])
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Escape') onDismiss()
@@ -216,12 +216,12 @@ export function ImportWizard({ onDismiss }: ImportWizardProps) {
             </div>
             <div className="done-list">
               {results.map(r => (
-                <div key={r.tree_id} className="done-item">
+                <div key={r.rhizome_id} className="done-item">
                   <span className="done-title">{r.title || 'Untitled'}</span>
                   <span className="done-count">{r.node_count} messages</span>
                   <button
                     className="done-go"
-                    onClick={() => handleGoToTree(r.tree_id)}
+                    onClick={() => handleGoToTree(r.rhizome_id)}
                   >
                     Open
                   </button>

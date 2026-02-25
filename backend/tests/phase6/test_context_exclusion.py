@@ -14,15 +14,15 @@ from qivis.events.projector import StateProjector
 from qivis.events.store import EventStore
 from qivis.generation.context import ContextBuilder
 from tests.fixtures import (
-    create_branching_tree,
-    create_test_tree,
-    create_tree_with_messages,
+    create_branching_rhizome,
+    create_test_rhizome,
+    create_rhizome_with_messages,
     make_digression_group_created_envelope,
     make_digression_group_toggled_envelope,
     make_node_context_excluded_envelope,
     make_node_context_included_envelope,
     make_node_created_envelope,
-    make_tree_created_envelope,
+    make_rhizome_created_envelope,
 )
 
 
@@ -36,10 +36,10 @@ class TestExclusionProjection:
 
     async def test_node_context_excluded_projects(self, event_store, projector, db):
         """NodeContextExcluded inserts a row into node_exclusions table."""
-        tree_ev = make_tree_created_envelope()
-        node_ev = make_node_created_envelope(tree_id=tree_ev.tree_id, content="Hello")
+        tree_ev = make_rhizome_created_envelope()
+        node_ev = make_node_created_envelope(rhizome_id=tree_ev.rhizome_id, content="Hello")
         scope_ev = make_node_created_envelope(
-            tree_id=tree_ev.tree_id, parent_id=node_ev.payload["node_id"],
+            rhizome_id=tree_ev.rhizome_id, parent_id=node_ev.payload["node_id"],
             role="assistant", content="Hi",
         )
 
@@ -48,7 +48,7 @@ class TestExclusionProjection:
         await projector.project([tree_ev, node_ev, scope_ev])
 
         excl_ev = make_node_context_excluded_envelope(
-            tree_id=tree_ev.tree_id,
+            rhizome_id=tree_ev.rhizome_id,
             node_id=node_ev.payload["node_id"],
             scope_node_id=scope_ev.payload["node_id"],
             reason="Testing exclusion",
@@ -57,8 +57,8 @@ class TestExclusionProjection:
         await projector.project([excl_ev])
 
         row = await db.fetchone(
-            "SELECT * FROM node_exclusions WHERE tree_id = ? AND node_id = ?",
-            (tree_ev.tree_id, node_ev.payload["node_id"]),
+            "SELECT * FROM node_exclusions WHERE rhizome_id = ? AND node_id = ?",
+            (tree_ev.rhizome_id, node_ev.payload["node_id"]),
         )
         assert row is not None
         assert row["scope_node_id"] == scope_ev.payload["node_id"]
@@ -66,10 +66,10 @@ class TestExclusionProjection:
 
     async def test_node_context_included_deletes_row(self, event_store, projector, db):
         """NodeContextIncluded removes the matching exclusion."""
-        tree_ev = make_tree_created_envelope()
-        node_ev = make_node_created_envelope(tree_id=tree_ev.tree_id, content="Hello")
+        tree_ev = make_rhizome_created_envelope()
+        node_ev = make_node_created_envelope(rhizome_id=tree_ev.rhizome_id, content="Hello")
         scope_ev = make_node_created_envelope(
-            tree_id=tree_ev.tree_id, parent_id=node_ev.payload["node_id"],
+            rhizome_id=tree_ev.rhizome_id, parent_id=node_ev.payload["node_id"],
             role="assistant", content="Hi",
         )
 
@@ -81,20 +81,20 @@ class TestExclusionProjection:
         scope_node_id = scope_ev.payload["node_id"]
 
         excl_ev = make_node_context_excluded_envelope(
-            tree_id=tree_ev.tree_id, node_id=node_id, scope_node_id=scope_node_id,
+            rhizome_id=tree_ev.rhizome_id, node_id=node_id, scope_node_id=scope_node_id,
         )
         await event_store.append(excl_ev)
         await projector.project([excl_ev])
 
         incl_ev = make_node_context_included_envelope(
-            tree_id=tree_ev.tree_id, node_id=node_id, scope_node_id=scope_node_id,
+            rhizome_id=tree_ev.rhizome_id, node_id=node_id, scope_node_id=scope_node_id,
         )
         await event_store.append(incl_ev)
         await projector.project([incl_ev])
 
         row = await db.fetchone(
-            "SELECT * FROM node_exclusions WHERE tree_id = ? AND node_id = ? AND scope_node_id = ?",
-            (tree_ev.tree_id, node_id, scope_node_id),
+            "SELECT * FROM node_exclusions WHERE rhizome_id = ? AND node_id = ? AND scope_node_id = ?",
+            (tree_ev.rhizome_id, node_id, scope_node_id),
         )
         assert row is None
 
@@ -104,10 +104,10 @@ class TestDigressionGroupProjection:
 
     async def test_group_created_projects(self, event_store, projector, db):
         """DigressionGroupCreated inserts group + membership rows."""
-        tree_ev = make_tree_created_envelope()
-        n1 = make_node_created_envelope(tree_id=tree_ev.tree_id, content="Msg 1")
+        tree_ev = make_rhizome_created_envelope()
+        n1 = make_node_created_envelope(rhizome_id=tree_ev.rhizome_id, content="Msg 1")
         n2 = make_node_created_envelope(
-            tree_id=tree_ev.tree_id, parent_id=n1.payload["node_id"],
+            rhizome_id=tree_ev.rhizome_id, parent_id=n1.payload["node_id"],
             role="assistant", content="Msg 2",
         )
 
@@ -117,7 +117,7 @@ class TestDigressionGroupProjection:
 
         node_ids = [n1.payload["node_id"], n2.payload["node_id"]]
         group_ev = make_digression_group_created_envelope(
-            tree_id=tree_ev.tree_id, node_ids=node_ids, label="Side topic",
+            rhizome_id=tree_ev.rhizome_id, node_ids=node_ids, label="Side topic",
         )
         await event_store.append(group_ev)
         await projector.project([group_ev])
@@ -140,15 +140,15 @@ class TestDigressionGroupProjection:
 
     async def test_group_toggled_updates_state(self, event_store, projector, db):
         """DigressionGroupToggled updates the included flag."""
-        tree_ev = make_tree_created_envelope()
-        n1 = make_node_created_envelope(tree_id=tree_ev.tree_id, content="Msg")
+        tree_ev = make_rhizome_created_envelope()
+        n1 = make_node_created_envelope(rhizome_id=tree_ev.rhizome_id, content="Msg")
 
         for e in [tree_ev, n1]:
             await event_store.append(e)
         await projector.project([tree_ev, n1])
 
         group_ev = make_digression_group_created_envelope(
-            tree_id=tree_ev.tree_id,
+            rhizome_id=tree_ev.rhizome_id,
             node_ids=[n1.payload["node_id"]],
             label="Aside",
         )
@@ -156,7 +156,7 @@ class TestDigressionGroupProjection:
         await projector.project([group_ev])
 
         toggle_ev = make_digression_group_toggled_envelope(
-            tree_id=tree_ev.tree_id,
+            rhizome_id=tree_ev.rhizome_id,
             group_id=group_ev.payload["group_id"],
             included=False,
         )
@@ -180,47 +180,47 @@ class TestNodeExclusionAPI:
 
     async def test_exclude_node_returns_response(self, client):
         """POST exclude returns exclusion data."""
-        data = await create_tree_with_messages(client, n_messages=4)
-        tree_id = data["tree_id"]
+        data = await create_rhizome_with_messages(client, n_messages=4)
+        rhizome_id = data["rhizome_id"]
         node_id = data["node_ids"][1]  # exclude the assistant message
         scope_node_id = data["node_ids"][-1]  # leaf of current path
 
         resp = await client.post(
-            f"/api/trees/{tree_id}/nodes/{node_id}/exclude",
+            f"/api/rhizomes/{rhizome_id}/nodes/{node_id}/exclude",
             json={"scope_node_id": scope_node_id},
         )
         assert resp.status_code == 200
         body = resp.json()
         assert body["node_id"] == node_id
         assert body["scope_node_id"] == scope_node_id
-        assert body["tree_id"] == tree_id
+        assert body["rhizome_id"] == rhizome_id
 
     async def test_exclude_nonexistent_node_404(self, client):
         """POST exclude on nonexistent node returns 404."""
-        tree = await create_test_tree(client)
+        tree = await create_test_rhizome(client)
         resp = await client.post(
-            f"/api/trees/{tree['tree_id']}/nodes/no-such-node/exclude",
+            f"/api/rhizomes/{tree['rhizome_id']}/nodes/no-such-node/exclude",
             json={"scope_node_id": "whatever"},
         )
         assert resp.status_code == 404
 
     async def test_get_exclusions_returns_list(self, client):
         """GET exclusions returns all exclusions for the tree."""
-        data = await create_tree_with_messages(client, n_messages=4)
-        tree_id = data["tree_id"]
+        data = await create_rhizome_with_messages(client, n_messages=4)
+        rhizome_id = data["rhizome_id"]
         scope = data["node_ids"][-1]
 
         # Exclude two nodes
         await client.post(
-            f"/api/trees/{tree_id}/nodes/{data['node_ids'][0]}/exclude",
+            f"/api/rhizomes/{rhizome_id}/nodes/{data['node_ids'][0]}/exclude",
             json={"scope_node_id": scope},
         )
         await client.post(
-            f"/api/trees/{tree_id}/nodes/{data['node_ids'][1]}/exclude",
+            f"/api/rhizomes/{rhizome_id}/nodes/{data['node_ids'][1]}/exclude",
             json={"scope_node_id": scope, "reason": "Off-topic"},
         )
 
-        resp = await client.get(f"/api/trees/{tree_id}/exclusions")
+        resp = await client.get(f"/api/rhizomes/{rhizome_id}/exclusions")
         assert resp.status_code == 200
         body = resp.json()
         assert len(body) == 2
@@ -229,55 +229,55 @@ class TestNodeExclusionAPI:
 
     async def test_include_removes_exclusion(self, client):
         """POST include removes the matching exclusion."""
-        data = await create_tree_with_messages(client, n_messages=4)
-        tree_id = data["tree_id"]
+        data = await create_rhizome_with_messages(client, n_messages=4)
+        rhizome_id = data["rhizome_id"]
         node_id = data["node_ids"][1]
         scope = data["node_ids"][-1]
 
         await client.post(
-            f"/api/trees/{tree_id}/nodes/{node_id}/exclude",
+            f"/api/rhizomes/{rhizome_id}/nodes/{node_id}/exclude",
             json={"scope_node_id": scope},
         )
 
         resp = await client.post(
-            f"/api/trees/{tree_id}/nodes/{node_id}/include",
+            f"/api/rhizomes/{rhizome_id}/nodes/{node_id}/include",
             json={"scope_node_id": scope},
         )
         assert resp.status_code == 204
 
-        excl_resp = await client.get(f"/api/trees/{tree_id}/exclusions")
+        excl_resp = await client.get(f"/api/rhizomes/{rhizome_id}/exclusions")
         assert len(excl_resp.json()) == 0
 
     async def test_include_idempotent(self, client):
         """POST include on non-excluded node doesn't error."""
-        data = await create_tree_with_messages(client, n_messages=2)
-        tree_id = data["tree_id"]
+        data = await create_rhizome_with_messages(client, n_messages=2)
+        rhizome_id = data["rhizome_id"]
         node_id = data["node_ids"][0]
         scope = data["node_ids"][-1]
 
         resp = await client.post(
-            f"/api/trees/{tree_id}/nodes/{node_id}/include",
+            f"/api/rhizomes/{rhizome_id}/nodes/{node_id}/include",
             json={"scope_node_id": scope},
         )
         assert resp.status_code == 204
 
     async def test_multiple_exclusions_different_scopes_coexist(self, client):
         """Same node excluded with different scope_node_ids creates separate records."""
-        branching = await create_branching_tree(client)
-        tree_id = branching["tree_id"]
+        branching = await create_branching_rhizome(client)
+        rhizome_id = branching["rhizome_id"]
         ids = branching["node_ids"]
 
         # Exclude root node from two different branches
         await client.post(
-            f"/api/trees/{tree_id}/nodes/{ids['root']}/exclude",
+            f"/api/rhizomes/{rhizome_id}/nodes/{ids['root']}/exclude",
             json={"scope_node_id": ids["B"]},
         )
         await client.post(
-            f"/api/trees/{tree_id}/nodes/{ids['root']}/exclude",
+            f"/api/rhizomes/{rhizome_id}/nodes/{ids['root']}/exclude",
             json={"scope_node_id": ids["C"]},
         )
 
-        resp = await client.get(f"/api/trees/{tree_id}/exclusions")
+        resp = await client.get(f"/api/rhizomes/{rhizome_id}/exclusions")
         body = resp.json()
         assert len(body) == 2
         scopes = {e["scope_node_id"] for e in body}
@@ -295,12 +295,12 @@ class TestDigressionGroupAPI:
 
     async def test_create_group_returns_response(self, client):
         """POST create group returns DigressionGroupResponse."""
-        data = await create_tree_with_messages(client, n_messages=4)
-        tree_id = data["tree_id"]
+        data = await create_rhizome_with_messages(client, n_messages=4)
+        rhizome_id = data["rhizome_id"]
         node_ids = data["node_ids"][:2]  # first two messages
 
         resp = await client.post(
-            f"/api/trees/{tree_id}/digression-groups",
+            f"/api/rhizomes/{rhizome_id}/digression-groups",
             json={"node_ids": node_ids, "label": "Side topic"},
         )
         assert resp.status_code == 201
@@ -312,32 +312,32 @@ class TestDigressionGroupAPI:
 
     async def test_create_group_noncontiguous_400(self, client):
         """POST create group with non-contiguous nodes returns 400."""
-        data = await create_tree_with_messages(client, n_messages=6)
-        tree_id = data["tree_id"]
+        data = await create_rhizome_with_messages(client, n_messages=6)
+        rhizome_id = data["rhizome_id"]
         # Skip a node to make it non-contiguous
         node_ids = [data["node_ids"][0], data["node_ids"][2]]
 
         resp = await client.post(
-            f"/api/trees/{tree_id}/digression-groups",
+            f"/api/rhizomes/{rhizome_id}/digression-groups",
             json={"node_ids": node_ids, "label": "Gaps"},
         )
         assert resp.status_code == 400
 
     async def test_get_groups_returns_all(self, client):
         """GET groups returns all groups with toggle state."""
-        data = await create_tree_with_messages(client, n_messages=6)
-        tree_id = data["tree_id"]
+        data = await create_rhizome_with_messages(client, n_messages=6)
+        rhizome_id = data["rhizome_id"]
 
         await client.post(
-            f"/api/trees/{tree_id}/digression-groups",
+            f"/api/rhizomes/{rhizome_id}/digression-groups",
             json={"node_ids": data["node_ids"][:2], "label": "Group A"},
         )
         await client.post(
-            f"/api/trees/{tree_id}/digression-groups",
+            f"/api/rhizomes/{rhizome_id}/digression-groups",
             json={"node_ids": data["node_ids"][2:4], "label": "Group B"},
         )
 
-        resp = await client.get(f"/api/trees/{tree_id}/digression-groups")
+        resp = await client.get(f"/api/rhizomes/{rhizome_id}/digression-groups")
         assert resp.status_code == 200
         body = resp.json()
         assert len(body) == 2
@@ -346,45 +346,45 @@ class TestDigressionGroupAPI:
 
     async def test_toggle_group_off(self, client):
         """POST toggle group off sets included=false."""
-        data = await create_tree_with_messages(client, n_messages=4)
-        tree_id = data["tree_id"]
+        data = await create_rhizome_with_messages(client, n_messages=4)
+        rhizome_id = data["rhizome_id"]
 
         create_resp = await client.post(
-            f"/api/trees/{tree_id}/digression-groups",
+            f"/api/rhizomes/{rhizome_id}/digression-groups",
             json={"node_ids": data["node_ids"][:2], "label": "Test"},
         )
         group_id = create_resp.json()["group_id"]
 
         toggle_resp = await client.post(
-            f"/api/trees/{tree_id}/digression-groups/{group_id}/toggle",
+            f"/api/rhizomes/{rhizome_id}/digression-groups/{group_id}/toggle",
             json={"included": False},
         )
         assert toggle_resp.status_code == 200
         assert toggle_resp.json()["included"] is False
 
         # Verify via GET
-        groups = (await client.get(f"/api/trees/{tree_id}/digression-groups")).json()
+        groups = (await client.get(f"/api/rhizomes/{rhizome_id}/digression-groups")).json()
         group = next(g for g in groups if g["group_id"] == group_id)
         assert group["included"] is False
 
     async def test_toggle_group_on(self, client):
         """POST toggle group on restores included=true."""
-        data = await create_tree_with_messages(client, n_messages=4)
-        tree_id = data["tree_id"]
+        data = await create_rhizome_with_messages(client, n_messages=4)
+        rhizome_id = data["rhizome_id"]
 
         create_resp = await client.post(
-            f"/api/trees/{tree_id}/digression-groups",
+            f"/api/rhizomes/{rhizome_id}/digression-groups",
             json={"node_ids": data["node_ids"][:2], "label": "Test"},
         )
         group_id = create_resp.json()["group_id"]
 
         # Toggle off then on
         await client.post(
-            f"/api/trees/{tree_id}/digression-groups/{group_id}/toggle",
+            f"/api/rhizomes/{rhizome_id}/digression-groups/{group_id}/toggle",
             json={"included": False},
         )
         toggle_resp = await client.post(
-            f"/api/trees/{tree_id}/digression-groups/{group_id}/toggle",
+            f"/api/rhizomes/{rhizome_id}/digression-groups/{group_id}/toggle",
             json={"included": True},
         )
         assert toggle_resp.status_code == 200
@@ -392,21 +392,21 @@ class TestDigressionGroupAPI:
 
     async def test_delete_group(self, client):
         """DELETE removes group; subsequent GET excludes it."""
-        data = await create_tree_with_messages(client, n_messages=4)
-        tree_id = data["tree_id"]
+        data = await create_rhizome_with_messages(client, n_messages=4)
+        rhizome_id = data["rhizome_id"]
 
         create_resp = await client.post(
-            f"/api/trees/{tree_id}/digression-groups",
+            f"/api/rhizomes/{rhizome_id}/digression-groups",
             json={"node_ids": data["node_ids"][:2], "label": "Temp"},
         )
         group_id = create_resp.json()["group_id"]
 
         del_resp = await client.delete(
-            f"/api/trees/{tree_id}/digression-groups/{group_id}",
+            f"/api/rhizomes/{rhizome_id}/digression-groups/{group_id}",
         )
         assert del_resp.status_code == 204
 
-        groups = (await client.get(f"/api/trees/{tree_id}/digression-groups")).json()
+        groups = (await client.get(f"/api/rhizomes/{rhizome_id}/digression-groups")).json()
         assert len(groups) == 0
 
 
@@ -542,27 +542,27 @@ class TestIsExcluded:
 
     async def test_is_excluded_true_when_excluded(self, client):
         """After excluding, node has is_excluded=True in tree response."""
-        data = await create_tree_with_messages(client, n_messages=4)
-        tree_id = data["tree_id"]
+        data = await create_rhizome_with_messages(client, n_messages=4)
+        rhizome_id = data["rhizome_id"]
         node_id = data["node_ids"][1]
         scope = data["node_ids"][-1]
 
         await client.post(
-            f"/api/trees/{tree_id}/nodes/{node_id}/exclude",
+            f"/api/rhizomes/{rhizome_id}/nodes/{node_id}/exclude",
             json={"scope_node_id": scope},
         )
 
-        resp = await client.get(f"/api/trees/{tree_id}")
+        resp = await client.get(f"/api/rhizomes/{rhizome_id}")
         tree = resp.json()
         node = next(n for n in tree["nodes"] if n["node_id"] == node_id)
         assert node["is_excluded"] is True
 
     async def test_is_excluded_false_by_default(self, client):
         """Nodes without exclusions have is_excluded=False."""
-        data = await create_tree_with_messages(client, n_messages=2)
-        tree_id = data["tree_id"]
+        data = await create_rhizome_with_messages(client, n_messages=2)
+        rhizome_id = data["rhizome_id"]
 
-        resp = await client.get(f"/api/trees/{tree_id}")
+        resp = await client.get(f"/api/rhizomes/{rhizome_id}")
         tree = resp.json()
         for node in tree["nodes"]:
             assert node["is_excluded"] is False
@@ -578,14 +578,14 @@ class TestExclusionEventReplay:
 
     async def test_exclusions_and_groups_survive_replay(self, event_store, projector, db):
         """Rebuild all projections from scratch -- exclusions and groups are consistent."""
-        tree_ev = make_tree_created_envelope()
-        n1 = make_node_created_envelope(tree_id=tree_ev.tree_id, content="Hello")
+        tree_ev = make_rhizome_created_envelope()
+        n1 = make_node_created_envelope(rhizome_id=tree_ev.rhizome_id, content="Hello")
         n2 = make_node_created_envelope(
-            tree_id=tree_ev.tree_id, parent_id=n1.payload["node_id"],
+            rhizome_id=tree_ev.rhizome_id, parent_id=n1.payload["node_id"],
             role="assistant", content="Hi",
         )
         n3 = make_node_created_envelope(
-            tree_id=tree_ev.tree_id, parent_id=n2.payload["node_id"],
+            rhizome_id=tree_ev.rhizome_id, parent_id=n2.payload["node_id"],
             content="Question",
         )
 
@@ -596,30 +596,30 @@ class TestExclusionEventReplay:
 
         # Exclude n1, then re-include it, then exclude n2
         excl1 = make_node_context_excluded_envelope(
-            tree_id=tree_ev.tree_id,
+            rhizome_id=tree_ev.rhizome_id,
             node_id=n1.payload["node_id"],
             scope_node_id=n3.payload["node_id"],
             reason="Test",
         )
         incl1 = make_node_context_included_envelope(
-            tree_id=tree_ev.tree_id,
+            rhizome_id=tree_ev.rhizome_id,
             node_id=n1.payload["node_id"],
             scope_node_id=n3.payload["node_id"],
         )
         excl2 = make_node_context_excluded_envelope(
-            tree_id=tree_ev.tree_id,
+            rhizome_id=tree_ev.rhizome_id,
             node_id=n2.payload["node_id"],
             scope_node_id=n3.payload["node_id"],
         )
 
         # Create a group and toggle it off
         group_ev = make_digression_group_created_envelope(
-            tree_id=tree_ev.tree_id,
+            rhizome_id=tree_ev.rhizome_id,
             node_ids=[n1.payload["node_id"], n2.payload["node_id"]],
             label="Intro",
         )
         toggle_ev = make_digression_group_toggled_envelope(
-            tree_id=tree_ev.tree_id,
+            rhizome_id=tree_ev.rhizome_id,
             group_id=group_ev.payload["group_id"],
             included=False,
         )
@@ -636,9 +636,9 @@ class TestExclusionEventReplay:
         await db.execute("DELETE FROM bookmarks")
         await db.execute("DELETE FROM annotations")
         await db.execute("DELETE FROM nodes")
-        await db.execute("DELETE FROM trees")
+        await db.execute("DELETE FROM rhizomes")
 
-        all_events = await event_store.get_events(tree_ev.tree_id)
+        all_events = await event_store.get_events(tree_ev.rhizome_id)
         fresh_projector = StateProjector(db)
         await fresh_projector.project(all_events)
 

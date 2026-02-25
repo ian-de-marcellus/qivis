@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { NodeResponse } from '../../api/types.ts'
-import { useTreeStore } from '../../store/treeStore.ts'
+import { useRhizomeStore } from '../../store/rhizomeStore.ts'
 import './AnnotationPanel.css'
 
 interface AnnotationPanelProps {
@@ -12,12 +12,12 @@ export function AnnotationPanel({ node }: AnnotationPanelProps) {
   const [showNotesFor, setShowNotesFor] = useState<string | null>(null)
   const [notesValue, setNotesValue] = useState('')
 
-  const nodeAnnotations = useTreeStore((s) => s.nodeAnnotations[node.node_id])
-  const taxonomy = useTreeStore((s) => s.taxonomy)
-  const addAnnotation = useTreeStore((s) => s.addAnnotation)
-  const removeAnnotation = useTreeStore((s) => s.removeAnnotation)
-  const fetchNodeAnnotations = useTreeStore((s) => s.fetchNodeAnnotations)
-  const fetchTaxonomy = useTreeStore((s) => s.fetchTaxonomy)
+  const nodeAnnotations = useRhizomeStore((s) => s.nodeAnnotations[node.node_id])
+  const taxonomy = useRhizomeStore((s) => s.taxonomy)
+  const addAnnotation = useRhizomeStore((s) => s.addAnnotation)
+  const removeAnnotation = useRhizomeStore((s) => s.removeAnnotation)
+  const fetchNodeAnnotations = useRhizomeStore((s) => s.fetchNodeAnnotations)
+  const fetchTaxonomy = useRhizomeStore((s) => s.fetchTaxonomy)
 
   // Fetch on mount if not cached
   useEffect(() => {

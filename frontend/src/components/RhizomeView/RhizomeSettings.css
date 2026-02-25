@@ -1,10 +1,10 @@
-/* ---- Tree settings header + expandable panel ---- */
+/* ---- Rhizome settings header + expandable panel ---- */
 
-.tree-settings {
+.rhizome-settings {
   border-bottom: 1px solid var(--border-subtle);
 }
 
-.tree-settings-bar {
+.rhizome-settings-bar {
   display: flex;
   align-items: center;
   gap: var(--space-sm);
@@ -17,7 +17,7 @@
 
 /* Archive button — matches icon-toggle-btn sizing but acts as action */
 
-.tree-archive-btn {
+.rhizome-archive-btn {
   width: 28px;
   height: 28px;
   flex-shrink: 0;
@@ -32,23 +32,23 @@
   transition: color 0.15s, border-color 0.15s, background 0.15s;
 }
 
-.tree-archive-btn:hover {
+.rhizome-archive-btn:hover {
   color: var(--text-secondary);
   border-color: var(--border);
 }
 
-.tree-archive-btn.archived {
+.rhizome-archive-btn.archived {
   color: var(--text-accent);
   border-color: var(--accent);
   background: var(--accent-muted);
 }
 
-.tree-archive-btn svg {
+.rhizome-archive-btn svg {
   width: 16px;
   height: 16px;
 }
 
-.tree-title-display {
+.rhizome-title-display {
   flex: 1;
   min-width: 0;
   font-family: var(--font-display);
@@ -61,7 +61,7 @@
   white-space: nowrap;
 }
 
-.tree-title-input {
+.rhizome-title-input {
   flex: 1;
   min-width: 0;
   font-family: var(--font-display);
@@ -78,7 +78,7 @@
 
 /* ---- Expandable settings panel ---- */
 
-.tree-settings-panel {
+.rhizome-settings-panel {
   max-width: var(--content-width);
   max-height: 60vh;
   overflow-y: auto;
@@ -92,7 +92,7 @@
   to { opacity: 1; transform: translateY(0); }
 }
 
-.tree-settings-fields {
+.rhizome-settings-fields {
   display: flex;
   flex-direction: column;
   gap: var(--space-sm);
@@ -101,13 +101,13 @@
   border-radius: var(--radius-md);
 }
 
-.tree-settings-field {
+.rhizome-settings-field {
   display: flex;
   flex-direction: column;
   gap: 0.2rem;
 }
 
-.tree-settings-field label {
+.rhizome-settings-field label {
   font-family: var(--font-ui);
   font-size: var(--text-xs);
   font-weight: 600;
@@ -116,9 +116,9 @@
   color: var(--text-secondary);
 }
 
-.tree-settings-field input,
-.tree-settings-field textarea,
-.tree-settings-field select {
+.rhizome-settings-field input,
+.rhizome-settings-field textarea,
+.rhizome-settings-field select {
   padding: var(--space-xs) var(--space-sm);
   font-family: var(--font-ui);
   font-size: var(--text-sm);
@@ -130,9 +130,9 @@
   transition: border-color 0.15s;
 }
 
-.tree-settings-field input:focus,
-.tree-settings-field textarea:focus,
-.tree-settings-field select:focus {
+.rhizome-settings-field input:focus,
+.rhizome-settings-field textarea:focus,
+.rhizome-settings-field select:focus {
   outline: none;
   border-color: var(--accent);
 }
@@ -183,23 +183,23 @@
   border-left-color: var(--accent);
 }
 
-.tree-settings-field textarea {
+.rhizome-settings-field textarea {
   font-family: var(--font-mono);
   font-size: var(--text-xs);
   resize: vertical;
 }
 
-.tree-settings-field select {
+.rhizome-settings-field select {
   cursor: pointer;
 }
 
-.tree-settings-divider {
+.rhizome-settings-divider {
   height: 1px;
   background: var(--border-subtle);
   margin: var(--space-xs) 0;
 }
 
-.tree-settings-section-label {
+.rhizome-settings-section-label {
   font-family: var(--font-ui);
   font-size: var(--text-xs);
   font-weight: 600;
@@ -208,31 +208,31 @@
   color: var(--text-tertiary);
 }
 
-.tree-settings-row-pair {
+.rhizome-settings-row-pair {
   display: flex;
   gap: var(--space-sm);
 }
 
-.tree-settings-row-pair .tree-settings-field {
+.rhizome-settings-row-pair .rhizome-settings-field {
   flex: 1;
   min-width: 0;
 }
 
-.tree-settings-row-pair input[type="number"] {
+.rhizome-settings-row-pair input[type="number"] {
   width: 100%;
 }
 
-.tree-settings-field input[type="number"] {
+.rhizome-settings-field input[type="number"] {
   max-width: 10rem;
   font-variant-numeric: tabular-nums;
 }
 
-.tree-settings-toggle {
+.rhizome-settings-toggle {
   display: flex;
   align-items: center;
 }
 
-.tree-settings-toggle label {
+.rhizome-settings-toggle label {
   display: flex;
   align-items: center;
   gap: var(--space-sm);
@@ -242,12 +242,12 @@
   cursor: pointer;
 }
 
-.tree-settings-toggle input[type="checkbox"] {
+.rhizome-settings-toggle input[type="checkbox"] {
   accent-color: var(--accent);
   cursor: pointer;
 }
 
-.tree-settings-note {
+.rhizome-settings-note {
   display: block;
   font-family: var(--font-ui);
   font-size: var(--text-xs);
@@ -257,16 +257,16 @@
 }
 
 /* ---- Unsupported param annotation ---- */
-.tree-settings-fields .unsupported-param {
+.rhizome-settings-fields .unsupported-param {
   opacity: 0.35;
 }
 
-.tree-settings-fields .unsupported-param input,
-.tree-settings-fields .unsupported-param select {
+.rhizome-settings-fields .unsupported-param input,
+.rhizome-settings-fields .unsupported-param select {
   cursor: not-allowed;
 }
 
-.tree-settings-fields .unsupported-hint {
+.rhizome-settings-fields .unsupported-hint {
   font-family: var(--font-ui);
   font-size: var(--text-xs);
   color: var(--text-tertiary);
@@ -274,7 +274,7 @@
   font-style: italic;
 }
 
-.tree-settings-actions {
+.rhizome-settings-actions {
   display: flex;
   justify-content: flex-end;
   align-items: center;
@@ -282,7 +282,7 @@
   margin-top: var(--space-xs);
 }
 
-.tree-settings-dirty {
+.rhizome-settings-dirty {
   font-family: var(--font-ui);
   font-size: var(--text-xs);
   font-style: italic;
@@ -290,7 +290,7 @@
   margin-right: auto;
 }
 
-.tree-settings-save {
+.rhizome-settings-save {
   padding: var(--space-xs) var(--space-md);
   font-family: var(--font-ui);
   font-size: var(--text-xs);
@@ -305,23 +305,23 @@
   transition: opacity 0.15s;
 }
 
-.tree-settings-save:hover:not(:disabled) {
+.rhizome-settings-save:hover:not(:disabled) {
   opacity: 0.9;
 }
 
-.tree-settings-save:disabled {
+.rhizome-settings-save:disabled {
   opacity: 0.35;
   cursor: not-allowed;
 }
 
 /* ---- Export buttons ---- */
-.tree-settings-export-buttons {
+.rhizome-settings-export-buttons {
   display: flex;
   gap: var(--space-sm);
   flex-wrap: wrap;
 }
 
-.tree-settings-export-btn {
+.rhizome-settings-export-btn {
   padding: var(--space-xs) var(--space-md);
   font-family: var(--font-ui);
   font-size: var(--text-xs);
@@ -334,7 +334,7 @@
   transition: background 0.15s ease, border-color 0.15s ease;
 }
 
-.tree-settings-export-btn:hover {
+.rhizome-settings-export-btn:hover {
   background: var(--bg-tertiary);
   border-color: var(--text-tertiary);
 }

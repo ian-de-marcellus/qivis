@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { DigressionGroupResponse, NodeResponse } from '../../api/types.ts'
-import { getActivePath, useTreeStore, useTreeData, useNavigation, useDigressionState } from '../../store/treeStore.ts'
+import { getActivePath, useRhizomeStore, useRhizomeData, useNavigation, useDigressionState } from '../../store/rhizomeStore.ts'
 import './DigressionPanel.css'
 
 interface DigressionPanelProps {
@@ -11,10 +11,10 @@ interface DigressionPanelProps {
 }
 
 export function DigressionPanel({ groups, path, onDismiss, onStartSelection }: DigressionPanelProps) {
-  const { currentTree } = useTreeData()
-  const toggleDigressionGroup = useTreeStore(s => s.toggleDigressionGroup)
-  const deleteDigressionGroup = useTreeStore(s => s.deleteDigressionGroup)
-  const anchorGroup = useTreeStore(s => s.anchorGroup)
+  const { currentRhizome } = useRhizomeData()
+  const toggleDigressionGroup = useRhizomeStore(s => s.toggleDigressionGroup)
+  const deleteDigressionGroup = useRhizomeStore(s => s.deleteDigressionGroup)
+  const anchorGroup = useRhizomeStore(s => s.anchorGroup)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
 
   const pathNodeIds = new Set(path.map((n) => n.node_id))
@@ -41,8 +41,8 @@ export function DigressionPanel({ groups, path, onDismiss, onStartSelection }: D
         <div className="digression-list">
           {groups.map((group) => {
             const allOnPath = group.node_ids.every((nid) => pathNodeIds.has(nid))
-            const allAnchored = currentTree != null && group.node_ids.every((nid) => {
-              const node = currentTree.nodes.find((n) => n.node_id === nid)
+            const allAnchored = currentRhizome != null && group.node_ids.every((nid) => {
+              const node = currentRhizome.nodes.find((n) => n.node_id === nid)
               return node?.is_anchored ?? false
             })
             return (
@@ -169,18 +169,18 @@ export function DigressionCreator({ selectedNodeIds, onToggleNode: _onToggleNode
  * Designed to live in the right pane alongside (or instead of) the graph view.
  */
 export function DigressionSidePanel() {
-  const { currentTree } = useTreeData()
+  const { currentRhizome } = useRhizomeData()
   const { branchSelections } = useNavigation()
   const { digressionGroups } = useDigressionState()
-  const toggleDigressionGroup = useTreeStore(s => s.toggleDigressionGroup)
-  const deleteDigressionGroup = useTreeStore(s => s.deleteDigressionGroup)
-  const anchorGroup = useTreeStore(s => s.anchorGroup)
-  const setRightPaneMode = useTreeStore(s => s.setRightPaneMode)
-  const setGroupSelectionMode = useTreeStore(s => s.setGroupSelectionMode)
+  const toggleDigressionGroup = useRhizomeStore(s => s.toggleDigressionGroup)
+  const deleteDigressionGroup = useRhizomeStore(s => s.deleteDigressionGroup)
+  const anchorGroup = useRhizomeStore(s => s.anchorGroup)
+  const setRightPaneMode = useRhizomeStore(s => s.setRightPaneMode)
+  const setGroupSelectionMode = useRhizomeStore(s => s.setGroupSelectionMode)
 
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
 
-  const nodes = currentTree?.nodes ?? []
+  const nodes = currentRhizome?.nodes ?? []
   const path = getActivePath(nodes, branchSelections)
   const pathNodeIds = new Set(path.map((n) => n.node_id))
 
@@ -216,8 +216,8 @@ export function DigressionSidePanel() {
           <div className="digression-list">
             {digressionGroups.map((group) => {
               const allOnPath = group.node_ids.every((nid) => pathNodeIds.has(nid))
-              const allAnchored = currentTree != null && group.node_ids.every((nid) => {
-                const node = currentTree.nodes.find((n) => n.node_id === nid)
+              const allAnchored = currentRhizome != null && group.node_ids.every((nid) => {
+                const node = currentRhizome.nodes.find((n) => n.node_id === nid)
                 return node?.is_anchored ?? false
               })
               return (

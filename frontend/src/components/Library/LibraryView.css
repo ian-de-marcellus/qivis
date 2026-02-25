@@ -284,7 +284,7 @@
 
 /* ---- Tree cards ---- */
 
-.tree-card {
+.rhizome-card {
   display: flex;
   flex-direction: column;
   gap: var(--space-xs);
@@ -298,25 +298,25 @@
   min-height: 80px;
 }
 
-.tree-card:hover {
+.rhizome-card:hover {
   background: var(--bg-hover);
   border-color: var(--border);
 }
 
-.tree-card--selected {
+.rhizome-card--selected {
   border-color: var(--accent);
   background: var(--accent-muted);
 }
 
-.tree-card--dragging {
+.rhizome-card--dragging {
   opacity: 0.4;
 }
 
-.tree-card--archived {
+.rhizome-card--archived {
   opacity: 0.5;
 }
 
-.tree-card-checkbox {
+.rhizome-card-checkbox {
   position: absolute;
   top: var(--space-xs);
   left: var(--space-xs);
@@ -335,18 +335,18 @@
   cursor: pointer;
 }
 
-.tree-card:hover .tree-card-checkbox,
-.tree-card--show-checkboxes .tree-card-checkbox {
+.rhizome-card:hover .rhizome-card-checkbox,
+.rhizome-card--show-checkboxes .rhizome-card-checkbox {
   opacity: 1;
 }
 
-.tree-card-checkbox.checked {
+.rhizome-card-checkbox.checked {
   background: var(--accent);
   border-color: var(--accent);
   opacity: 1;
 }
 
-.tree-card-title {
+.rhizome-card-title {
   font-family: var(--font-ui);
   font-size: var(--text-sm);
   font-weight: 500;
@@ -357,21 +357,21 @@
   padding-left: 0.2rem;
 }
 
-.tree-card-meta {
+.rhizome-card-meta {
   display: flex;
   align-items: center;
   gap: var(--space-xs);
   flex-wrap: wrap;
 }
 
-.tree-card-date {
+.rhizome-card-date {
   font-family: var(--font-ui);
   font-size: var(--text-xs);
   color: var(--text-tertiary);
   font-variant-numeric: tabular-nums;
 }
 
-.tree-card-archived-label {
+.rhizome-card-archived-label {
   font-family: var(--font-ui);
   font-size: 0.6rem;
   text-transform: uppercase;
@@ -380,27 +380,27 @@
   font-weight: 500;
 }
 
-.tree-card-tags {
+.rhizome-card-tags {
   display: flex;
   align-items: center;
   gap: 3px;
 }
 
-.tree-card-tag-dot {
+.rhizome-card-tag-dot {
   display: inline-block;
   width: 6px;
   height: 6px;
   border-radius: 50%;
 }
 
-.tree-card-folders {
+.rhizome-card-folders {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-xs);
   margin-top: auto;
 }
 
-.tree-card-folder-chip {
+.rhizome-card-folder-chip {
   display: inline-flex;
   align-items: center;
   gap: 0.15rem;
@@ -416,7 +416,7 @@
   text-overflow: ellipsis;
 }
 
-.tree-card-folder-chip button {
+.rhizome-card-folder-chip button {
   background: none;
   border: none;
   color: var(--text-tertiary);
@@ -428,13 +428,13 @@
   transition: color 0.1s;
 }
 
-.tree-card-folder-chip button:hover {
+.rhizome-card-folder-chip button:hover {
   color: var(--color-red);
 }
 
 /* ---- Card bottom row (folders + archive) ---- */
 
-.tree-card-bottom {
+.rhizome-card-bottom {
   display: flex;
   align-items: center;
   gap: var(--space-xs);
@@ -442,7 +442,7 @@
   padding-right: 3.5rem;
 }
 
-.tree-card-archive-btn {
+.rhizome-card-archive-btn {
   position: absolute;
   bottom: var(--space-sm);
   right: var(--space-sm);
@@ -461,11 +461,11 @@
   transition: opacity 0.15s, color 0.15s, background 0.15s;
 }
 
-.tree-card:hover .tree-card-archive-btn {
+.rhizome-card:hover .rhizome-card-archive-btn {
   opacity: 1;
 }
 
-.tree-card-archive-btn:hover {
+.rhizome-card-archive-btn:hover {
   color: var(--text-secondary);
   background: var(--bg-hover);
 }

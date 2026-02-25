@@ -26,10 +26,10 @@ from qivis.providers.base import (
 )
 from qivis.providers.registry import clear_providers, register_provider
 from qivis.main import app
-from qivis.trees.router import get_generation_service, get_tree_service
-from qivis.trees.service import TreeService
+from qivis.rhizomes.router import get_generation_service, get_rhizome_service
+from qivis.rhizomes.service import RhizomeService
 
-from tests.fixtures import make_node_created_envelope, make_tree_created_envelope
+from tests.fixtures import make_node_created_envelope, make_rhizome_created_envelope
 
 
 # ---------------------------------------------------------------------------
@@ -184,14 +184,14 @@ async def gen_client(db: Database) -> AsyncIterator[AsyncClient]:
     """Test client with CapturingProvider."""
     store = EventStore(db)
     projector = StateProjector(db)
-    service = TreeService(db)
+    service = RhizomeService(db)
     gen_service = GenerationService(service, store, projector)
 
     clear_providers()
     provider = CapturingProvider()
     register_provider(provider)
 
-    app.dependency_overrides[get_tree_service] = lambda: service
+    app.dependency_overrides[get_rhizome_service] = lambda: service
     app.dependency_overrides[get_generation_service] = lambda: gen_service
 
     async with AsyncClient(
@@ -210,7 +210,7 @@ class TestResolveContextMerge:
     async def test_tree_with_default_sampling_params(self, gen_client: AsyncClient):
         """Tree-level default_sampling_params are used when request has none."""
         # Create tree with default_sampling_params
-        resp = await gen_client.post("/api/trees", json={
+        resp = await gen_client.post("/api/rhizomes", json={
             "title": "Sampling Test",
             "default_sampling_params": {"temperature": 0.7, "top_p": 0.9},
         })
@@ -219,14 +219,14 @@ class TestResolveContextMerge:
 
         # Add a user node
         node_resp = await gen_client.post(
-            f"/api/trees/{tree['tree_id']}/nodes",
+            f"/api/rhizomes/{tree['rhizome_id']}/nodes",
             json={"content": "Hello"},
         )
         node = node_resp.json()
 
         # Generate with no sampling_params override
         gen_resp = await gen_client.post(
-            f"/api/trees/{tree['tree_id']}/nodes/{node['node_id']}/generate",
+            f"/api/rhizomes/{tree['rhizome_id']}/nodes/{node['node_id']}/generate",
             json={"provider": "capturing"},
         )
         assert gen_resp.status_code == 201
@@ -237,20 +237,20 @@ class TestResolveContextMerge:
 
     async def test_request_overrides_tree_defaults_via_api(self, gen_client: AsyncClient):
         """Request-level sampling_params override tree defaults."""
-        resp = await gen_client.post("/api/trees", json={
+        resp = await gen_client.post("/api/rhizomes", json={
             "title": "Override Test",
             "default_sampling_params": {"temperature": 0.7},
         })
         tree = resp.json()
 
         node_resp = await gen_client.post(
-            f"/api/trees/{tree['tree_id']}/nodes",
+            f"/api/rhizomes/{tree['rhizome_id']}/nodes",
             json={"content": "Hello"},
         )
         node = node_resp.json()
 
         gen_resp = await gen_client.post(
-            f"/api/trees/{tree['tree_id']}/nodes/{node['node_id']}/generate",
+            f"/api/rhizomes/{tree['rhizome_id']}/nodes/{node['node_id']}/generate",
             json={
                 "provider": "capturing",
                 "sampling_params": {"temperature": 0.0},
@@ -268,25 +268,25 @@ class TestResolveContextMerge:
         but haven't been migrated to default_sampling_params yet.
         """
         # Create tree, then PATCH metadata to set extended_thinking
-        resp = await gen_client.post("/api/trees", json={
+        resp = await gen_client.post("/api/rhizomes", json={
             "title": "Thinking Compat Test",
         })
         tree = resp.json()
 
         patch_resp = await gen_client.patch(
-            f"/api/trees/{tree['tree_id']}",
+            f"/api/rhizomes/{tree['rhizome_id']}",
             json={"metadata": {"extended_thinking": True, "thinking_budget": 5000}},
         )
         assert patch_resp.status_code == 200
 
         node_resp = await gen_client.post(
-            f"/api/trees/{tree['tree_id']}/nodes",
+            f"/api/rhizomes/{tree['rhizome_id']}/nodes",
             json={"content": "Think about this"},
         )
         node = node_resp.json()
 
         gen_resp = await gen_client.post(
-            f"/api/trees/{tree['tree_id']}/nodes/{node['node_id']}/generate",
+            f"/api/rhizomes/{tree['rhizome_id']}/nodes/{node['node_id']}/generate",
             json={"provider": "capturing"},
         )
         assert gen_resp.status_code == 201

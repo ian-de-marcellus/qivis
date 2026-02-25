@@ -11,13 +11,13 @@ from qivis.events.store import EventStore
 from qivis.main import app
 from qivis.search.router import get_search_service
 from qivis.search.service import SearchService
-from qivis.trees.router import get_tree_service
-from qivis.trees.service import TreeService
+from qivis.rhizomes.router import get_rhizome_service
+from qivis.rhizomes.service import RhizomeService
 
 from tests.fixtures import (
     make_annotation_added_envelope,
     make_node_created_envelope,
-    make_tree_created_envelope,
+    make_rhizome_created_envelope,
 )
 
 
@@ -29,12 +29,12 @@ async def _seed_tree(
     event_store: EventStore,
     projector: StateProjector,
     *,
-    tree_id: str | None = None,
-    title: str = "Test Tree",
+    rhizome_id: str | None = None,
+    title: str = "Test Rhizome",
     nodes: list[dict] | None = None,
 ) -> dict:
-    """Create a tree with nodes. Returns {tree_id, node_ids}."""
-    tree_ev = make_tree_created_envelope(tree_id=tree_id, title=title)
+    """Create a tree with nodes. Returns {rhizome_id, node_ids}."""
+    tree_ev = make_rhizome_created_envelope(rhizome_id=rhizome_id, title=title)
     await event_store.append(tree_ev)
     await projector.project([tree_ev])
 
@@ -42,7 +42,7 @@ async def _seed_tree(
     parent_id = None
     for node_spec in (nodes or []):
         node_ev = make_node_created_envelope(
-            tree_id=tree_ev.tree_id,
+            rhizome_id=tree_ev.rhizome_id,
             parent_id=parent_id,
             **node_spec,
         )
@@ -51,20 +51,20 @@ async def _seed_tree(
         node_ids.append(node_ev.payload["node_id"])
         parent_id = node_ev.payload["node_id"]
 
-    return {"tree_id": tree_ev.tree_id, "node_ids": node_ids}
+    return {"rhizome_id": tree_ev.rhizome_id, "node_ids": node_ids}
 
 
 async def _seed_annotation(
     event_store: EventStore,
     projector: StateProjector,
-    tree_id: str,
+    rhizome_id: str,
     node_id: str,
     tag: str,
     value: str | None = None,
 ) -> None:
     """Add an annotation to a node."""
     ann_ev = make_annotation_added_envelope(
-        tree_id=tree_id, node_id=node_id, tag=tag, value=value,
+        rhizome_id=rhizome_id, node_id=node_id, tag=tag, value=value,
     )
     await event_store.append(ann_ev)
     await projector.project([ann_ev])
@@ -98,9 +98,9 @@ async def search_service(db):
 
 @pytest.fixture
 async def client(db):
-    tree_service = TreeService(db)
+    tree_service = RhizomeService(db)
     search_service = SearchService(db)
-    app.dependency_overrides[get_tree_service] = lambda: tree_service
+    app.dependency_overrides[get_rhizome_service] = lambda: tree_service
     app.dependency_overrides[get_search_service] = lambda: search_service
     async with AsyncClient(
         transport=ASGITransport(app=app),
@@ -150,15 +150,15 @@ class TestFTS5Infrastructure:
     async def test_fts_backfill_indexes_existing_nodes(self, db):
         """The FTS rebuild command re-indexes all nodes from the content table."""
         now = datetime.now(UTC).isoformat()
-        # Create a tree first (foreign key constraint)
+        # Create a rhizome first (foreign key constraint)
         await db.execute(
-            "INSERT INTO trees (tree_id, title, created_at, updated_at) "
+            "INSERT INTO rhizomes (rhizome_id, title, created_at, updated_at) "
             "VALUES (?, ?, ?, ?)",
             ("tree-1", "Test", now, now),
         )
         # Insert a node (trigger will auto-index it)
         await db.execute(
-            "INSERT INTO nodes (node_id, tree_id, role, content, created_at) "
+            "INSERT INTO nodes (node_id, rhizome_id, role, content, created_at) "
             "VALUES (?, ?, ?, ?, ?)",
             ("backfill-test", "tree-1", "user", "backfill canary text", now),
         )
@@ -243,10 +243,10 @@ class TestSearchService:
         result = await search_service.search("cephalopods")
         assert result.total >= 1
 
-    async def test_search_filter_tree_ids(
+    async def test_search_filter_rhizome_ids(
         self, db, event_store, projector, search_service,
     ):
-        """tree_ids filter limits results to specified trees."""
+        """rhizome_ids filter limits results to specified trees."""
         data1 = await _seed_tree(event_store, projector, title="Tree A", nodes=[
             {"role": "user", "content": "universal search term here"},
         ])
@@ -254,10 +254,10 @@ class TestSearchService:
             {"role": "user", "content": "universal search term here"},
         ])
         result = await search_service.search(
-            "universal", tree_ids=[data1["tree_id"]],
+            "universal", rhizome_ids=[data1["rhizome_id"]],
         )
         assert result.total == 1
-        assert result.results[0].tree_id == data1["tree_id"]
+        assert result.results[0].rhizome_id == data1["rhizome_id"]
 
     async def test_search_filter_model(
         self, db, event_store, projector, search_service,
@@ -293,7 +293,7 @@ class TestSearchService:
         ])
         await _seed_annotation(
             event_store, projector,
-            tree_id=data["tree_id"],
+            rhizome_id=data["rhizome_id"],
             node_id=data["node_ids"][0],
             tag="sycophancy",
         )
@@ -306,19 +306,19 @@ class TestSearchService:
     ):
         """date_from and date_to filter by node creation date."""
         # Create two nodes with known timestamps
-        tree_ev = make_tree_created_envelope(title="Date test")
+        tree_ev = make_rhizome_created_envelope(title="Date test")
         await event_store.append(tree_ev)
         await projector.project([tree_ev])
 
         old_node = make_node_created_envelope(
-            tree_id=tree_ev.tree_id, role="user", content="old datetest message",
+            rhizome_id=tree_ev.rhizome_id, role="user", content="old datetest message",
         )
         old_node.timestamp = datetime(2025, 1, 15, tzinfo=UTC)
         await event_store.append(old_node)
         await projector.project([old_node])
 
         new_node = make_node_created_envelope(
-            tree_id=tree_ev.tree_id, role="user", content="new datetest message",
+            rhizome_id=tree_ev.rhizome_id, role="user", content="new datetest message",
             parent_id=old_node.payload["node_id"],
         )
         new_node.timestamp = datetime(2026, 2, 15, tzinfo=UTC)
@@ -403,7 +403,7 @@ class TestSearchAPI:
         assert len(body["results"]) >= 1
         item = body["results"][0]
         assert "node_id" in item
-        assert "tree_id" in item
+        assert "rhizome_id" in item
         assert "snippet" in item
 
     async def test_search_endpoint_requires_query(self, client):

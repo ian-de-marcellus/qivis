@@ -1,7 +1,7 @@
 # Qivis
 
 ## Project Overview
-Qivis is an open-source research instrument for exploring AI personality, emotion, and behavior through branching conversation trees. Event-sourced architecture with CQRS pattern.
+Qivis is an open-source research instrument for exploring AI personality, emotion, and behavior through branching conversation rhizomes. Event-sourced architecture with CQRS pattern.
 
 ## Tech Stack
 - **Backend**: Python 3.14 + FastAPI + SQLite (WAL + FTS5)
@@ -30,4 +30,5 @@ Qivis is an open-source research instrument for exploring AI personality, emotio
 
 ## Conventions
 - All references to "loom" in architecture docs should be read as "qivis"
+- Domain concept is "rhizome" (not "tree"); "tree" refers only to the data structure
 - User preferences: no emojis in code, modern tooling (uv, pnpm), latest Python

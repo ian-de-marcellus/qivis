@@ -1,13 +1,13 @@
 import { useState } from 'react'
 import type { BookmarkResponse } from '../../api/types.ts'
-import { useTreeStore, useResearchMetadata } from '../../store/treeStore.ts'
+import { useRhizomeStore, useResearchMetadata } from '../../store/rhizomeStore.ts'
 import './BookmarkList.css'
 
 export function BookmarkList() {
   const { bookmarks, bookmarksLoading } = useResearchMetadata()
-  const removeBookmark = useTreeStore(s => s.removeBookmark)
-  const summarizeBookmark = useTreeStore(s => s.summarizeBookmark)
-  const navigateToBookmark = useTreeStore(s => s.navigateToBookmark)
+  const removeBookmark = useRhizomeStore(s => s.removeBookmark)
+  const summarizeBookmark = useRhizomeStore(s => s.summarizeBookmark)
+  const navigateToBookmark = useRhizomeStore(s => s.navigateToBookmark)
 
   const [searchQuery, setSearchQuery] = useState('')
   const [summarizingIds, setSummarizingIds] = useState<Set<string>>(new Set())

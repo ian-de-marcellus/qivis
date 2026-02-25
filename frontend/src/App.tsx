@@ -4,15 +4,15 @@ import { LibraryView } from './components/Library/LibraryView.tsx'
 import { GraphView } from './components/GraphView/GraphView.tsx'
 import { ResearchPanel } from './components/Library/ResearchPanel.tsx'
 import { SearchPanel } from './components/Library/SearchPanel.tsx'
-import { TreeList } from './components/Library/TreeList.tsx'
-import { getTreeDefaults } from './components/TreeView/contextDiffs.ts'
-import { DigressionSidePanel } from './components/TreeView/DigressionPanel.tsx'
-import { ChatView } from './components/TreeView/ChatView.tsx'
-import { CompletionView } from './components/TreeView/CompletionView.tsx'
-import { MessageInput } from './components/TreeView/MessageInput.tsx'
-import { SystemPromptInput } from './components/TreeView/SystemPromptInput.tsx'
-import { TreeSettings } from './components/TreeView/TreeSettings.tsx'
-import { getActivePath, useTreeStore, useTreeData, useNavigation, useRightPane } from './store/treeStore.ts'
+import { RhizomeList } from './components/Library/RhizomeList.tsx'
+import { getRhizomeDefaults } from './components/RhizomeView/contextDiffs.ts'
+import { DigressionSidePanel } from './components/RhizomeView/DigressionPanel.tsx'
+import { ChatView } from './components/RhizomeView/ChatView.tsx'
+import { CompletionView } from './components/RhizomeView/CompletionView.tsx'
+import { MessageInput } from './components/RhizomeView/MessageInput.tsx'
+import { SystemPromptInput } from './components/RhizomeView/SystemPromptInput.tsx'
+import { RhizomeSettings } from './components/RhizomeView/RhizomeSettings.tsx'
+import { getActivePath, useRhizomeStore, useRhizomeData, useNavigation, useRightPane } from './store/rhizomeStore.ts'
 import './App.css'
 
 type ThemeMode = 'system' | 'light' | 'dark'
@@ -40,14 +40,14 @@ function applyTheme(mode: ThemeMode) {
 }
 
 function App() {
-  const { currentTree, error } = useTreeData()
+  const { currentRhizome, error } = useRhizomeData()
   const { branchSelections } = useNavigation()
   const { rightPaneMode, canvasOpen, libraryOpen } = useRightPane()
-  const searchQuery = useTreeStore(s => s.searchQuery)
-  const fetchTrees = useTreeStore(s => s.fetchTrees)
-  const clearError = useTreeStore(s => s.clearError)
-  const setCanvasOpen = useTreeStore(s => s.setCanvasOpen)
-  const setLibraryOpen = useTreeStore(s => s.setLibraryOpen)
+  const searchQuery = useRhizomeStore(s => s.searchQuery)
+  const fetchRhizomes = useRhizomeStore(s => s.fetchRhizomes)
+  const clearError = useRhizomeStore(s => s.clearError)
+  const setCanvasOpen = useRhizomeStore(s => s.setCanvasOpen)
+  const setLibraryOpen = useRhizomeStore(s => s.setLibraryOpen)
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [theme, setTheme] = useState<ThemeMode>(getInitialTheme)
@@ -95,8 +95,8 @@ function App() {
   }
 
   useEffect(() => {
-    fetchTrees()
-  }, [fetchTrees])
+    fetchRhizomes()
+  }, [fetchRhizomes])
 
   // Cmd+Shift+L toggles the library view
   useEffect(() => {
@@ -114,7 +114,7 @@ function App() {
     <div className="app">
       <aside className={`sidebar ${sidebarCollapsed ? 'collapsed' : ''}`}>
         {!sidebarCollapsed && <SearchPanel />}
-        {!sidebarCollapsed && !searchQuery && <TreeList />}
+        {!sidebarCollapsed && !searchQuery && <RhizomeList />}
         <div className="sidebar-toggle-bar">
           <button
             className="theme-toggle"
@@ -142,13 +142,13 @@ function App() {
           </div>
         )}
 
-        {currentTree ? (
+        {currentRhizome ? (
           rightPaneMode != null ? (
             <div className="split-layout">
               <div className="linear-pane">
-                <TreeSettings />
-                {(currentTree.metadata?.generation_mode as string) !== 'completion' && <SystemPromptInput />}
-                {(currentTree.metadata?.generation_mode as string) === 'completion'
+                <RhizomeSettings />
+                {(currentRhizome.metadata?.generation_mode as string) !== 'completion' && <SystemPromptInput />}
+                {(currentRhizome.metadata?.generation_mode as string) === 'completion'
                   ? <CompletionView />
                   : <ChatView />
                 }
@@ -169,9 +169,9 @@ function App() {
             </div>
           ) : (
             <>
-              <TreeSettings />
-              {(currentTree.metadata?.generation_mode as string) !== 'completion' && <SystemPromptInput />}
-              {(currentTree.metadata?.generation_mode as string) === 'completion'
+              <RhizomeSettings />
+              {(currentRhizome.metadata?.generation_mode as string) !== 'completion' && <SystemPromptInput />}
+              {(currentRhizome.metadata?.generation_mode as string) === 'completion'
                 ? <CompletionView />
                 : <ChatView />
               }
@@ -181,15 +181,15 @@ function App() {
         ) : (
           <div className="empty-state">
             <h1>Qivis</h1>
-            <p>Select a tree or create a new one to begin.</p>
+            <p>Select a rhizome or create a new one to begin.</p>
           </div>
         )}
 
-        {canvasOpen && currentTree && (
+        {canvasOpen && currentRhizome && (
           <CanvasView
-            treeId={currentTree.tree_id}
-            pathNodes={getActivePath(currentTree.nodes, branchSelections)}
-            treeDefaults={getTreeDefaults(currentTree)}
+            rhizomeId={currentRhizome.rhizome_id}
+            pathNodes={getActivePath(currentRhizome.nodes, branchSelections)}
+            rhizomeDefaults={getRhizomeDefaults(currentRhizome)}
             onDismiss={() => setCanvasOpen(false)}
           />
         )}

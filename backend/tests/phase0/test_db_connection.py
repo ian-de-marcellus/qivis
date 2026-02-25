@@ -10,7 +10,7 @@ import tempfile
 from qivis.db.connection import Database
 from qivis.events.projector import StateProjector
 from qivis.events.store import EventStore
-from tests.fixtures import make_node_created_envelope, make_tree_created_envelope
+from tests.fixtures import make_node_created_envelope, make_rhizome_created_envelope
 
 
 class TestDatabaseConnection:
@@ -23,7 +23,7 @@ class TestDatabaseConnection:
             )
             table_names = {row["name"] for row in rows}
             assert "events" in table_names
-            assert "trees" in table_names
+            assert "rhizomes" in table_names
             assert "nodes" in table_names
         finally:
             await db.close()
@@ -72,27 +72,27 @@ class TestFullRoundtrip:
             store = EventStore(db)
             projector = StateProjector(db)
 
-            tree_event = make_tree_created_envelope(title="Roundtrip Test")
+            tree_event = make_rhizome_created_envelope(title="Roundtrip Test")
             node_event = make_node_created_envelope(
-                tree_id=tree_event.tree_id, content="Hello from integration test",
+                rhizome_id=tree_event.rhizome_id, content="Hello from integration test",
             )
 
             await store.append(tree_event)
             await store.append(node_event)
 
             # Read back from store
-            events = await store.get_events(tree_event.tree_id)
+            events = await store.get_events(tree_event.rhizome_id)
             assert len(events) == 2
 
             # Project into materialized tables
             await projector.project(events)
 
             # Query projected state
-            tree = await projector.get_tree(tree_event.tree_id)
+            tree = await projector.get_rhizome(tree_event.rhizome_id)
             assert tree is not None
             assert tree["title"] == "Roundtrip Test"
 
-            nodes = await projector.get_nodes(tree_event.tree_id)
+            nodes = await projector.get_nodes(tree_event.rhizome_id)
             assert len(nodes) == 1
             assert nodes[0]["content"] == "Hello from integration test"
         finally:

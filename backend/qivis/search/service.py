@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 
 class SearchService:
-    """Cross-tree full-text search over conversation nodes."""
+    """Cross-rhizome full-text search over conversation nodes."""
 
     def __init__(self, db: Database) -> None:
         self._db = db
@@ -18,7 +18,7 @@ class SearchService:
         self,
         query: str,
         *,
-        tree_ids: list[str] | None = None,
+        rhizome_ids: list[str] | None = None,
         models: list[str] | None = None,
         providers: list[str] | None = None,
         roles: list[str] | None = None,
@@ -36,10 +36,10 @@ class SearchService:
         clauses: list[str] = []
         params: list[str | int] = [fts_query]
 
-        if tree_ids:
-            placeholders = ", ".join("?" for _ in tree_ids)
-            clauses.append(f"AND n.tree_id IN ({placeholders})")
-            params.extend(tree_ids)
+        if rhizome_ids:
+            placeholders = ", ".join("?" for _ in rhizome_ids)
+            clauses.append(f"AND n.rhizome_id IN ({placeholders})")
+            params.extend(rhizome_ids)
 
         if models:
             placeholders = ", ".join("?" for _ in models)
@@ -79,17 +79,17 @@ class SearchService:
         sql = f"""
             SELECT
                 n.node_id,
-                n.tree_id,
+                n.rhizome_id,
                 n.role,
                 n.content,
                 n.model,
                 n.provider,
                 n.created_at,
-                t.title AS tree_title,
+                t.title AS rhizome_title,
                 snippet(nodes_fts, 0, '[[mark]]', '[[/mark]]', '...', 40) AS snippet
             FROM nodes_fts
             JOIN nodes n ON n.rowid = nodes_fts.rowid
-            JOIN trees t ON t.tree_id = n.tree_id
+            JOIN rhizomes t ON t.rhizome_id = n.rhizome_id
             WHERE nodes_fts MATCH ?
               AND n.archived = 0
               AND t.archived = 0
@@ -103,8 +103,8 @@ class SearchService:
         results = [
             SearchResultItem(
                 node_id=row["node_id"],
-                tree_id=row["tree_id"],
-                tree_title=row["tree_title"],
+                rhizome_id=row["rhizome_id"],
+                rhizome_title=row["rhizome_title"],
                 role=row["role"],
                 content=row["content"],
                 snippet=row["snippet"],

@@ -1,8 +1,8 @@
-import type { NodeResponse, SamplingParams, TreeDetail } from '../../api/types.ts'
+import type { NodeResponse, SamplingParams, RhizomeDetail } from '../../api/types.ts'
 import { reconstructContext } from './contextReconstruction.ts'
 import type { ReconstructedContext, ReconstructedMessage } from './contextReconstruction.ts'
 
-export interface TreeDefaults {
+export interface RhizomeDefaults {
   default_system_prompt: string | null
   default_model: string | null
   default_provider: string | null
@@ -46,12 +46,12 @@ function samplingParamsEqual(
 
 /**
  * Lightweight divergence scan for the diff badge.
- * Walks the parent chain to count edits/prefills, compares metadata against tree defaults.
+ * Walks the parent chain to count edits/prefills, compares metadata against rhizome defaults.
  */
 export function computeDiffSummary(
   node: NodeResponse,
   pathToNode: NodeResponse[],
-  treeDefaults: TreeDefaults,
+  rhizomeDefaults: RhizomeDefaults,
 ): DiffSummary {
   // Walk parent chain up to (but not including) the target node
   const nodeIdx = pathToNode.findIndex((n) => n.node_id === node.node_id)
@@ -67,21 +67,21 @@ export function computeDiffSummary(
   const evictedCount = node.context_usage?.evicted_node_ids?.length ?? 0
   const excludedCount = node.context_usage?.excluded_count ?? 0
 
-  // Only flag a divergence when the tree has an explicit default AND the node
-  // used something different. A null tree default means "no override" — the
+  // Only flag a divergence when the rhizome has an explicit default AND the node
+  // used something different. A null rhizome default means "no override" — the
   // node having any value is expected, not a divergence.
   const systemPromptChanged =
-    treeDefaults.default_system_prompt != null &&
-    (node.system_prompt ?? null) !== treeDefaults.default_system_prompt
+    rhizomeDefaults.default_system_prompt != null &&
+    (node.system_prompt ?? null) !== rhizomeDefaults.default_system_prompt
   const modelChanged =
-    treeDefaults.default_model != null &&
-    (node.model ?? null) !== treeDefaults.default_model
+    rhizomeDefaults.default_model != null &&
+    (node.model ?? null) !== rhizomeDefaults.default_model
   const providerChanged =
-    treeDefaults.default_provider != null &&
-    (node.provider ?? null) !== treeDefaults.default_provider
+    rhizomeDefaults.default_provider != null &&
+    (node.provider ?? null) !== rhizomeDefaults.default_provider
   const samplingChanged =
-    treeDefaults.default_sampling_params != null &&
-    !samplingParamsEqual(node.sampling_params, treeDefaults.default_sampling_params)
+    rhizomeDefaults.default_sampling_params != null &&
+    !samplingParamsEqual(node.sampling_params, rhizomeDefaults.default_sampling_params)
   const thinkingInContextFlag = node.include_thinking_in_context
   const timestampsFlag = node.include_timestamps
 
@@ -144,7 +144,7 @@ export interface DiffRow {
 export function buildDiffRows(
   targetNode: NodeResponse,
   allNodes: NodeResponse[],
-  treeDefaults: TreeDefaults,
+  rhizomeDefaults: RhizomeDefaults,
 ): DiffRow[] {
   const rows: DiffRow[] = []
   const nodeMap = new Map(allNodes.map((n) => [n.node_id, n]))
@@ -168,13 +168,13 @@ export function buildDiffRows(
 
   // System prompt row
   if (ctx.systemPrompt) {
-    const treeDefault = treeDefaults.default_system_prompt
-    const changed = (ctx.systemPrompt ?? null) !== (treeDefault ?? null)
+    const rhizomeDefault = rhizomeDefaults.default_system_prompt
+    const changed = (ctx.systemPrompt ?? null) !== (rhizomeDefault ?? null)
     rows.push({
       type: 'system-prompt',
       nodeId: null,
       role: 'system',
-      leftContent: changed ? (treeDefault ?? null) : null,
+      leftContent: changed ? (rhizomeDefault ?? null) : null,
       rightContent: ctx.systemPrompt,
       wasEdited: false,
       wasManual: false,
@@ -312,23 +312,23 @@ export function buildDiffRows(
     }
   }
 
-  // Metadata row if model/provider/params differ from tree defaults
-  // Only flag when tree has an explicit default and node used something different
+  // Metadata row if model/provider/params differ from rhizome defaults
+  // Only flag when rhizome has an explicit default and node used something different
   const metaDiffs: string[] = []
-  if (treeDefaults.default_model != null && (targetNode.model ?? null) !== treeDefaults.default_model) {
+  if (rhizomeDefaults.default_model != null && (targetNode.model ?? null) !== rhizomeDefaults.default_model) {
     metaDiffs.push(`model: ${targetNode.model ?? 'none'}`)
   }
-  if (treeDefaults.default_provider != null && (targetNode.provider ?? null) !== treeDefaults.default_provider) {
+  if (rhizomeDefaults.default_provider != null && (targetNode.provider ?? null) !== rhizomeDefaults.default_provider) {
     metaDiffs.push(`provider: ${targetNode.provider ?? 'none'}`)
   }
-  if (treeDefaults.default_sampling_params != null && !samplingParamsEqual(targetNode.sampling_params, treeDefaults.default_sampling_params)) {
+  if (rhizomeDefaults.default_sampling_params != null && !samplingParamsEqual(targetNode.sampling_params, rhizomeDefaults.default_sampling_params)) {
     metaDiffs.push('sampling params differ')
   }
 
   if (metaDiffs.length > 0) {
-    const treeMetaLines: string[] = []
-    if (treeDefaults.default_model) treeMetaLines.push(`model: ${treeDefaults.default_model}`)
-    if (treeDefaults.default_provider) treeMetaLines.push(`provider: ${treeDefaults.default_provider}`)
+    const rhizomeMetaLines: string[] = []
+    if (rhizomeDefaults.default_model) rhizomeMetaLines.push(`model: ${rhizomeDefaults.default_model}`)
+    if (rhizomeDefaults.default_provider) rhizomeMetaLines.push(`provider: ${rhizomeDefaults.default_provider}`)
 
     const nodeMetaLines: string[] = []
     if (targetNode.model) nodeMetaLines.push(`model: ${targetNode.model}`)
@@ -338,7 +338,7 @@ export function buildDiffRows(
       type: 'metadata',
       nodeId: null,
       role: null,
-      leftContent: treeMetaLines.join('\n') || null,
+      leftContent: rhizomeMetaLines.join('\n') || null,
       rightContent: nodeMetaLines.join('\n') || null,
       wasEdited: false,
       wasManual: false,
@@ -350,13 +350,13 @@ export function buildDiffRows(
   return rows
 }
 
-/** Extract tree defaults from a TreeDetail for use with diff functions. */
-export function getTreeDefaults(tree: TreeDetail): TreeDefaults {
+/** Extract rhizome defaults from a RhizomeDetail for use with diff functions. */
+export function getRhizomeDefaults(rhizome: RhizomeDetail): RhizomeDefaults {
   return {
-    default_system_prompt: tree.default_system_prompt,
-    default_model: tree.default_model,
-    default_provider: tree.default_provider,
-    default_sampling_params: tree.default_sampling_params,
+    default_system_prompt: rhizome.default_system_prompt,
+    default_model: rhizome.default_model,
+    default_provider: rhizome.default_provider,
+    default_sampling_params: rhizome.default_sampling_params,
   }
 }
 
@@ -412,12 +412,12 @@ export function getPathToNode(
 
 /**
  * Build a synthetic ReconstructedContext representing the "Original" baseline:
- * no edits, no exclusions, no augmentation, tree-default system prompt/metadata.
+ * no edits, no exclusions, no augmentation, rhizome-default system prompt/metadata.
  */
 export function buildOriginalContext(
   targetNode: NodeResponse,
   allNodes: NodeResponse[],
-  treeDefaults: TreeDefaults,
+  rhizomeDefaults: RhizomeDefaults,
 ): ReconstructedContext {
   const pathNodes = getPathToNode(targetNode, allNodes)
 
@@ -441,15 +441,15 @@ export function buildOriginalContext(
   }))
 
   return {
-    systemPrompt: treeDefaults.default_system_prompt,
+    systemPrompt: rhizomeDefaults.default_system_prompt,
     messages,
     evictedCount: 0,
     evictedTokens: 0,
     excludedCount: 0,
     excludedTokens: 0,
-    model: treeDefaults.default_model,
-    provider: treeDefaults.default_provider,
-    samplingParams: treeDefaults.default_sampling_params,
+    model: rhizomeDefaults.default_model,
+    provider: rhizomeDefaults.default_provider,
+    samplingParams: rhizomeDefaults.default_sampling_params,
     timestamp: targetNode.created_at,
     latencyMs: null,
     usage: null,

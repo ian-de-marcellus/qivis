@@ -1,4 +1,4 @@
-.tree-list {
+.rhizome-list {
   display: flex;
   flex-direction: column;
   flex: 1;
@@ -7,7 +7,7 @@
   font-family: var(--font-ui);
 }
 
-.tree-list-header {
+.rhizome-list-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -15,7 +15,7 @@
   border-bottom: 1px solid var(--border-subtle);
 }
 
-.tree-list-header h2 {
+.rhizome-list-header h2 {
   margin: 0;
   font-family: var(--font-display);
   font-size: var(--text-xl);
@@ -24,7 +24,7 @@
   color: var(--text-primary);
 }
 
-.tree-list-header-actions {
+.rhizome-list-header-actions {
   display: flex;
   align-items: center;
   gap: var(--space-xs);
@@ -57,7 +57,7 @@
   border-color: var(--text-accent);
 }
 
-.import-tree-btn {
+.import-rhizome-btn {
   padding: var(--space-xs) var(--space-sm);
   font-family: var(--font-ui);
   font-size: var(--text-xs);
@@ -72,18 +72,18 @@
   transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
 
-.import-tree-btn:hover {
+.import-rhizome-btn:hover {
   color: var(--text-primary);
   border-color: var(--text-secondary);
   background: var(--bg-hover);
 }
 
-.import-tree-btn:disabled {
+.import-rhizome-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
 
-.new-tree-btn {
+.new-rhizome-btn {
   padding: var(--space-xs) var(--space-sm);
   font-family: var(--font-ui);
   font-size: var(--text-xs);
@@ -98,11 +98,11 @@
   transition: background 0.15s ease, color 0.15s ease;
 }
 
-.new-tree-btn:hover {
+.new-rhizome-btn:hover {
   background: var(--accent-muted);
 }
 
-.new-tree-btn:disabled {
+.new-rhizome-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
@@ -157,7 +157,7 @@
 
 /* New tree form */
 
-.new-tree-form {
+.new-rhizome-form {
   display: flex;
   flex-direction: column;
   gap: var(--space-sm);
@@ -165,8 +165,8 @@
   border-bottom: 1px solid var(--border-subtle);
 }
 
-.new-tree-form input,
-.new-tree-form textarea {
+.new-rhizome-form input,
+.new-rhizome-form textarea {
   padding: var(--space-sm);
   font-family: var(--font-ui);
   font-size: var(--text-sm);
@@ -178,13 +178,13 @@
   transition: border-color 0.15s;
 }
 
-.new-tree-form input:focus,
-.new-tree-form textarea:focus {
+.new-rhizome-form input:focus,
+.new-rhizome-form textarea:focus {
   outline: none;
   border-color: var(--accent);
 }
 
-.new-tree-form textarea {
+.new-rhizome-form textarea {
   font-family: var(--font-mono);
   font-size: var(--text-xs);
 }
@@ -236,7 +236,7 @@
   border-left-color: var(--accent);
 }
 
-.new-tree-form button {
+.new-rhizome-form button {
   padding: var(--space-sm);
   font-family: var(--font-ui);
   font-size: var(--text-sm);
@@ -251,11 +251,11 @@
   transition: opacity 0.15s;
 }
 
-.new-tree-form button:hover:not(:disabled) {
+.new-rhizome-form button:hover:not(:disabled) {
   opacity: 0.9;
 }
 
-.new-tree-form button:disabled {
+.new-rhizome-form button:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
@@ -345,12 +345,12 @@
 
 /* Tree items list */
 
-.tree-items {
+.rhizome-items {
   flex: 1;
   overflow-y: auto;
 }
 
-.tree-item {
+.rhizome-item {
   display: flex;
   flex-direction: column;
   gap: 0.15rem;
@@ -367,27 +367,27 @@
   transition: background 0.15s ease, opacity 0.15s ease;
 }
 
-.tree-item:hover {
+.rhizome-item:hover {
   background: var(--bg-hover);
 }
 
-.tree-item.selected {
+.rhizome-item.selected {
   background: var(--bg-selected);
   border-left-color: var(--accent);
 }
 
-.tree-item.archived {
+.rhizome-item.archived {
   opacity: 0.5;
 }
 
-.tree-item-main {
+.rhizome-item-main {
   display: flex;
   align-items: center;
   gap: var(--space-xs);
   min-width: 0;
 }
 
-.tree-title {
+.rhizome-title {
   font-size: var(--text-sm);
   font-weight: 500;
   overflow: hidden;
@@ -397,21 +397,21 @@
   min-width: 0;
 }
 
-.tree-tag-dots {
+.rhizome-tag-dots {
   display: flex;
   align-items: center;
   gap: 3px;
   flex-shrink: 0;
 }
 
-.tree-tag-dot {
+.rhizome-tag-dot {
   display: inline-block;
   width: 6px;
   height: 6px;
   border-radius: 50%;
 }
 
-.tree-date {
+.rhizome-date {
   display: flex;
   align-items: center;
   gap: var(--space-xs);
@@ -420,7 +420,7 @@
   font-variant-numeric: tabular-nums;
 }
 
-.tree-archived-label {
+.rhizome-archived-label {
   font-size: 0.6rem;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -430,7 +430,7 @@
 
 /* Inline rename input */
 
-.tree-rename-input {
+.rhizome-rename-input {
   flex: 1;
   min-width: 0;
   padding: 0.1rem var(--space-xs);
@@ -544,7 +544,7 @@
   cursor: pointer;
 }
 
-.tree-empty {
+.rhizome-empty {
   padding: var(--space-2xl) var(--space-md);
   text-align: center;
   color: var(--text-secondary);
