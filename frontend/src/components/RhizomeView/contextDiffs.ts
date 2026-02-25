@@ -45,6 +45,18 @@ function samplingParamsEqual(
 }
 
 /**
+ * Check if two model names refer to the same model.
+ * Providers often resolve aliases (e.g. "claude-sonnet-4-5") to full versioned
+ * IDs (e.g. "claude-sonnet-4-5-20250929"). Treat them as equivalent when one
+ * is a prefix of the other.
+ */
+function modelsEquivalent(a: string | null, b: string | null): boolean {
+  if (a === b) return true
+  if (!a || !b) return false
+  return b.startsWith(a) || a.startsWith(b)
+}
+
+/**
  * Lightweight divergence scan for the diff badge.
  * Walks the parent chain to count edits/prefills, compares metadata against rhizome defaults.
  */
@@ -75,7 +87,7 @@ export function computeDiffSummary(
     (node.system_prompt ?? null) !== rhizomeDefaults.default_system_prompt
   const modelChanged =
     rhizomeDefaults.default_model != null &&
-    (node.model ?? null) !== rhizomeDefaults.default_model
+    !modelsEquivalent(node.model ?? null, rhizomeDefaults.default_model)
   const providerChanged =
     rhizomeDefaults.default_provider != null &&
     (node.provider ?? null) !== rhizomeDefaults.default_provider
@@ -315,7 +327,7 @@ export function buildDiffRows(
   // Metadata row if model/provider/params differ from rhizome defaults
   // Only flag when rhizome has an explicit default and node used something different
   const metaDiffs: string[] = []
-  if (rhizomeDefaults.default_model != null && (targetNode.model ?? null) !== rhizomeDefaults.default_model) {
+  if (rhizomeDefaults.default_model != null && !modelsEquivalent(targetNode.model ?? null, rhizomeDefaults.default_model)) {
     metaDiffs.push(`model: ${targetNode.model ?? 'none'}`)
   }
   if (rhizomeDefaults.default_provider != null && (targetNode.provider ?? null) !== rhizomeDefaults.default_provider) {
@@ -666,16 +678,16 @@ export function buildComparisonRows(
   // Metadata comparison
   const metaA: string[] = []
   const metaB: string[] = []
+  const modelsDiffer = !modelsEquivalent(contextA.model, contextB.model)
   if (contextA.model) metaA.push(`model: ${contextA.model}`)
   if (contextA.provider) metaA.push(`provider: ${contextA.provider}`)
   if (contextB.model) metaB.push(`model: ${contextB.model}`)
   if (contextB.provider) metaB.push(`provider: ${contextB.provider}`)
 
-  const metaLeftStr = metaA.join('\n') || null
-  const metaRightStr = metaB.join('\n') || null
+  const providersDiffer = (contextA.provider ?? null) !== (contextB.provider ?? null)
   const paramsEqual = samplingParamsEqual(contextA.samplingParams, contextB.samplingParams)
 
-  if (metaLeftStr !== metaRightStr || !paramsEqual) {
+  if (modelsDiffer || providersDiffer || !paramsEqual) {
     if (!paramsEqual) {
       metaA.push('sampling params differ')
       metaB.push('sampling params differ')
