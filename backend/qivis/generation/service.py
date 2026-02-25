@@ -8,6 +8,12 @@ from uuid import uuid4
 from qivis.events.projector import StateProjector
 from qivis.events.store import EventStore
 from qivis.generation.context import ContextBuilder, get_model_context_limit
+from qivis.generation.interventions import (
+    InterventionConfig,
+    InterventionContext,
+    InterventionPipeline,
+    default_registry,
+)
 from qivis.generation.templates import render_prompt
 from qivis.generation.tokens import ApproximateTokenCounter
 from qivis.models import (
@@ -104,18 +110,17 @@ class GenerationService:
             await self._resolve_context(rhizome_id, node_id, model, system_prompt, sampling_params)
         )
         context_limit = _apply_debug_context_limit(rhizome, get_model_context_limit(resolved_model))
-        messages, context_usage, eviction_report = self._context_builder.build(
-            nodes=nodes,
-            target_node_id=node_id,
-            system_prompt=resolved_prompt,
-            model_context_limit=context_limit,
-            include_timestamps=include_ts,
-            include_thinking=include_think,
-            excluded_ids=excl_ids,
-            digression_groups=dg_map,
-            excluded_group_ids=excl_gids,
-            anchored_ids=anchored_ids,
-            eviction=eviction_strategy,
+        pipeline = self._resolve_interventions(metadata)
+        messages, context_usage, eviction_report, resolved_prompt, active_interventions = (
+            self._build_context_with_interventions(
+                nodes=nodes, node_id=node_id,
+                system_prompt=resolved_prompt, context_limit=context_limit,
+                include_timestamps=include_ts, include_thinking=include_think,
+                excluded_ids=excl_ids, digression_groups=dg_map,
+                excluded_group_ids=excl_gids, anchored_ids=anchored_ids,
+                eviction=eviction_strategy, pipeline=pipeline,
+                model=resolved_model, metadata=metadata,
+            )
         )
         messages, context_usage = await self._maybe_inject_summary(
             messages, context_usage, eviction_report,
@@ -160,6 +165,7 @@ class GenerationService:
             context_usage=context_usage,
             include_thinking_in_context=include_think,
             include_timestamps=include_ts,
+            active_interventions=active_interventions,
             mode=mode, prefill_content=prefill_content,
             prompt_text=prompt_text,
         )
@@ -183,18 +189,17 @@ class GenerationService:
             await self._resolve_context(rhizome_id, node_id, model, system_prompt, sampling_params)
         )
         context_limit = _apply_debug_context_limit(rhizome, get_model_context_limit(resolved_model))
-        messages, context_usage, eviction_report = self._context_builder.build(
-            nodes=nodes,
-            target_node_id=node_id,
-            system_prompt=resolved_prompt,
-            model_context_limit=context_limit,
-            include_timestamps=include_ts,
-            include_thinking=include_think,
-            excluded_ids=excl_ids,
-            digression_groups=dg_map,
-            excluded_group_ids=excl_gids,
-            anchored_ids=anchored_ids,
-            eviction=eviction_strategy,
+        pipeline = self._resolve_interventions(metadata)
+        messages, context_usage, eviction_report, resolved_prompt, active_interventions = (
+            self._build_context_with_interventions(
+                nodes=nodes, node_id=node_id,
+                system_prompt=resolved_prompt, context_limit=context_limit,
+                include_timestamps=include_ts, include_thinking=include_think,
+                excluded_ids=excl_ids, digression_groups=dg_map,
+                excluded_group_ids=excl_gids, anchored_ids=anchored_ids,
+                eviction=eviction_strategy, pipeline=pipeline,
+                model=resolved_model, metadata=metadata,
+            )
         )
         messages, context_usage = await self._maybe_inject_summary(
             messages, context_usage, eviction_report,
@@ -238,6 +243,7 @@ class GenerationService:
                 context_usage=context_usage,
                 include_thinking_in_context=include_think,
                 include_timestamps=include_ts,
+                active_interventions=active_interventions,
                 mode=mode, prefill_content=prefill_content,
                 prompt_text=prompt_text,
             )
@@ -265,19 +271,16 @@ class GenerationService:
             )
         )
         context_limit = _apply_debug_context_limit(rhizome, get_model_context_limit(resolved_model))
-        messages, context_usage, eviction_report = (
-            self._context_builder.build(
-                nodes=nodes,
-                target_node_id=node_id,
-                system_prompt=resolved_prompt,
-                model_context_limit=context_limit,
-                include_timestamps=include_ts,
-                include_thinking=include_think,
-                excluded_ids=excl_ids,
-                digression_groups=dg_map,
-                excluded_group_ids=excl_gids,
-                anchored_ids=anchored_ids,
-                eviction=eviction_strategy,
+        pipeline = self._resolve_interventions(metadata)
+        messages, context_usage, eviction_report, resolved_prompt, active_interventions = (
+            self._build_context_with_interventions(
+                nodes=nodes, node_id=node_id,
+                system_prompt=resolved_prompt, context_limit=context_limit,
+                include_timestamps=include_ts, include_thinking=include_think,
+                excluded_ids=excl_ids, digression_groups=dg_map,
+                excluded_group_ids=excl_gids, anchored_ids=anchored_ids,
+                eviction=eviction_strategy, pipeline=pipeline,
+                model=resolved_model, metadata=metadata,
             )
         )
         messages, context_usage = await self._maybe_inject_summary(
@@ -331,6 +334,7 @@ class GenerationService:
                             context_usage=context_usage,
                             include_thinking_in_context=include_think,
                             include_timestamps=include_ts,
+                            active_interventions=active_interventions,
                             mode=mode, prefill_content=prefill_content,
                             prompt_text=prompt_text,
                         )
@@ -408,18 +412,17 @@ class GenerationService:
             await self._resolve_context(rhizome_id, node_id, model, system_prompt, sampling_params)
         )
         context_limit = _apply_debug_context_limit(rhizome, get_model_context_limit(resolved_model))
-        messages, context_usage, eviction_report = self._context_builder.build(
-            nodes=nodes,
-            target_node_id=node_id,
-            system_prompt=resolved_prompt,
-            model_context_limit=context_limit,
-            include_timestamps=include_ts,
-            include_thinking=include_think,
-            excluded_ids=excl_ids,
-            digression_groups=dg_map,
-            excluded_group_ids=excl_gids,
-            anchored_ids=anchored_ids,
-            eviction=eviction_strategy,
+        pipeline = self._resolve_interventions(metadata)
+        messages, context_usage, eviction_report, resolved_prompt, active_interventions = (
+            self._build_context_with_interventions(
+                nodes=nodes, node_id=node_id,
+                system_prompt=resolved_prompt, context_limit=context_limit,
+                include_timestamps=include_ts, include_thinking=include_think,
+                excluded_ids=excl_ids, digression_groups=dg_map,
+                excluded_group_ids=excl_gids, anchored_ids=anchored_ids,
+                eviction=eviction_strategy, pipeline=pipeline,
+                model=resolved_model, metadata=metadata,
+            )
         )
         messages, context_usage = await self._maybe_inject_summary(
             messages, context_usage, eviction_report,
@@ -462,6 +465,7 @@ class GenerationService:
                     context_usage=context_usage,
                     include_thinking_in_context=include_think,
                     include_timestamps=include_ts,
+                    active_interventions=active_interventions,
                     mode=mode, prefill_content=prefill_content,
                     prompt_text=prompt_text,
                 )
@@ -609,6 +613,95 @@ class GenerationService:
                 anchored_ids, eviction, metadata)
 
     @staticmethod
+    def _resolve_interventions(metadata: dict) -> InterventionPipeline:
+        """Build an intervention pipeline from rhizome metadata."""
+        raw_configs = metadata.get("context_interventions")
+        if not raw_configs or not isinstance(raw_configs, list):
+            return InterventionPipeline([])
+        configs = [InterventionConfig.model_validate(c) for c in raw_configs]
+        return default_registry.create_pipeline(configs)
+
+    def _build_context_with_interventions(
+        self,
+        nodes: list[dict],
+        node_id: str,
+        system_prompt: str | None,
+        context_limit: int,
+        *,
+        include_timestamps: bool = False,
+        include_thinking: bool = False,
+        excluded_ids: set[str] | None = None,
+        digression_groups: dict | None = None,
+        excluded_group_ids: set[str] | None = None,
+        anchored_ids: set[str] | None = None,
+        eviction: EvictionStrategy | None = None,
+        pipeline: InterventionPipeline,
+        model: str,
+        metadata: dict,
+        mode: str = "chat",
+    ) -> tuple[list[dict[str, str]], ContextUsage, EvictionReport, str | None, list[dict] | None]:
+        """Build context with intervention pipeline.
+
+        Returns (messages, context_usage, eviction_report, system_prompt, active_interventions).
+        When the pipeline is empty, falls back to the monolithic build().
+        """
+        if pipeline.is_empty:
+            messages, usage, report = self._context_builder.build(
+                nodes=nodes,
+                target_node_id=node_id,
+                system_prompt=system_prompt,
+                model_context_limit=context_limit,
+                include_timestamps=include_timestamps,
+                include_thinking=include_thinking,
+                excluded_ids=excluded_ids,
+                digression_groups=digression_groups,
+                excluded_group_ids=excluded_group_ids,
+                anchored_ids=anchored_ids,
+                eviction=eviction,
+            )
+            return messages, usage, report, system_prompt, None
+
+        # Split path: build_messages → pre_eviction → count_and_evict → post_eviction
+        messages, msg_node_ids, created_ats, excluded_info = self._context_builder.build_messages(
+            nodes=nodes,
+            target_node_id=node_id,
+            include_timestamps=include_timestamps,
+            include_thinking=include_thinking,
+            excluded_ids=excluded_ids,
+            digression_groups=digression_groups,
+            excluded_group_ids=excluded_group_ids,
+        )
+
+        ctx = InterventionContext(
+            messages=messages,
+            system_prompt=system_prompt,
+            node_ids=msg_node_ids,
+            model=model,
+            metadata=metadata,
+            mode=mode,
+            created_ats=created_ats,
+        )
+        ctx = pipeline.run_pre_eviction(ctx)
+
+        result_msgs, usage, report = self._context_builder.count_and_evict(
+            messages=ctx.messages,
+            node_ids=ctx.node_ids,
+            system_prompt=ctx.system_prompt,
+            model_context_limit=context_limit,
+            excluded_token_total=excluded_info["excluded_tokens"],
+            excluded_node_count=excluded_info["excluded_count"],
+            excluded_node_ids=excluded_info["excluded_node_ids"],
+            anchored_ids=anchored_ids,
+            eviction=eviction,
+        )
+
+        ctx.messages = result_msgs
+        ctx = pipeline.run_post_eviction(ctx)
+
+        active_configs = pipeline.get_active_configs()
+        return ctx.messages, usage, report, ctx.system_prompt, active_configs
+
+    @staticmethod
     def _prepare_completion_mode(
         provider: LLMProvider,
         messages: list[dict[str, str]],
@@ -712,6 +805,7 @@ class GenerationService:
         context_usage: ContextUsage | None = None,
         include_thinking_in_context: bool = False,
         include_timestamps: bool = False,
+        active_interventions: list[dict] | None = None,
         mode: str = "chat",
         prefill_content: str | None = None,
         prompt_text: str | None = None,
@@ -737,6 +831,7 @@ class GenerationService:
             thinking_content=result.thinking_content,
             include_thinking_in_context=include_thinking_in_context,
             include_timestamps=include_timestamps,
+            active_interventions=active_interventions,
             context_usage=context_usage,
             raw_response=result.raw_response,
         )

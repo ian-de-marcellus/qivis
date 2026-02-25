@@ -375,3 +375,38 @@
   font-family: var(--font-mono);
   text-align: right;
 }
+
+/* ---- Active interventions ---- */
+
+.context-modal-interventions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+}
+
+.context-modal-intervention {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: var(--space-xs) var(--space-sm);
+}
+
+.context-modal-intervention-name {
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--text-primary);
+  text-transform: capitalize;
+}
+
+.context-modal-intervention-phase {
+  font-family: var(--font-ui);
+  font-size: 0.65rem;
+  color: var(--text-tertiary);
+  padding: 0.05rem 0.3rem;
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+}

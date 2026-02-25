@@ -480,9 +480,9 @@ class StateProjector:
                  finish_reason, logprobs, context_usage, participant_id,
                  participant_name, thinking_content,
                  include_thinking_in_context, include_timestamps,
-                 prefill_content, prompt_text,
+                 prefill_content, prompt_text, active_interventions,
                  created_at, archived)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
             """,
             (
                 payload.node_id,
@@ -513,6 +513,9 @@ class StateProjector:
                 1 if payload.include_timestamps else 0,
                 payload.prefill_content,
                 payload.prompt_text,
+                json.dumps(payload.active_interventions)
+                if payload.active_interventions
+                else None,
                 event.timestamp.isoformat()
                 if hasattr(event.timestamp, "isoformat")
                 else str(event.timestamp),

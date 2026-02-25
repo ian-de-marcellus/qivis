@@ -178,6 +178,146 @@ class ContextBuilder:
 
         return messages, usage, report
 
+    def build_messages(
+        self,
+        nodes: list[dict],
+        target_node_id: str,
+        *,
+        include_timestamps: bool = False,
+        include_thinking: bool = False,
+        excluded_ids: set[str] | None = None,
+        digression_groups: dict | None = None,
+        excluded_group_ids: set[str] | None = None,
+    ) -> tuple[list[dict[str, str]], list[str], list[str | None], dict]:
+        """Build messages from the node tree without token counting or eviction.
+
+        Returns (messages, node_ids, created_ats, excluded_info) where
+        excluded_info contains {excluded_tokens, excluded_count, excluded_node_ids}
+        for passing to count_and_evict().
+        """
+        counter = ApproximateTokenCounter()
+        path = self._walk_path(nodes, target_node_id)
+        path_node_ids = {n["node_id"] for n in path}
+
+        effective_excluded = set(excluded_ids) if excluded_ids else set()
+        if digression_groups and excluded_group_ids:
+            for gid in excluded_group_ids:
+                group_nodes = digression_groups.get(gid)
+                if group_nodes and all(nid in path_node_ids for nid in group_nodes):
+                    effective_excluded.update(group_nodes)
+
+        messages = []
+        created_ats: list[str | None] = []
+        excluded_token_total = 0
+        excluded_node_count = 0
+        excluded_node_id_list: list[str] = []
+        for n in path:
+            if n["role"] not in ("user", "assistant", "tool"):
+                continue
+            if n["node_id"] in effective_excluded:
+                excluded_token_total += counter.count(
+                    self._maybe_prepend_timestamp(n, include_timestamps)
+                )
+                excluded_node_count += 1
+                excluded_node_id_list.append(n["node_id"])
+                continue
+            content = self._maybe_prepend_timestamp(n, include_timestamps)
+            if include_thinking and n["role"] == "assistant":
+                thinking = n.get("thinking_content")
+                if thinking:
+                    content = f"[Model thinking: {thinking}]\n\n{content}"
+            messages.append({"role": n["role"], "content": content})
+            created_ats.append(n.get("created_at"))
+
+        message_node_ids = [
+            n["node_id"]
+            for n in path
+            if n["role"] in ("user", "assistant", "tool")
+            and n["node_id"] not in effective_excluded
+        ]
+
+        excluded_info = {
+            "excluded_tokens": excluded_token_total,
+            "excluded_count": excluded_node_count,
+            "excluded_node_ids": excluded_node_id_list,
+        }
+
+        return messages, message_node_ids, created_ats, excluded_info
+
+    def count_and_evict(
+        self,
+        messages: list[dict[str, str]],
+        node_ids: list[str],
+        system_prompt: str | None,
+        model_context_limit: int,
+        *,
+        excluded_token_total: int = 0,
+        excluded_node_count: int = 0,
+        excluded_node_ids: list[str] | None = None,
+        anchored_ids: set[str] | None = None,
+        eviction: EvictionStrategy | None = None,
+        token_counter: TokenCounter | None = None,
+    ) -> tuple[list[dict[str, str]], ContextUsage, EvictionReport]:
+        """Count tokens and evict if over limit.
+
+        Separated from build() so interventions can modify messages between
+        message building and eviction.
+
+        Returns (messages, context_usage, eviction_report).
+        """
+        counter = token_counter or ApproximateTokenCounter()
+
+        system_tokens = counter.count(system_prompt) if system_prompt else 0
+        message_tokens = [counter.count(m["content"]) for m in messages]
+        total = system_tokens + sum(message_tokens)
+
+        report = EvictionReport()
+        eviction_mode = eviction.mode if eviction else None
+
+        if eviction_mode == "none":
+            pass
+        elif eviction_mode == "smart" and total > model_context_limit:
+            messages, node_ids, message_tokens, report = self._smart_evict(
+                messages, node_ids, message_tokens,
+                system_tokens, model_context_limit,
+                eviction, anchored_ids or set(),
+            )
+            total = system_tokens + sum(message_tokens)
+        elif total > model_context_limit:
+            messages, node_ids, message_tokens, report = self._truncate_to_fit(
+                messages, node_ids, message_tokens,
+                system_tokens, model_context_limit,
+            )
+            total = system_tokens + sum(message_tokens)
+
+        if eviction and not report.eviction_applied and total <= model_context_limit:
+            ratio = total / model_context_limit if model_context_limit > 0 else 0
+            if ratio >= eviction.warn_threshold:
+                pct = ratio * 100
+                report.warning = (
+                    f"Context at {pct:.0f}% of limit "
+                    f"({total:,} / {model_context_limit:,} tokens)"
+                )
+
+        breakdown: dict[str, int] = {"system": system_tokens}
+        for msg, tok in zip(messages, message_tokens):
+            role = msg["role"]
+            breakdown[role] = breakdown.get(role, 0) + tok
+
+        report.final_token_count = total
+
+        usage = ContextUsage(
+            total_tokens=total,
+            max_tokens=model_context_limit,
+            breakdown=breakdown,
+            excluded_tokens=excluded_token_total,
+            excluded_count=excluded_node_count,
+            excluded_node_ids=excluded_node_ids or [],
+            evicted_node_ids=report.evicted_node_ids,
+        )
+
+        return messages, usage, report
+
     def _walk_path(self, nodes: list[dict], target_node_id: str) -> list[dict]:
         """Walk parent chain from target to root, return in chronological order.
 

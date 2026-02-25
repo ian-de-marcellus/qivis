@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { EvictionStrategy, PatchRhizomeRequest, SamplingParams } from '../../api/types.ts'
+import type { EvictionStrategy, InterventionConfig, PatchRhizomeRequest, SamplingParams } from '../../api/types.ts'
 import { exportRhizome } from '../../api/client.ts'
 import { useRhizomeStore, useRhizomeData, useRightPane } from '../../store/rhizomeStore.ts'
+import { useShallow } from 'zustand/react/shallow'
 import { SamplingParamsPanel, type SamplingParamValues } from '../shared/SamplingParamsPanel.tsx'
 import { IconToggleButton } from '../shared/IconToggleButton.tsx'
 import { MergePanel } from './MergePanel.tsx'
@@ -17,6 +18,8 @@ export function RhizomeSettings() {
   const archiveRhizome = useRhizomeStore(s => s.archiveRhizome)
   const unarchiveRhizome = useRhizomeStore(s => s.unarchiveRhizome)
   const fetchRhizomes = useRhizomeStore(s => s.fetchRhizomes)
+  const fetchInterventionTypes = useRhizomeStore(s => s.fetchInterventionTypes)
+  const interventionTypes = useRhizomeStore(useShallow(s => s.interventionTypes))
 
   const [isOpen, setIsOpen] = useState(false)
   const [mergeOpen, setMergeOpen] = useState(false)
@@ -59,6 +62,10 @@ export function RhizomeSettings() {
   const [summarizeEvicted, setSummarizeEvicted] = useState(true)
   const [warnThreshold, setWarnThreshold] = useState('0.85')
 
+  // Context intervention state
+  const [interventionConfigs, setInterventionConfigs] = useState<InterventionConfig[]>([])
+  const [interventionInfoOpen, setInterventionInfoOpen] = useState(false)
+
   // Sync form state when rhizome changes or panel opens
   useEffect(() => {
     if (currentRhizome) {
@@ -98,13 +105,19 @@ export function RhizomeSettings() {
       setKeepAnchored(es?.keep_anchored ?? true)
       setSummarizeEvicted(es?.summarize_evicted ?? true)
       setWarnThreshold(String(es?.warn_threshold ?? 0.85))
+
+      // Context interventions
+      setInterventionConfigs((meta?.context_interventions as InterventionConfig[]) ?? [])
     }
   }, [currentRhizome?.rhizome_id, isOpen])
 
-  // Fetch providers when panel opens
+  // Fetch providers and intervention types when panel opens
   useEffect(() => {
-    if (isOpen) fetchProviders()
-  }, [isOpen, fetchProviders])
+    if (isOpen) {
+      fetchProviders()
+      fetchInterventionTypes()
+    }
+  }, [isOpen, fetchProviders, fetchInterventionTypes])
 
   if (!currentRhizome) return null
 
@@ -135,6 +148,8 @@ export function RhizomeSettings() {
 
   const currentMeta = currentRhizome.metadata ?? {}
   const currentEs = currentMeta.eviction_strategy as Partial<EvictionStrategy> | undefined
+  const currentInterventions = (currentMeta.context_interventions as InterventionConfig[] | undefined) ?? []
+  const interventionsChanged = JSON.stringify(interventionConfigs) !== JSON.stringify(currentInterventions)
   const metadataChanged =
     includeTimestamps !== !!currentMeta.include_timestamps ||
     streamResponses !== (currentMeta.stream_responses !== false) ||
@@ -149,7 +164,8 @@ export function RhizomeSettings() {
       keepAnchored !== (currentEs?.keep_anchored ?? true) ||
       summarizeEvicted !== (currentEs?.summarize_evicted ?? true) ||
       warnThreshold !== String(currentEs?.warn_threshold ?? 0.85)
-    ))
+    )) ||
+    interventionsChanged
 
   const hasChanges =
     title !== (currentRhizome.title ?? '') ||
@@ -205,6 +221,13 @@ export function RhizomeSettings() {
         }
       } else {
         newMeta.eviction_strategy = { mode: evictionMode }
+      }
+
+      // Context interventions
+      if (interventionConfigs.length > 0) {
+        newMeta.context_interventions = interventionConfigs
+      } else {
+        delete newMeta.context_interventions
       }
 
       req.metadata = newMeta
@@ -621,6 +644,90 @@ export function RhizomeSettings() {
               </>
             )}
 
+            {generationMode === 'chat' && interventionTypes.length > 0 && (
+              <>
+                <div className="rhizome-settings-divider" />
+
+                <div className="intervention-section-header">
+                  <div className="rhizome-settings-section-label">Context interventions</div>
+                  <button
+                    type="button"
+                    className="intervention-info-btn"
+                    onClick={() => setInterventionInfoOpen(!interventionInfoOpen)}
+                    title="About context interventions"
+                  >
+                    <svg viewBox="0 0 16 16" fill="currentColor" width="14" height="14">
+                      <circle cx="8" cy="8" r="7" fill="none" stroke="currentColor" strokeWidth="1.5" />
+                      <text x="8" y="12" textAnchor="middle" fontSize="10" fontWeight="600" fill="currentColor">i</text>
+                    </svg>
+                  </button>
+                </div>
+
+                {interventionInfoOpen && (
+                  <div className="intervention-info-panel">
+                    <p>Composable transforms applied to the context before generation. Enable an intervention and configure it below.</p>
+                    <p><strong>System Prompt Reposition</strong> (pre-eviction) — moves the system prompt into the message list as a user message. Useful for testing how models respond to instructions in different positions.</p>
+                    <p><strong>Reminder Injection</strong> (post-eviction) — inserts reminder text at configurable positions. Runs after eviction so reminders persist.</p>
+                    <p><strong>Message Wrapper</strong> (pre-eviction) — wraps messages in a template. Variables: <code>{'{content}'}</code>, <code>{'{role}'}</code>, <code>{'{index}'}</code>, <code>{'{timestamp}'}</code>. Useful for XML-tagged context or structured separators.</p>
+                    <p>Active interventions are snapshotted per-generation and visible in the context inspector.</p>
+                  </div>
+                )}
+
+                {interventionTypes.map(typeInfo => {
+                  const existingIdx = interventionConfigs.findIndex(c => c.type === typeInfo.type_name)
+                  const existing = existingIdx >= 0 ? interventionConfigs[existingIdx] : null
+                  const isEnabled = existing?.enabled ?? false
+
+                  const handleToggle = (checked: boolean) => {
+                    const newConfigs = [...interventionConfigs]
+                    if (existingIdx >= 0) {
+                      newConfigs[existingIdx] = { ...existing!, enabled: checked }
+                    } else {
+                      newConfigs.push({
+                        type: typeInfo.type_name,
+                        enabled: true,
+                        config: getDefaultInterventionConfig(typeInfo.type_name),
+                      })
+                    }
+                    setInterventionConfigs(newConfigs)
+                  }
+
+                  const handleConfigChange = (key: string, value: unknown) => {
+                    const newConfigs = [...interventionConfigs]
+                    const currentConfig = existing?.config ?? getDefaultInterventionConfig(typeInfo.type_name)
+                    newConfigs[existingIdx] = {
+                      ...existing!,
+                      config: { ...currentConfig, [key]: value },
+                    }
+                    setInterventionConfigs(newConfigs)
+                  }
+
+                  return (
+                    <div key={typeInfo.type_name} className="intervention-item">
+                      <div className="rhizome-settings-toggle">
+                        <label>
+                          <input
+                            type="checkbox"
+                            checked={isEnabled}
+                            onChange={(e) => handleToggle(e.target.checked)}
+                          />
+                          {formatInterventionName(typeInfo.type_name)}
+                        </label>
+                      </div>
+
+                      {isEnabled && (
+                        <InterventionConfigFields
+                          typeName={typeInfo.type_name}
+                          config={existing?.config ?? getDefaultInterventionConfig(typeInfo.type_name)}
+                          onChange={handleConfigChange}
+                        />
+                      )}
+                    </div>
+                  )
+                })}
+              </>
+            )}
+
             <div className="rhizome-settings-divider" />
 
             <div className="rhizome-settings-section-label">Export</div>
@@ -663,4 +770,171 @@ export function RhizomeSettings() {
       )}
     </div>
   )
+}
+
+// -- Intervention helpers --
+
+function formatInterventionName(typeName: string): string {
+  return typeName
+    .split('_')
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ')
+}
+
+function getDefaultInterventionConfig(typeName: string): Record<string, unknown> {
+  switch (typeName) {
+    case 'system_prompt_reposition':
+      return { placement: 'first_user_message' }
+    case 'reminder_injection':
+      return { content: '', position: 'before_last', role: 'user' }
+    case 'message_wrapper':
+      return { template: '<message role="{role}">\n{content}\n</message>' }
+    default:
+      return {}
+  }
+}
+
+function InterventionConfigFields({
+  typeName,
+  config,
+  onChange,
+}: {
+  typeName: string
+  config: Record<string, unknown>
+  onChange: (key: string, value: unknown) => void
+}) {
+  switch (typeName) {
+    case 'system_prompt_reposition':
+      return (
+        <div className="intervention-config">
+          <div className="rhizome-settings-field">
+            <label>Placement</label>
+            <select
+              value={(config.placement as string) ?? 'first_user_message'}
+              onChange={(e) => onChange('placement', e.target.value)}
+            >
+              <option value="first_user_message">Prepend to first user message</option>
+              <option value="standalone_preamble">Standalone preamble message</option>
+              <option value="last_before_final">Before final message</option>
+            </select>
+          </div>
+          <div className="rhizome-settings-field">
+            <label>Wrapper template</label>
+            <input
+              type="text"
+              value={(config.wrapper_template as string) ?? ''}
+              onChange={(e) => onChange('wrapper_template', e.target.value || undefined)}
+              placeholder="[System Instructions]{content}[/System Instructions]"
+            />
+          </div>
+        </div>
+      )
+
+    case 'reminder_injection':
+      return (
+        <div className="intervention-config">
+          <div className="rhizome-settings-field">
+            <label>Reminder content</label>
+            <textarea
+              value={(config.content as string) ?? ''}
+              onChange={(e) => onChange('content', e.target.value)}
+              placeholder="Remember your instructions..."
+              rows={2}
+            />
+          </div>
+          <div className="rhizome-settings-row-pair">
+            <div className="rhizome-settings-field">
+              <label>Position</label>
+              <select
+                value={(config.position as string) ?? 'before_last'}
+                onChange={(e) => onChange('position', e.target.value)}
+              >
+                <option value="before_last">Before last message</option>
+                <option value="every_n_turns">Every N turns</option>
+                <option value="at_fraction">At fraction</option>
+              </select>
+            </div>
+            <div className="rhizome-settings-field">
+              <label>Role</label>
+              <select
+                value={(config.role as string) ?? 'user'}
+                onChange={(e) => onChange('role', e.target.value)}
+              >
+                <option value="user">User</option>
+                <option value="system">System</option>
+              </select>
+            </div>
+          </div>
+          {config.position === 'every_n_turns' && (
+            <div className="rhizome-settings-field">
+              <label>Every N turns</label>
+              <input
+                type="number"
+                min="1"
+                step="1"
+                value={(config.n as number) ?? 5}
+                onChange={(e) => onChange('n', parseInt(e.target.value, 10) || 5)}
+              />
+            </div>
+          )}
+          {config.position === 'at_fraction' && (
+            <div className="rhizome-settings-field">
+              <label>Fraction (0-1)</label>
+              <input
+                type="number"
+                min="0"
+                max="1"
+                step="0.1"
+                value={(config.fraction as number) ?? 0.5}
+                onChange={(e) => onChange('fraction', parseFloat(e.target.value) || 0.5)}
+              />
+            </div>
+          )}
+        </div>
+      )
+
+    case 'message_wrapper':
+      return (
+        <div className="intervention-config">
+          <div className="rhizome-settings-field">
+            <label>Template</label>
+            <textarea
+              value={(config.template as string) ?? '{content}'}
+              onChange={(e) => onChange('template', e.target.value)}
+              placeholder='<message role="{role}">{content}</message>'
+              rows={2}
+            />
+            <span className="rhizome-settings-note" style={{ marginLeft: 0 }}>
+              Variables: {'{content}'}, {'{role}'}, {'{index}'}, {'{timestamp}'}
+            </span>
+          </div>
+          <div className="rhizome-settings-row-pair">
+            <div className="rhizome-settings-field">
+              <label>Apply to roles</label>
+              <input
+                type="text"
+                value={Array.isArray(config.apply_to_roles) ? (config.apply_to_roles as string[]).join(', ') : ''}
+                onChange={(e) => {
+                  const val = e.target.value.trim()
+                  onChange('apply_to_roles', val ? val.split(',').map(s => s.trim()).filter(Boolean) : undefined)
+                }}
+                placeholder="All roles (leave empty)"
+              />
+            </div>
+            <div className="rhizome-settings-field">
+              <label>Separator</label>
+              <input
+                type="text"
+                value={(config.separator as string) ?? ''}
+                onChange={(e) => onChange('separator', e.target.value || undefined)}
+                placeholder="None"
+              />
+            </div>
+          </div>
+        </div>
+      )
+
+    default:
+      return null
+  }
 }

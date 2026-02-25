@@ -103,6 +103,11 @@ export function ContextModal({ context, onDismiss }: ContextModalProps) {
               timestamps in context
             </span>
           )}
+          {context.activeInterventions && context.activeInterventions.length > 0 && (
+            <span className="context-modal-meta-item context-modal-meta-flag">
+              {context.activeInterventions.length} intervention{context.activeInterventions.length !== 1 ? 's' : ''}
+            </span>
+          )}
         </div>
 
         {/* System prompt */}
@@ -206,6 +211,27 @@ export function ContextModal({ context, onDismiss }: ContextModalProps) {
                   <span className="context-modal-param-label">{item.label}</span>
                   <span className="context-modal-param-value">{item.value}</span>
                 </Fragment>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Active interventions */}
+        {context.activeInterventions && context.activeInterventions.length > 0 && (
+          <div className="context-modal-section">
+            <div className="context-modal-section-label">
+              Active interventions ({context.activeInterventions.length})
+            </div>
+            <div className="context-modal-interventions">
+              {context.activeInterventions.map((intervention, i) => (
+                <div key={i} className="context-modal-intervention">
+                  <span className="context-modal-intervention-name">
+                    {intervention.type.replace(/_/g, ' ')}
+                  </span>
+                  <span className="context-modal-intervention-phase">
+                    {intervention.phase.replace('_', '-')}
+                  </span>
+                </div>
               ))}
             </div>
           </div>

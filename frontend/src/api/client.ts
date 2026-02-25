@@ -16,6 +16,7 @@ import type {
   ImportPreviewResponse,
   ImportResponse,
   InterventionTimelineResponse,
+  InterventionTypeInfo,
   MergePreviewResponse,
   MergeResult,
   MessageStopEvent,
@@ -54,6 +55,10 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 
 export function getProviders(): Promise<ProviderInfo[]> {
   return request('/providers')
+}
+
+export function getInterventionTypes(): Promise<InterventionTypeInfo[]> {
+  return request('/intervention-types')
 }
 
 // -- Rhizome CRUD --

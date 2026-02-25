@@ -338,3 +338,74 @@
   background: var(--bg-tertiary);
   border-color: var(--text-tertiary);
 }
+
+/* ---- Context intervention settings ---- */
+
+.intervention-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.intervention-info-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.intervention-info-btn:hover {
+  color: var(--text-secondary);
+}
+
+.intervention-info-panel {
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  line-height: var(--leading-relaxed);
+  color: var(--text-secondary);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: var(--space-sm) var(--space-md);
+}
+
+.intervention-info-panel p {
+  margin: 0 0 var(--space-xs);
+}
+
+.intervention-info-panel p:last-child {
+  margin-bottom: 0;
+}
+
+.intervention-info-panel strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.intervention-info-panel code {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  background: var(--bg-secondary);
+  padding: 0.1em 0.3em;
+  border-radius: 2px;
+}
+
+.intervention-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.intervention-config {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  padding-left: calc(var(--space-sm) + 13px);
+  border-left: 2px solid var(--border-subtle);
+  margin-left: 6px;
+}

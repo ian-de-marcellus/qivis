@@ -156,3 +156,9 @@ async def providers() -> list[dict]:
         {"name": p.name, "available": True, "models": p.suggested_models, "supported_params": p.supported_params, "supported_modes": p.supported_modes}
         for p in get_all_providers()
     ]
+
+
+@app.get("/api/intervention-types")
+async def intervention_types() -> list[dict]:
+    from qivis.generation.interventions import default_registry
+    return default_registry.available_types()

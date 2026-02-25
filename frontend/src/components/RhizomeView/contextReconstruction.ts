@@ -1,4 +1,4 @@
-import type { ContextUsage, NodeResponse, SamplingParams } from '../../api/types.ts'
+import type { ContextUsage, InterventionSnapshot, NodeResponse, SamplingParams } from '../../api/types.ts'
 
 export interface ReconstructedMessage {
   role: string
@@ -40,6 +40,7 @@ export interface ReconstructedContext {
   thinkingContent: string | null
   includeThinkingInContext: boolean
   includeTimestamps: boolean
+  activeInterventions: InterventionSnapshot[] | null
 }
 
 /**
@@ -151,6 +152,7 @@ export function reconstructContext(
     thinkingContent: targetNode.thinking_content,
     includeThinkingInContext: targetNode.include_thinking_in_context,
     includeTimestamps: targetNode.include_timestamps,
+    activeInterventions: targetNode.active_interventions,
   }
 }
 

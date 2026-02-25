@@ -1557,6 +1557,7 @@ class RhizomeService:
             edited_content=row.get("edited_content"),
             include_thinking_in_context=bool(row.get("include_thinking_in_context", 0)),
             include_timestamps=bool(row.get("include_timestamps", 0)),
+            active_interventions=parse_json_or_none(row.get("active_interventions")),
             created_at=row["created_at"],
             archived=row["archived"],
             sibling_index=si,

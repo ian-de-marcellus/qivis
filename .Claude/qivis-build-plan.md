@@ -521,17 +521,21 @@ Also: "raw" template (plain text, no special tokens) as default for remote APIs 
 
 ✅ Completion mode works. Full-vocab logprobs from local models enrich visualization. **Phase 8 complete.**
 
-### 8.4 — Generation View Abstraction (planned)
+### 8.4 — Generation View Abstraction ✅
 
-The current UI treats all generation as chat: user message → assistant response in a linear thread. Base models in completion mode and multi-agent conversations need fundamentally different views:
+Mode-aware view routing: `App.tsx` checks `generation_mode` metadata to select between `CompletionView` and `ChatView`.
 
-- **Base model / completion view**: single text pane (not turn-based), prompt template visible, raw token stream, logprob overlay is primary rather than secondary
-- **Multi-agent view**: multiple participants, turn order controls, per-participant context — shared infrastructure with Phase 10
-- **Chat view**: current UI, the default for instruct models
-
-Refactor LinearView into a view abstraction where the generation mode (chat/completion/multi-agent) selects the appropriate view component. Shared infrastructure: stop button, streaming state, branch navigation. Mode-specific: layout, input affordances, metadata display.
+**What was built:**
+- **`CompletionView`**: single text pane for base models, logprob overlay on by default, prompt template visible via `PromptTextViewer`, "FULL VOCAB" badge. Omits chat-specific features (ComparisonView, DigressionCreator, ContextSplitView). Dual-mode node rendering: completion-mode nodes → `CompletionNode`, other nodes → `MessageRow` (supports mixed rhizomes).
+- **`ChatView`**: renamed from LinearView, the instruct-model turn-based view with all existing features intact.
+- **`CompletionNode`**: completion-specific renderer — logprobs default ON (inverted from MessageRow), model name as header, collapsible prompt text, simplified action menu.
+- **`useViewShared`**: extracted shared hooks (`useActivePath`, `useAutoScroll`, `useScrollToNode`, `useBranchDefaults`, `useForkPanel`) consumed by both views.
+- **RhizomeSettings**: Chat/Completion mode toggle with conditional field visibility (system prompt for chat, prompt template selector for completion). Mode-aware creation form.
+- **Backend**: completion mode forces `include_timestamps=False` (timestamps are chat context, not base model prompts).
 
 **Blockers:** 8.3 (completion mode must work first), informs Phase 10 design.
+
+✅ Both views fully functional. Shared infrastructure (stop, streaming, branches) works in both. **Phase 8 fully complete.**
 
 ---
 

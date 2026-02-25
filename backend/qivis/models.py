@@ -166,6 +166,9 @@ class NodeCreatedPayload(BaseModel):
     include_thinking_in_context: bool = False
     include_timestamps: bool = False
 
+    # Context interventions — snapshot of active interventions at generation time
+    active_interventions: list[dict[str, Any]] | None = None
+
     # Multi-agent identity
     participant_id: str | None = None
     participant_name: str | None = None

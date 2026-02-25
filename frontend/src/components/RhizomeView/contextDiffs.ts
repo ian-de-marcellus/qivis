@@ -458,6 +458,7 @@ export function buildOriginalContext(
     thinkingContent: null,
     includeThinkingInContext: false,
     includeTimestamps: false,
+    activeInterventions: null,
   }
 }
 

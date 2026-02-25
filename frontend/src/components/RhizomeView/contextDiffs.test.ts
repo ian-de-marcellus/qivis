@@ -42,6 +42,7 @@ function makeNode(overrides: Partial<NodeResponse> & { node_id: string; role: st
     annotation_count: 0,
     note_count: 0,
     edit_count: 0,
+    active_interventions: overrides.active_interventions ?? null,
     participant_id: overrides.participant_id ?? null,
     participant_name: overrides.participant_name ?? null,
     archived: overrides.archived ?? 0,
@@ -91,6 +92,7 @@ function makeReconstructedContext(
     thinkingContent: null,
     includeThinkingInContext: false,
     includeTimestamps: false,
+    activeInterventions: null,
     ...overrides,
   }
 }

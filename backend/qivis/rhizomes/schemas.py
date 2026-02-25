@@ -80,6 +80,7 @@ class NodeResponse(BaseModel):
     edited_content: str | None = None
     include_thinking_in_context: bool = False
     include_timestamps: bool = False
+    active_interventions: list[dict] | None = None
     created_at: str
     archived: int = 0
     sibling_count: int = 1

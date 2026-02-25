@@ -50,6 +50,7 @@ export interface NodeResponse {
   edited_content: string | null
   include_thinking_in_context: boolean
   include_timestamps: boolean
+  active_interventions: InterventionSnapshot[] | null
   context_usage: ContextUsage | null
   participant_id: string | null
   participant_name: string | null
@@ -398,4 +399,23 @@ export interface CreateSummaryRequest {
   scope?: 'branch' | 'subtree'
   summary_type?: 'concise' | 'detailed' | 'key_points' | 'custom'
   custom_prompt?: string
+}
+
+// -- Context Interventions --
+
+export interface InterventionConfig {
+  type: string
+  enabled: boolean
+  config: Record<string, unknown>
+}
+
+export interface InterventionSnapshot {
+  type: string
+  phase: string
+}
+
+export interface InterventionTypeInfo {
+  type_name: string
+  phase: string
+  description: string
 }

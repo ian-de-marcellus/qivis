@@ -56,6 +56,7 @@ CREATE TABLE IF NOT EXISTS nodes (
     include_timestamps INTEGER NOT NULL DEFAULT 0,
     prefill_content TEXT,
     prompt_text TEXT,
+    active_interventions TEXT,
     created_at TEXT NOT NULL,
     archived INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY (rhizome_id) REFERENCES rhizomes(rhizome_id)
@@ -264,6 +265,9 @@ _MIGRATIONS: list[tuple[str, str]] = [
      "ALTER TABLE notes RENAME COLUMN tree_id TO rhizome_id"),
     ("018k_rename_summaries_tree_id",
      "ALTER TABLE summaries RENAME COLUMN tree_id TO rhizome_id"),
+    # Phase 9.1: Context intervention pipeline
+    ("019_add_active_interventions",
+     "ALTER TABLE nodes ADD COLUMN active_interventions TEXT"),
 ]
 
 

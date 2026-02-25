@@ -11,6 +11,7 @@ import type {
   DigressionGroupResponse,
   EditHistoryEntry,
   GenerateRequest,
+  InterventionTypeInfo,
   NodeExclusionResponse,
   NodeResponse,
   NoteResponse,
@@ -37,6 +38,7 @@ interface RhizomeStore {
   selectedRhizomeId: string | null
   currentRhizome: RhizomeDetail | null
   providers: ProviderInfo[]
+  interventionTypes: InterventionTypeInfo[]
   isLoading: boolean
   isGenerating: boolean
   _abortController: AbortController | null
@@ -84,6 +86,7 @@ interface RhizomeStore {
   // Actions
   fetchRhizomes: (includeArchived?: boolean) => Promise<void>
   fetchProviders: () => Promise<void>
+  fetchInterventionTypes: () => Promise<void>
   selectRhizome: (rhizomeId: string) => Promise<void>
   createRhizome: (title: string, opts?: {
     systemPrompt?: string
@@ -295,6 +298,7 @@ export const useRhizomeStore = create<RhizomeStore>((set, get) => ({
   selectedRhizomeId: null,
   currentRhizome: null,
   providers: [],
+  interventionTypes: [],
   isLoading: false,
   isGenerating: false,
   _abortController: null,
@@ -370,6 +374,16 @@ export const useRhizomeStore = create<RhizomeStore>((set, get) => ({
       set({ providers })
     } catch (e) {
       set({ error: String(e) })
+    }
+  },
+
+  fetchInterventionTypes: async () => {
+    if (get().interventionTypes.length > 0) return
+    try {
+      const interventionTypes = await api.getInterventionTypes()
+      set({ interventionTypes })
+    } catch {
+      // Non-critical — intervention types are informational
     }
   },
 
