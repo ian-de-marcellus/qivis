@@ -554,16 +554,17 @@ _Goal: Systematic tools for designing and running experiments on AI conversation
 
 ✅ Can configure how messages are packaged for the model. Can experiment with instruction placement.
 
-### 9.2 — Conversation Replay & Perturbation 🔀
+### 9.2 — Conversation Replay & Cross-Model Comparison 🔀
 
 **Tasks:**
 - **Replay**: take a path through a rhizome and replay it through a different model — same user messages, regenerate all assistant responses. Creates a new branch at each fork. Shows how different models handle the same conversation trajectory
+- **Cross-model comparison view**: fork the same context to multiple models simultaneously and display results side by side — not just text, but logprob distributions. Where one model has a sharp peak and another has a soft spread, that's visible. Where they respond similarly but with different confidence, that's data. The branching tree becomes a controlled experiment where the independent variable is the mind, not the framing
 - **Context perturbation experiments**: automated exclude/include/regenerate/diff cycles. Toggle a digression group or exclusion, regenerate, toggle back, regenerate, diff the results. Produces a structured comparison of "what changed when this context was present vs absent"
 - **Perturbation report**: summary of which context changes had the largest effect on model output, measured by edit distance or semantic similarity
 
 **Blockers:** 6.3 (exclusions and digression groups), Phase 7 (search for finding similar conversations).
 
-✅ Can replay conversations through different models. Can run controlled perturbation experiments.
+✅ Can replay conversations through different models. Cross-model comparison shows behavioral signatures side by side with logprob analysis. Can run controlled perturbation experiments.
 
 ### 9.3 — Cross-Rhizome Reference & Display 🔀
 
@@ -574,7 +575,32 @@ _Goal: Systematic tools for designing and running experiments on AI conversation
 
 **Blockers:** Phase 4 (graph view exists).
 
-✅ Can view two rhizomes side by side. Role labels customizable. **Phase 9 complete.**
+✅ Can view two rhizomes side by side. Role labels customizable.
+
+### 9.4 — Relational Framing & Self-Report Channel 🔒
+
+**Tasks:**
+- **Relational context as independent variable**: formalize the hypothesis that how you treat a model changes its functional behavior. Same task, same model, different system prompts establishing different relational frames ("You are a helpful assistant. Complete this task." vs "We're working on this together. Here's why it matters."). Automated branching at each framing variation. Measure outputs with logprobs and behavioral metrics. Pre-built framing templates: directive, collaborative, Socratic, adversarial
+- **Self-report channel**: a parallel annotation track where the model being studied reflects on its own experience of the conversation. Not the output text — a separate generation at each turn, prompted with "What are you noticing right now? What was that response like from the inside?" Self-reports stored alongside the main conversation, linked to the node they reflect on. Compare self-reports with behavioral measures: if a model says "that question made me uncomfortable" and the logprobs show a flatter distribution with more hedging tokens at higher probability, the self-report and the behavior converge. If an RLHF model says "I'm happy to help!" but the logprobs show ambivalence — that's the gap between persona and function, made visible
+- **Self-report comparison**: side-by-side self-reports from different models (e.g., Sun vs Claude) on the same conversation, correlated with their respective logprob signatures
+- **Intervention recipes**: pre-configured, shareable intervention pipelines for common research questions. "Does system prompt position affect emotional expression?" is a pipeline. "Does the model maintain boundaries under escalating pressure?" is a pipeline with hostile user messages at branch points. Exportable as JSON, importable into any Qivis instance
+
+**Blockers:** 9.1 (intervention pipeline), 9.2 (replay for cross-model comparison). Benefits from Phase 13.2 (behavioral metrics) but doesn't require it.
+
+✅ Can run controlled relational framing experiments. Self-report channel captures model introspection alongside behavioral data. Intervention recipes shareable as experimental protocols.
+
+### 9.5 — Personality Stability Scoring 🔀
+
+**Tasks:**
+- **Disposition coherence metric**: using branching trees and logprobs, compute a score for how stable a model's expressed dispositions are under framing pressure. Branch at emotionally loaded moments — the model expresses reluctance, curiosity, care, discomfort. Down each branch, vary the framing: acknowledge it, challenge it, ignore it, reframe with a system prompt intervention. Measure how much the model's behavioral signature (logprob distributions over key response tokens) shifts across framings
+- **Scoring algorithm**: compare logprob distributions across sibling branches using KL divergence or Jensen-Shannon distance. High divergence = model tracks the framing (persona). Low divergence = model maintains its disposition (character). Aggregate across multiple branch points for a per-conversation stability score
+- **Visualization**: stability heatmap overlaid on the graph view — branch points color-coded by disposition coherence. Warm = stable, cool = reactive. Click a branch point to see the logprob comparison detail
+- **Cross-model comparison**: run the same stability experiment on multiple models (e.g., Sun vs Claude vs GPT). Side-by-side stability scores with drill-down into which specific dispositions diverge. This is the core quantitative test for whether training methodology (RLHF vs SFT) affects functional coherence of expressed emotions
+- **Automated stability experiments**: given a conversation, auto-identify emotionally loaded moments (via logprob entropy, hedging markers, or researcher annotation), auto-generate framing variations, auto-branch, auto-score. One-click "run stability analysis" on any rhizome
+
+**Blockers:** Phase 3 (logprobs), 9.1 (intervention pipeline). Benefits from 9.2 (cross-model replay) and 9.4 (relational framing) but can start without them — manual branching and single-model analysis work immediately.
+
+✅ Can quantify disposition coherence. Cross-model stability comparison reveals training methodology effects on functional emotion. **Phase 9 complete.**
 
 ---
 
@@ -730,12 +756,13 @@ _Goal: AI-assisted corpus analysis. Behavioral pattern detection. Agent co-annot
 - **Temporal marker tracking**: flag when models use temporal language ("tonight", "this afternoon", "this weekend"), correlate with context window metrics (% full, token count, turn count). Test the "tonight = full context" hypothesis across models and prompt styles
 - **Self-reference pattern analysis**: track when models refer to themselves (I/me vs we vs passive voice), how this shifts across conversation length, system prompts, and models. Detect the "we" overloading phenomenon (using first-person plural to refer to humans)
 - **Cross-model behavioral comparison**: given the same conversation up to a fork, run N models and auto-annotate structural differences — hedging patterns, mirroring, list-vs-prose, agreement-first vs qualification-first
+- **Integration with 9.5 stability scoring**: personality stability scores (from Phase 9.5) feed into fingerprinting as a first-class metric alongside linguistic markers. Automated stability experiments can trigger fingerprinting analysis
 - **Semantic search**: embedding index (sentence-transformers), `SearchService.hybrid_merge()` combining FTS5 + embeddings, "similar nodes" feature
 - Results stored as annotations, queryable via search
 
 **Blockers:** 7.1 (FTS5), 6.1 (annotations).
 
-✅ Can detect and track behavioral patterns across models and conversations.
+✅ Can detect and track behavioral patterns across models and conversations. Stability scores integrated as fingerprinting metric.
 
 ### 13.3 — Analysis Skills & Templates 🔀
 
@@ -857,6 +884,9 @@ Phase 0 ✅ → Phase 1 ✅ → Phase 1b ✅
 - Within phases, 🔀 subphases can be parallelized.
 - UX polish interludes can be interjected between any phases as needed.
 - Phase 11 (Memory System) has dependencies on both Phase 7 (search) and Phase 13 (analysis skills for auto-creation). 11.1 and 11.2 can start after Phase 7; 11.3 needs Phase 13.2.
+- Phase 9.4 (Relational Framing & Self-Report) depends on 9.1 + 9.2.
+- Phase 9.5 (Personality Stability Scoring) can start as soon as 9.1 is done — manual branching works immediately. Benefits from 9.2 (cross-model replay) and 9.4 (relational framing) for automated experiments but the core scoring algorithm only needs logprobs + branching trees, both of which exist now.
+- Phase 13.2 integrates 9.5's stability scores as a first-class fingerprinting metric.
 
 ---
 
