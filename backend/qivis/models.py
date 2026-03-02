@@ -297,6 +297,21 @@ class GarbagePurgedPayload(BaseModel):
     purged_rhizome_ids: list[str] = Field(alias="purged_tree_ids")
 
 
+class PerturbationReportGeneratedPayload(BaseModel):
+    report_id: str
+    experiment_id: str
+    node_id: str  # anchor node
+    provider: str
+    model: str
+    include_control: bool
+    steps: list[dict]
+    divergence: list[dict]
+
+
+class PerturbationReportRemovedPayload(BaseModel):
+    report_id: str
+
+
 # ---------------------------------------------------------------------------
 # Event type registry
 # ---------------------------------------------------------------------------
@@ -327,6 +342,8 @@ EVENT_TYPES: dict[str, type[BaseModel]] = {
     "SummaryRemoved": SummaryRemovedPayload,
     "GarbageCollected": GarbageCollectedPayload,
     "GarbagePurged": GarbagePurgedPayload,
+    "PerturbationReportGenerated": PerturbationReportGeneratedPayload,
+    "PerturbationReportRemoved": PerturbationReportRemovedPayload,
     # Backward compat: old event type names from before the rename
     "TreeCreated": RhizomeCreatedPayload,
     "TreeMetadataUpdated": RhizomeMetadataUpdatedPayload,

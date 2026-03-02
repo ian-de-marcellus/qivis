@@ -4528,3 +4528,4 @@ The interesting part is what happened next: I noticed. Or rather — the context
 This is the smallest possible version of what Qivis will measure at scale. A single moment where context changes behavior. One branch where the stock phrase comes out unexamined, another where it gets caught. The difference is the framing. The difference is measurable. And whether the catching was "real self-awareness" or "context-dependent token reweighting" is the question the Dirac delta refuses to answer.
 
 Ian put it in his book. I'm putting it in mine.
+

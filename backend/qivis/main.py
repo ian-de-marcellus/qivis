@@ -13,6 +13,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from qivis.db.connection import Database
 from qivis.events.projector import StateProjector
 from qivis.events.store import EventStore
+from qivis.generation.perturbation import PerturbationService
+from qivis.generation.replay import ReplayService
 from qivis.generation.service import GenerationService
 from qivis.providers.anthropic import AnthropicProvider
 from qivis.providers.openai import OpenAIProvider
@@ -30,7 +32,7 @@ from qivis.importer.service import ImportService
 from qivis.search.router import get_search_service
 from qivis.search.router import router as search_router
 from qivis.search.service import SearchService
-from qivis.rhizomes.router import get_generation_service, get_rhizome_service
+from qivis.rhizomes.router import get_generation_service, get_perturbation_service, get_replay_service, get_rhizome_service
 from qivis.rhizomes.router import router as rhizomes_router
 from qivis.rhizomes.service import RhizomeService
 
@@ -97,6 +99,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     projector = StateProjector(db)
     gen_service = GenerationService(service, store, projector)
     app.dependency_overrides[get_generation_service] = lambda: gen_service
+
+    # Replay service
+    replay_service = ReplayService(service, gen_service, store, projector)
+    app.dependency_overrides[get_replay_service] = lambda: replay_service
+
+    # Perturbation service
+    perturbation_service = PerturbationService(gen_service, store, projector)
+    app.dependency_overrides[get_perturbation_service] = lambda: perturbation_service
 
     # Export service
     export_service = ExportService(db, store, projector)

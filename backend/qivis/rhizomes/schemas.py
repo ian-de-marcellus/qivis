@@ -53,6 +53,102 @@ class GenerateRequest(BaseModel):
     prefill_content: str | None = None
 
 
+class ReplayRequest(BaseModel):
+    """Request body for POST /api/rhizomes/{rhizome_id}/replay."""
+
+    path_node_ids: list[str]
+    provider: str
+    model: str | None = None
+    mode: Literal["context_faithful", "trajectory"] = "context_faithful"
+    system_prompt: str | None = None
+    sampling_params: SamplingParams | None = None
+    stream: bool = False
+
+
+class CrossModelTarget(BaseModel):
+    """A single target for cross-model generation."""
+
+    provider: str
+    model: str
+
+
+class CrossModelGenerateRequest(BaseModel):
+    """Request body for POST /api/rhizomes/{rhizome_id}/nodes/{node_id}/generate-cross."""
+
+    targets: list[CrossModelTarget] = Field(min_length=1, max_length=10)
+    system_prompt: str | None = None
+    sampling_params: SamplingParams | None = None
+    stream: bool = False
+
+
+class PerturbationConfig(BaseModel):
+    """Single perturbation to apply during an experiment."""
+
+    type: Literal["digression_toggle", "node_exclusion", "system_prompt", "intervention_toggle"]
+    # digression_toggle
+    group_id: str | None = None
+    include: bool | None = None
+    # node_exclusion
+    node_id: str | None = None
+    exclude: bool | None = None
+    # system_prompt
+    system_prompt: str | None = None
+    # intervention_toggle
+    intervention_index: int | None = None
+    enabled: bool | None = None
+    # Human-readable label (auto-generated if omitted)
+    label: str | None = None
+
+
+class PerturbationRequest(BaseModel):
+    """Request body for POST /api/rhizomes/{rhizome_id}/nodes/{node_id}/perturb."""
+
+    perturbations: list[PerturbationConfig] = Field(min_length=1, max_length=20)
+    provider: str
+    model: str | None = None
+    sampling_params: SamplingParams | None = None
+    include_control: bool = True
+    stream: bool = False
+
+
+class PerturbationStepResponse(BaseModel):
+    """A single step result in a perturbation report."""
+
+    label: str
+    type: str
+    config: dict | None = None
+    content: str
+    node_id: str
+    latency_ms: int | None = None
+    usage: dict | None = None
+
+
+class DivergenceMetrics(BaseModel):
+    """Divergence metrics for a perturbation vs control."""
+
+    step_index: int
+    label: str
+    word_diff_ratio: float
+    edit_distance: float
+    certainty_delta: float | None = None
+    length_ratio: float
+
+
+class PerturbationReportResponse(BaseModel):
+    """Full perturbation experiment report."""
+
+    report_id: str
+    rhizome_id: str
+    experiment_id: str
+    node_id: str
+    provider: str
+    model: str
+    include_control: bool
+    steps: list[PerturbationStepResponse]
+    divergence: list[DivergenceMetrics]
+    created_at: str
+
+
 # -- Responses --
 
 

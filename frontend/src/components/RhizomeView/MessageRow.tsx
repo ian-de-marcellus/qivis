@@ -65,6 +65,9 @@ export interface MessageRowActions {
   onSplitView?: () => void
   onComparisonPick?: () => void
   onSummarize?: () => void
+  onReplay?: () => void
+  onCrossModel?: () => void
+  onExperiment?: () => void
 }
 
 interface MessageRowProps {
@@ -87,7 +90,7 @@ export const MessageRow = memo(function MessageRow({
     onSelectSibling, onFork, onPrefill, onGenerate, onCompare,
     onEdit, onInspect, onBookmarkToggle, onExcludeToggle,
     onAnchorToggle, onGroupToggle, onSplitView, onComparisonPick,
-    onSummarize,
+    onSummarize, onReplay, onCrossModel, onExperiment,
   } = actions
 
   const [showLogprobs, setShowLogprobs] = useState(false)
@@ -158,6 +161,15 @@ export const MessageRow = memo(function MessageRow({
           )}
           {onGenerate && node.role === 'user' && (
             <ActionMenuItem onClick={onGenerate}>Generate</ActionMenuItem>
+          )}
+          {onCrossModel && (
+            <ActionMenuItem onClick={onCrossModel}>Cross-model</ActionMenuItem>
+          )}
+          {onExperiment && (
+            <ActionMenuItem onClick={onExperiment}>Experiment</ActionMenuItem>
+          )}
+          {onReplay && (
+            <ActionMenuItem onClick={onReplay}>Replay to leaf</ActionMenuItem>
           )}
         </ActionMenu>
         {onEdit && !isEditing && (

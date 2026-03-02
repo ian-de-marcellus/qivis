@@ -267,6 +267,42 @@ export interface GenerateRequest {
   prefill_content?: string
 }
 
+export interface ReplayRequest {
+  path_node_ids: string[]
+  provider: string
+  model?: string
+  mode?: 'context_faithful' | 'trajectory'
+  system_prompt?: string
+  sampling_params?: SamplingParams
+  stream?: boolean
+}
+
+export interface CrossModelTarget {
+  provider: string
+  model: string
+}
+
+export interface CrossModelGenerateRequest {
+  targets: CrossModelTarget[]
+  system_prompt?: string
+  sampling_params?: SamplingParams
+  stream?: boolean
+}
+
+// -- Replay SSE events --
+
+export interface ReplayStepEvent {
+  step: number
+  total: number
+  type: 'user_copied' | 'generating'
+  node_id?: string
+}
+
+export interface ReplayCompleteEvent {
+  replay_id: string
+  created_node_ids: string[]
+}
+
 // -- SSE events --
 
 export interface TextDeltaEvent {
@@ -399,6 +435,68 @@ export interface CreateSummaryRequest {
   scope?: 'branch' | 'subtree'
   summary_type?: 'concise' | 'detailed' | 'key_points' | 'custom'
   custom_prompt?: string
+}
+
+// -- Perturbation Experiments --
+
+export interface PerturbationConfig {
+  type: 'digression_toggle' | 'node_exclusion' | 'system_prompt' | 'intervention_toggle'
+  group_id?: string
+  include?: boolean
+  node_id?: string
+  exclude?: boolean
+  system_prompt?: string
+  intervention_index?: number
+  enabled?: boolean
+  label?: string
+}
+
+export interface PerturbationRequest {
+  perturbations: PerturbationConfig[]
+  provider: string
+  model?: string
+  sampling_params?: SamplingParams
+  include_control?: boolean
+  stream?: boolean
+}
+
+export interface PerturbationStepResponse {
+  label: string
+  type: string
+  config: Record<string, unknown> | null
+  content: string
+  node_id: string
+  latency_ms: number | null
+  usage: Record<string, number> | null
+}
+
+export interface DivergenceMetrics {
+  step_index: number
+  label: string
+  word_diff_ratio: number
+  edit_distance: number
+  certainty_delta: number | null
+  length_ratio: number
+}
+
+export interface PerturbationReportResponse {
+  report_id: string
+  rhizome_id: string
+  experiment_id: string
+  node_id: string
+  provider: string
+  model: string
+  include_control: boolean
+  steps: PerturbationStepResponse[]
+  divergence: DivergenceMetrics[]
+  created_at: string
+}
+
+export interface PerturbationStepEvent {
+  step: number
+  total: number
+  type: string
+  label: string
 }
 
 // -- Context Interventions --

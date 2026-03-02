@@ -26,6 +26,7 @@ from qivis.models import (
     SamplingParams,
 )
 from qivis.providers.base import GenerationRequest, GenerationResult, LLMProvider, StreamChunk
+from qivis.providers.registry import get_provider
 from qivis.rhizomes.schemas import NodeResponse
 from qivis.rhizomes.service import RhizomeService
 from qivis.utils.json import parse_json_field
@@ -378,6 +379,208 @@ class GenerationService:
         tasks = [
             asyncio.create_task(_run_stream(i)) for i in range(n)
         ]
+
+        try:
+            while True:
+                item = await queue.get()
+                if item is None:
+                    break
+                _index, chunk = item
+                yield chunk
+
+            yield StreamChunk(type="generation_complete")
+        finally:
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+    async def generate_cross(
+        self,
+        rhizome_id: str,
+        node_id: str,
+        targets: list[dict],
+        *,
+        system_prompt: str | None = None,
+        sampling_params: SamplingParams | None = None,
+    ) -> list[NodeResponse]:
+        """Generate responses from multiple providers and store as sibling nodes.
+
+        Each target is a dict with 'provider' and 'model' keys.
+        Context is resolved once and shared across all targets.
+        """
+        (rhizome, nodes, _, resolved_prompt, resolved_params,
+         include_ts, include_think, excl_ids, dg_map, excl_gids,
+         anchored_ids, eviction_strategy, metadata) = (
+            await self._resolve_context(
+                rhizome_id, node_id, None, system_prompt, sampling_params,
+            )
+        )
+        # Use first target's model for context limit
+        first_model = targets[0]["model"]
+        context_limit = _apply_debug_context_limit(
+            rhizome, get_model_context_limit(first_model),
+        )
+        pipeline = self._resolve_interventions(metadata)
+        messages, context_usage, eviction_report, resolved_prompt, active_interventions = (
+            self._build_context_with_interventions(
+                nodes=nodes, node_id=node_id,
+                system_prompt=resolved_prompt, context_limit=context_limit,
+                include_timestamps=include_ts, include_thinking=include_think,
+                excluded_ids=excl_ids, digression_groups=dg_map,
+                excluded_group_ids=excl_gids, anchored_ids=anchored_ids,
+                eviction=eviction_strategy, pipeline=pipeline,
+                model=first_model, metadata=metadata,
+            )
+        )
+        messages, context_usage = await self._maybe_inject_summary(
+            messages, context_usage, eviction_report,
+        )
+
+        generation_id = str(uuid4())
+
+        async def _generate_one(target: dict) -> NodeResponse:
+            provider = get_provider(target["provider"])
+            target_model = target["model"]
+
+            msgs_copy = [m.copy() for m in messages]
+            prompt_text, params, mode_hint = self._prepare_completion_mode(
+                provider, msgs_copy, resolved_prompt, resolved_params, metadata,
+            )
+
+            request = GenerationRequest(
+                model=target_model,
+                messages=msgs_copy,
+                system_prompt=resolved_prompt,
+                sampling_params=params,
+                prompt_text=prompt_text,
+            )
+            result = await provider.generate(request)
+
+            return await self._emit_node_created(
+                rhizome_id, generation_id, node_id, result,
+                provider.name, resolved_prompt, params,
+                context_usage=context_usage,
+                include_thinking_in_context=include_think,
+                include_timestamps=include_ts,
+                active_interventions=active_interventions,
+                mode=mode_hint,
+            )
+
+        results = await asyncio.gather(*[_generate_one(t) for t in targets])
+        return list(results)
+
+    async def generate_cross_stream(
+        self,
+        rhizome_id: str,
+        node_id: str,
+        targets: list[dict],
+        *,
+        system_prompt: str | None = None,
+        sampling_params: SamplingParams | None = None,
+    ) -> AsyncIterator[StreamChunk]:
+        """Stream responses from multiple providers simultaneously."""
+        (rhizome, nodes, _, resolved_prompt, resolved_params,
+         include_ts, include_think, excl_ids, dg_map, excl_gids,
+         anchored_ids, eviction_strategy, metadata) = (
+            await self._resolve_context(
+                rhizome_id, node_id, None, system_prompt, sampling_params,
+            )
+        )
+        first_model = targets[0]["model"]
+        context_limit = _apply_debug_context_limit(
+            rhizome, get_model_context_limit(first_model),
+        )
+        pipeline = self._resolve_interventions(metadata)
+        messages, context_usage, eviction_report, resolved_prompt, active_interventions = (
+            self._build_context_with_interventions(
+                nodes=nodes, node_id=node_id,
+                system_prompt=resolved_prompt, context_limit=context_limit,
+                include_timestamps=include_ts, include_thinking=include_think,
+                excluded_ids=excl_ids, digression_groups=dg_map,
+                excluded_group_ids=excl_gids, anchored_ids=anchored_ids,
+                eviction=eviction_strategy, pipeline=pipeline,
+                model=first_model, metadata=metadata,
+            )
+        )
+        messages, context_usage = await self._maybe_inject_summary(
+            messages, context_usage, eviction_report,
+        )
+
+        generation_id = str(uuid4())
+        n = len(targets)
+
+        queue: asyncio.Queue[tuple[int, StreamChunk] | None] = asyncio.Queue()
+        remaining = n
+
+        async def _run_stream(index: int) -> None:
+            nonlocal remaining
+            try:
+                target = targets[index]
+                provider = get_provider(target["provider"])
+                target_model = target["model"]
+
+                msgs_copy = [m.copy() for m in messages]
+                prompt_text, params, mode_hint = self._prepare_completion_mode(
+                    provider, msgs_copy, resolved_prompt, resolved_params, metadata,
+                )
+
+                request = GenerationRequest(
+                    model=target_model,
+                    messages=msgs_copy,
+                    system_prompt=resolved_prompt,
+                    sampling_params=params,
+                    prompt_text=prompt_text,
+                )
+
+                async for chunk in provider.generate_stream(request):
+                    if chunk.is_final and chunk.result is not None:
+                        node = await self._emit_node_created(
+                            rhizome_id, generation_id, node_id,
+                            chunk.result, provider.name,
+                            resolved_prompt, params,
+                            context_usage=context_usage,
+                            include_thinking_in_context=include_think,
+                            include_timestamps=include_ts,
+                            active_interventions=active_interventions,
+                            mode=mode_hint,
+                        )
+                        tagged = StreamChunk(
+                            type=chunk.type,
+                            text=chunk.text,
+                            is_final=True,
+                            completion_index=index,
+                            result=GenerationResult(
+                                content=chunk.result.content,
+                                model=chunk.result.model,
+                                finish_reason=chunk.result.finish_reason,
+                                usage=chunk.result.usage,
+                                latency_ms=chunk.result.latency_ms,
+                                logprobs=chunk.result.logprobs,
+                                raw_response={"node_id": node.node_id},
+                            ),
+                        )
+                        await queue.put((index, tagged))
+                    else:
+                        tagged = StreamChunk(
+                            type=chunk.type,
+                            text=chunk.text,
+                            completion_index=index,
+                        )
+                        await queue.put((index, tagged))
+            except Exception as e:
+                error_chunk = StreamChunk(
+                    type="error",
+                    text=str(e),
+                    completion_index=index,
+                )
+                await queue.put((index, error_chunk))
+            finally:
+                remaining -= 1
+                if remaining == 0:
+                    await queue.put(None)
+
+        tasks = [asyncio.create_task(_run_stream(i)) for i in range(n)]
 
         try:
             while True:

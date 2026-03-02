@@ -48,3 +48,6 @@ htmlcov/
 
 # Claude
 .Claude/settings.local.json
+
+# Local
+local/

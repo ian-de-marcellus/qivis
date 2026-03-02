@@ -8,6 +8,7 @@ import type {
   BookmarkResponse,
   CreateDigressionGroupRequest,
   CreateSummaryRequest,
+  CrossModelTarget,
   DigressionGroupResponse,
   EditHistoryEntry,
   GenerateRequest,
@@ -16,7 +17,10 @@ import type {
   NodeResponse,
   NoteResponse,
   PatchRhizomeRequest,
+  PerturbationConfig,
+  PerturbationReportResponse,
   ProviderInfo,
+  SamplingParams,
   SearchResultItem,
   SummaryResponse,
   TaxonomyResponse,
@@ -71,7 +75,7 @@ interface RhizomeStore {
   rhizomeNotes: NoteResponse[]
   rhizomeAnnotations: AnnotationResponse[]
   rhizomeSummaries: SummaryResponse[]
-  researchPaneTab: 'bookmarks' | 'tags' | 'notes' | 'summaries'
+  researchPaneTab: 'bookmarks' | 'tags' | 'notes' | 'summaries' | 'experiments'
   rightPaneMode: 'graph' | 'digressions' | 'research' | null
   groupSelectionMode: boolean
   selectedGroupNodeIds: string[]
@@ -82,6 +86,21 @@ interface RhizomeStore {
   searchResults: SearchResultItem[]
   searchLoading: boolean
   scrollToNodeId: string | null
+  replayState: {
+    active: boolean
+    step: number
+    total: number
+    streamingText: string
+    createdNodeIds: string[]
+  } | null
+  perturbationState: {
+    active: boolean
+    step: number
+    total: number
+    currentLabel: string
+    stepContents: Record<number, string>
+  } | null
+  perturbationReports: PerturbationReportResponse[]
 
   // Actions
   fetchRhizomes: (includeArchived?: boolean) => Promise<void>
@@ -132,7 +151,7 @@ interface RhizomeStore {
   fetchNodeNotes: (nodeId: string) => Promise<void>
   fetchRhizomeNotes: () => Promise<void>
   fetchRhizomeAnnotations: () => Promise<void>
-  setResearchPaneTab: (tab: 'bookmarks' | 'tags' | 'notes' | 'summaries') => void
+  setResearchPaneTab: (tab: 'bookmarks' | 'tags' | 'notes' | 'summaries' | 'experiments') => void
   fetchBookmarks: () => Promise<void>
   addBookmark: (nodeId: string, label: string, notes?: string) => Promise<void>
   removeBookmark: (bookmarkId: string) => Promise<void>
@@ -163,6 +182,30 @@ interface RhizomeStore {
   fetchRhizomeSummaries: () => Promise<void>
   generateSummary: (nodeId: string, req: CreateSummaryRequest) => Promise<SummaryResponse | null>
   removeSummary: (summaryId: string) => Promise<void>
+  startReplay: (
+    pathNodeIds: string[],
+    provider: string,
+    model: string | undefined,
+    mode: 'context_faithful' | 'trajectory',
+    systemPrompt?: string,
+    samplingParams?: SamplingParams,
+  ) => Promise<void>
+  generateCrossModel: (
+    nodeId: string,
+    targets: CrossModelTarget[],
+    systemPrompt?: string,
+    samplingParams?: SamplingParams,
+  ) => Promise<void>
+  runPerturbation: (
+    nodeId: string,
+    perturbations: PerturbationConfig[],
+    provider: string,
+    model?: string,
+    samplingParams?: SamplingParams,
+    includeControl?: boolean,
+  ) => Promise<void>
+  fetchPerturbationReports: () => Promise<void>
+  deletePerturbationReport: (reportId: string) => Promise<void>
 }
 
 /**
@@ -342,6 +385,9 @@ export const useRhizomeStore = create<RhizomeStore>((set, get) => ({
   searchResults: [],
   searchLoading: false,
   scrollToNodeId: null,
+  replayState: null,
+  perturbationState: null,
+  perturbationReports: [],
 
   stopGeneration: () => {
     const { _abortController } = get()
@@ -414,11 +460,13 @@ export const useRhizomeStore = create<RhizomeStore>((set, get) => ({
       comparisonNodeId: null,
       comparisonPickingMode: false,
       comparisonPickingSourceId: null,
+      perturbationState: null,
+      perturbationReports: [],
     })
     try {
       const rhizome = await api.getRhizome(rhizomeId)
       set({ currentRhizome: rhizome, isLoading: false })
-      // Fetch bookmarks and exclusions for the new rhizome in the background
+      // Fetch bookmarks, exclusions, etc. for the new rhizome in the background
       api.getRhizomeBookmarks(rhizomeId).then((bookmarks) => {
         set({ bookmarks })
       }).catch(() => {/* ignore bookmark fetch errors */})
@@ -1201,7 +1249,7 @@ export const useRhizomeStore = create<RhizomeStore>((set, get) => ({
     (rhizomeAnnotations) => ({ rhizomeAnnotations }),
   ),
 
-  setResearchPaneTab: (tab: 'bookmarks' | 'tags' | 'notes' | 'summaries') => {
+  setResearchPaneTab: (tab: 'bookmarks' | 'tags' | 'notes' | 'summaries' | 'experiments') => {
     set({ researchPaneTab: tab })
   },
 
@@ -1557,6 +1605,249 @@ export const useRhizomeStore = create<RhizomeStore>((set, get) => ({
       set({ error: String(e) })
     }
   },
+
+  startReplay: async (pathNodeIds, provider, model, mode, systemPrompt, samplingParams) => {
+    const { currentRhizome } = get()
+    if (!currentRhizome) return
+
+    const rhizomeId = currentRhizome.rhizome_id
+    const ac = new AbortController()
+    set({
+      error: null,
+      _abortController: ac,
+      replayState: {
+        active: true,
+        step: 0,
+        total: pathNodeIds.length,
+        streamingText: '',
+        createdNodeIds: [],
+      },
+    })
+
+    try {
+      await api.replayStream(
+        rhizomeId,
+        {
+          path_node_ids: pathNodeIds,
+          provider,
+          model,
+          mode,
+          system_prompt: systemPrompt,
+          sampling_params: samplingParams,
+        },
+        (step, total, _type, _nodeId) => {
+          set((state) => ({
+            replayState: state.replayState
+              ? { ...state.replayState, step, total, streamingText: '' }
+              : null,
+          }))
+        },
+        (text, _stepIndex) => {
+          set((state) => ({
+            replayState: state.replayState
+              ? { ...state.replayState, streamingText: state.replayState.streamingText + text }
+              : null,
+          }))
+        },
+        (_event) => {
+          // Step completed — clear streaming text for next step
+          set((state) => ({
+            replayState: state.replayState
+              ? { ...state.replayState, streamingText: '' }
+              : null,
+          }))
+        },
+        (_createdNodeIds) => {
+          set({
+            replayState: null,
+            _abortController: null,
+          })
+          refreshRhizome(rhizomeId, set)
+        },
+        (error) => {
+          set({
+            replayState: null,
+            _abortController: null,
+            error: error.message,
+          })
+          refreshRhizome(rhizomeId, set)
+        },
+        ac.signal,
+      )
+    } catch (e) {
+      set({
+        replayState: null,
+        _abortController: null,
+        error: String(e),
+      })
+    }
+  },
+
+  generateCrossModel: async (nodeId, targets, systemPrompt, samplingParams) => {
+    const { currentRhizome } = get()
+    if (!currentRhizome) return
+
+    const rhizomeId = currentRhizome.rhizome_id
+    const ac = new AbortController()
+    set({
+      ...MULTI_STREAMING_RESET,
+      error: null,
+      isGenerating: true,
+      streamingTotal: targets.length,
+      _abortController: ac,
+      regeneratingParentId: nodeId,
+    })
+
+    try {
+      await api.generateCrossStream(
+        rhizomeId,
+        nodeId,
+        { targets, system_prompt: systemPrompt, sampling_params: samplingParams },
+        (text, idx) => {
+          set((state) => ({
+            streamingContents: {
+              ...state.streamingContents,
+              [idx]: (state.streamingContents[idx] ?? '') + text,
+            },
+          }))
+        },
+        (event) => {
+          if (event.node_id != null && event.completion_index != null) {
+            set((state) => ({
+              streamingNodeIds: {
+                ...state.streamingNodeIds,
+                [event.completion_index!]: event.node_id!,
+              },
+            }))
+          }
+        },
+        () => {
+          set({ ...MULTI_STREAMING_RESET, regeneratingParentId: null })
+          refreshRhizomeSelectNewest(rhizomeId, nodeId, set)
+        },
+        (error) => {
+          set({
+            ...MULTI_STREAMING_RESET,
+            regeneratingParentId: null,
+            error: error instanceof Error ? error.message : String(error),
+          })
+        },
+        ac.signal,
+      )
+    } catch (e) {
+      set({
+        ...MULTI_STREAMING_RESET,
+        regeneratingParentId: null,
+        error: String(e),
+      })
+    }
+  },
+
+  runPerturbation: async (nodeId, perturbations, provider, model, samplingParams, includeControl = true) => {
+    const { currentRhizome } = get()
+    if (!currentRhizome) return
+
+    const rhizomeId = currentRhizome.rhizome_id
+    const ac = new AbortController()
+    set({
+      error: null,
+      _abortController: ac,
+      perturbationState: {
+        active: true,
+        step: 0,
+        total: perturbations.length + (includeControl ? 1 : 0),
+        currentLabel: '',
+        stepContents: {},
+      },
+    })
+
+    try {
+      await api.perturbStream(
+        rhizomeId,
+        nodeId,
+        {
+          perturbations,
+          provider,
+          model,
+          sampling_params: samplingParams,
+          include_control: includeControl,
+        },
+        (step, total, _type, label) => {
+          set((state) => ({
+            perturbationState: state.perturbationState
+              ? { ...state.perturbationState, step, total, currentLabel: label, stepContents: { ...state.perturbationState.stepContents, [step - 1]: '' } }
+              : null,
+          }))
+        },
+        (text, stepIndex) => {
+          set((state) => ({
+            perturbationState: state.perturbationState
+              ? {
+                  ...state.perturbationState,
+                  stepContents: {
+                    ...state.perturbationState.stepContents,
+                    [stepIndex]: (state.perturbationState.stepContents[stepIndex] ?? '') + text,
+                  },
+                }
+              : null,
+          }))
+        },
+        (_event) => {
+          // Step completed
+        },
+        (_report) => {
+          set({
+            perturbationState: null,
+            _abortController: null,
+          })
+          refreshRhizome(rhizomeId, set)
+          // Refresh reports
+          api.getPerturbationReports(rhizomeId).then((reports) => {
+            set({ perturbationReports: reports })
+          }).catch(() => {})
+        },
+        (error) => {
+          set({
+            perturbationState: null,
+            _abortController: null,
+            error: error.message,
+          })
+          refreshRhizome(rhizomeId, set)
+        },
+        ac.signal,
+      )
+    } catch (e) {
+      set({
+        perturbationState: null,
+        _abortController: null,
+        error: String(e),
+      })
+    }
+  },
+
+  fetchPerturbationReports: async () => {
+    const { currentRhizome } = get()
+    if (!currentRhizome) return
+    try {
+      const reports = await api.getPerturbationReports(currentRhizome.rhizome_id)
+      set({ perturbationReports: reports })
+    } catch {
+      // ignore
+    }
+  },
+
+  deletePerturbationReport: async (reportId) => {
+    const { currentRhizome } = get()
+    if (!currentRhizome) return
+    try {
+      await api.deletePerturbationReport(currentRhizome.rhizome_id, reportId)
+      set((state) => ({
+        perturbationReports: state.perturbationReports.filter(r => r.report_id !== reportId),
+      }))
+    } catch {
+      // ignore
+    }
+  },
 }))
 
 // ---------------------------------------------------------------------------
@@ -1617,6 +1908,7 @@ export const useResearchMetadata = () => useRhizomeStore(useShallow(s => ({
   rhizomeNotes: s.rhizomeNotes,
   rhizomeAnnotations: s.rhizomeAnnotations,
   rhizomeSummaries: s.rhizomeSummaries,
+  perturbationReports: s.perturbationReports,
   researchPaneTab: s.researchPaneTab,
   taxonomy: s.taxonomy,
 })))

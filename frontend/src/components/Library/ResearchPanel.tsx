@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { BookmarkResponse } from '../../api/types.ts'
 import { useRhizomeStore, useResearchMetadata } from '../../store/rhizomeStore.ts'
+import { PerturbationReportView } from '../RhizomeView/PerturbationReportView.tsx'
 import './ResearchPanel.css'
 
 const SUMMARY_TYPE_LABELS: Record<string, string> = {
@@ -14,7 +15,7 @@ export function ResearchPanel() {
   const {
     bookmarks, bookmarksLoading,
     rhizomeNotes, rhizomeAnnotations,
-    rhizomeSummaries,
+    rhizomeSummaries, perturbationReports,
     researchPaneTab,
   } = useResearchMetadata()
 
@@ -24,13 +25,22 @@ export function ResearchPanel() {
   const navigateToBookmark = useRhizomeStore(s => s.navigateToBookmark)
   const removeNote = useRhizomeStore(s => s.removeNote)
   const removeSummary = useRhizomeStore(s => s.removeSummary)
+  const fetchPerturbationReports = useRhizomeStore(s => s.fetchPerturbationReports)
+  const deletePerturbationReport = useRhizomeStore(s => s.deletePerturbationReport)
   const setResearchPaneTab = useRhizomeStore(s => s.setResearchPaneTab)
   const currentRhizome = useRhizomeStore(s => s.currentRhizome)
 
   const [summarizingIds, setSummarizingIds] = useState<Set<string>>(new Set())
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
 
-  const totalCount = bookmarks.length + rhizomeAnnotations.length + rhizomeNotes.length + rhizomeSummaries.length
+  // Fetch perturbation reports when experiments tab is selected
+  useEffect(() => {
+    if (researchPaneTab === 'experiments') {
+      fetchPerturbationReports()
+    }
+  }, [researchPaneTab, fetchPerturbationReports])
+
+  const totalCount = bookmarks.length + rhizomeAnnotations.length + rhizomeNotes.length + rhizomeSummaries.length + perturbationReports.length
 
   const handleSummarize = async (bookmark: BookmarkResponse) => {
     setSummarizingIds((prev) => new Set([...prev, bookmark.bookmark_id]))
@@ -96,6 +106,12 @@ export function ResearchPanel() {
           onClick={() => setResearchPaneTab('summaries')}
         >
           Summaries{rhizomeSummaries.length > 0 && <span className="tab-count">{rhizomeSummaries.length}</span>}
+        </button>
+        <button
+          className={`research-tab${researchPaneTab === 'experiments' ? ' active' : ''}`}
+          onClick={() => setResearchPaneTab('experiments')}
+        >
+          Experiments{perturbationReports.length > 0 && <span className="tab-count">{perturbationReports.length}</span>}
         </button>
       </div>
 
@@ -276,6 +292,26 @@ export function ResearchPanel() {
             {rhizomeSummaries.length === 0 && (
               <div className="research-empty">
                 No summaries yet. Click "Summarize" on any message.
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Experiments tab */}
+        {researchPaneTab === 'experiments' && (
+          <div className="research-items">
+            {perturbationReports.map((report) => (
+              <PerturbationReportView
+                key={report.report_id}
+                report={report}
+                onNavigateToNode={navigateToNode}
+                onDelete={deletePerturbationReport}
+              />
+            ))}
+
+            {perturbationReports.length === 0 && (
+              <div className="research-empty">
+                No experiments yet. Click "Experiment" on any message.
               </div>
             )}
           </div>

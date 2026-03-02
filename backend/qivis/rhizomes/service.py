@@ -27,6 +27,7 @@ from qivis.models import (
     NodeUnanchoredPayload,
     NoteAddedPayload,
     NoteRemovedPayload,
+    PerturbationReportRemovedPayload,
     SummaryGeneratedPayload,
     SummaryRemovedPayload,
     RhizomeArchivedPayload,
@@ -45,6 +46,7 @@ from qivis.rhizomes.schemas import (
     CreateSummaryRequest,
     CreateRhizomeRequest,
     DigressionGroupResponse,
+    DivergenceMetrics,
     EditHistoryEntry,
     EditHistoryResponse,
     ExcludeNodeRequest,
@@ -55,6 +57,8 @@ from qivis.rhizomes.schemas import (
     NoteResponse,
     PatchNodeContentRequest,
     PatchRhizomeRequest,
+    PerturbationReportResponse,
+    PerturbationStepResponse,
     SummaryResponse,
     TaxonomyResponse,
     RhizomeDetailResponse,
@@ -1370,6 +1374,65 @@ class RhizomeService:
             created_at=group["created_at"],
         )
 
+    # -- Perturbation report methods --
+
+    async def list_perturbation_reports(
+        self, rhizome_id: str,
+    ) -> list[PerturbationReportResponse]:
+        """List all perturbation reports for a rhizome."""
+        rows = await self._projector.get_perturbation_reports(rhizome_id)
+        return [self._perturbation_report_from_row(r) for r in rows]
+
+    async def get_perturbation_report(
+        self, rhizome_id: str, report_id: str,
+    ) -> PerturbationReportResponse | None:
+        """Get a single perturbation report, or None if not found."""
+        row = await self._projector.get_perturbation_report(report_id)
+        if row is None or row["rhizome_id"] != rhizome_id:
+            return None
+        return self._perturbation_report_from_row(row)
+
+    async def remove_perturbation_report(
+        self, rhizome_id: str, report_id: str,
+    ) -> None:
+        """Remove a perturbation report. Emits PerturbationReportRemoved."""
+        row = await self._projector.get_perturbation_report(report_id)
+        if row is None or row["rhizome_id"] != rhizome_id:
+            raise PerturbationReportNotFoundError(report_id)
+
+        payload = PerturbationReportRemovedPayload(report_id=report_id)
+        event = EventEnvelope(
+            event_id=str(uuid4()),
+            rhizome_id=rhizome_id,
+            timestamp=datetime.now(UTC),
+            device_id="local",
+            event_type="PerturbationReportRemoved",
+            payload=payload.model_dump(),
+        )
+        await self._store.append(event)
+        await self._projector.project([event])
+
+    @staticmethod
+    def _perturbation_report_from_row(row: dict) -> PerturbationReportResponse:
+        """Convert a perturbation_reports table row to a response."""
+        import json as json_mod
+        raw_steps = row["steps"]
+        steps_data = json_mod.loads(raw_steps) if isinstance(raw_steps, str) else (raw_steps or [])
+        raw_div = row["divergence"]
+        div_data = json_mod.loads(raw_div) if isinstance(raw_div, str) else (raw_div or [])
+        return PerturbationReportResponse(
+            report_id=row["report_id"],
+            rhizome_id=row["rhizome_id"],
+            experiment_id=row["experiment_id"],
+            node_id=row["node_id"],
+            provider=row["provider"],
+            model=row["model"],
+            include_control=bool(row["include_control"]),
+            steps=[PerturbationStepResponse(**s) for s in steps_data],
+            divergence=[DivergenceMetrics(**d) for d in div_data],
+            created_at=row["created_at"],
+        )
+
     async def delete_digression_group(
         self, rhizome_id: str, group_id: str,
     ) -> None:
@@ -1622,6 +1685,12 @@ class SummaryNotFoundError(Exception):
     def __init__(self, summary_id: str) -> None:
         self.summary_id = summary_id
         super().__init__(f"Summary not found: {summary_id}")
+
+
+class PerturbationReportNotFoundError(Exception):
+    def __init__(self, report_id: str) -> None:
+        self.report_id = report_id
+        super().__init__(f"Perturbation report not found: {report_id}")
 
 
 class NonContiguousGroupError(Exception):

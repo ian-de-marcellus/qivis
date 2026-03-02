@@ -26,6 +26,8 @@ from qivis.models import (
     NodeUnanchoredPayload,
     NoteAddedPayload,
     NoteRemovedPayload,
+    PerturbationReportGeneratedPayload,
+    PerturbationReportRemovedPayload,
     RhizomeArchivedPayload,
     RhizomeCreatedPayload,
     RhizomeMetadataUpdatedPayload,
@@ -72,6 +74,8 @@ class StateProjector:
             "NoteRemoved": self._handle_note_removed,
             "SummaryGenerated": self._handle_summary_generated,
             "SummaryRemoved": self._handle_summary_removed,
+            "PerturbationReportGenerated": self._handle_perturbation_report_generated,
+            "PerturbationReportRemoved": self._handle_perturbation_report_removed,
         }
 
     async def project(self, events: list[EventEnvelope]) -> None:
@@ -521,3 +525,58 @@ class StateProjector:
                 else str(event.timestamp),
             ),
         )
+
+    # -- Perturbation reports --
+
+    async def _handle_perturbation_report_generated(self, event: EventEnvelope) -> None:
+        """Project a PerturbationReportGenerated event into perturbation_reports."""
+        payload = PerturbationReportGeneratedPayload.model_validate(event.payload)
+        timestamp = (
+            event.timestamp.isoformat()
+            if hasattr(event.timestamp, "isoformat")
+            else str(event.timestamp)
+        )
+        await self._db.execute(
+            """
+            INSERT OR REPLACE INTO perturbation_reports
+                (report_id, rhizome_id, experiment_id, node_id,
+                 provider, model, include_control, steps, divergence, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                payload.report_id,
+                event.rhizome_id,
+                payload.experiment_id,
+                payload.node_id,
+                payload.provider,
+                payload.model,
+                1 if payload.include_control else 0,
+                json.dumps(payload.steps),
+                json.dumps(payload.divergence),
+                timestamp,
+            ),
+        )
+
+    async def _handle_perturbation_report_removed(self, event: EventEnvelope) -> None:
+        """Project a PerturbationReportRemoved event: delete from perturbation_reports."""
+        payload = PerturbationReportRemovedPayload.model_validate(event.payload)
+        await self._db.execute(
+            "DELETE FROM perturbation_reports WHERE report_id = ?",
+            (payload.report_id,),
+        )
+
+    async def get_perturbation_reports(self, rhizome_id: str) -> list[dict]:
+        """Read all perturbation reports for a rhizome."""
+        rows = await self._db.fetchall(
+            "SELECT * FROM perturbation_reports WHERE rhizome_id = ? ORDER BY created_at DESC",
+            (rhizome_id,),
+        )
+        return [dict(row) for row in rows]
+
+    async def get_perturbation_report(self, report_id: str) -> dict | None:
+        """Read a single perturbation report by ID."""
+        row = await self._db.fetchone(
+            "SELECT * FROM perturbation_reports WHERE report_id = ?",
+            (report_id,),
+        )
+        return dict(row) if row else None

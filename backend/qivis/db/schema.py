@@ -268,6 +268,23 @@ _MIGRATIONS: list[tuple[str, str]] = [
     # Phase 9.1: Context intervention pipeline
     ("019_add_active_interventions",
      "ALTER TABLE nodes ADD COLUMN active_interventions TEXT"),
+    # Phase 9.2b: Perturbation experiment reports
+    ("020_create_perturbation_reports",
+     "CREATE TABLE IF NOT EXISTS perturbation_reports ("
+     "report_id TEXT PRIMARY KEY, "
+     "rhizome_id TEXT NOT NULL, "
+     "experiment_id TEXT NOT NULL, "
+     "node_id TEXT NOT NULL, "
+     "provider TEXT NOT NULL, "
+     "model TEXT NOT NULL, "
+     "include_control INTEGER NOT NULL DEFAULT 1, "
+     "steps TEXT NOT NULL, "
+     "divergence TEXT NOT NULL, "
+     "created_at TEXT NOT NULL"
+     ")"),
+    ("021_perturbation_reports_rhizome_id_index",
+     "CREATE INDEX IF NOT EXISTS idx_perturbation_reports_rhizome_id "
+     "ON perturbation_reports(rhizome_id)"),
 ]
 
 

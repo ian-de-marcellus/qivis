@@ -262,3 +262,57 @@
   font-size: var(--text-xs);
   font-style: italic;
 }
+
+/* ---- Perturbation reports ---- */
+
+.perturbation-report {
+  padding: var(--space-sm) var(--space-md);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.perturbation-step-card {
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+}
+
+.perturbation-step-content {
+  font-family: var(--font-body);
+  font-size: 0.7rem;
+  line-height: 1.4;
+  color: var(--text-secondary);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  transition: color 0.15s;
+}
+
+.perturbation-step-content:hover {
+  color: var(--text-primary);
+}
+
+/* ---- Divergence bars ---- */
+
+.divergence-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.divergence-bar-label {
+  font-family: var(--font-ui);
+  font-size: 0.6rem;
+  color: var(--text-tertiary);
+  min-width: 4rem;
+  text-align: right;
+}
+
+.divergence-bar-value {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.6rem;
+  color: var(--text-tertiary);
+  min-width: 2.5rem;
+  text-align: right;
+}

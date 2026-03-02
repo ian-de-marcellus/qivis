@@ -7,6 +7,8 @@ from collections.abc import AsyncIterator
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 
+from qivis.generation.perturbation import PerturbationService
+from qivis.generation.replay import InvalidReplayPathError, ReplayService
 from qivis.generation.service import (
     GenerationService,
     NodeNotFoundForGenerationError,
@@ -25,6 +27,8 @@ from qivis.rhizomes.schemas import (
     CreateNoteRequest,
     CreateSummaryRequest,
     CreateRhizomeRequest,
+    CrossModelGenerateRequest,
+    DivergenceMetrics,
     DigressionGroupResponse,
     EditHistoryResponse,
     ExcludeNodeRequest,
@@ -36,6 +40,11 @@ from qivis.rhizomes.schemas import (
     NoteResponse,
     PatchNodeContentRequest,
     PatchRhizomeRequest,
+    PerturbationConfig,
+    PerturbationReportResponse,
+    PerturbationRequest,
+    PerturbationStepResponse,
+    ReplayRequest,
     SummaryResponse,
     TaxonomyResponse,
     ToggleDigressionGroupRequest,
@@ -69,6 +78,16 @@ def get_rhizome_service() -> RhizomeService:
 def get_generation_service() -> GenerationService:
     """Dependency placeholder — replaced at app startup."""
     raise RuntimeError("GenerationService not initialized")
+
+
+def get_replay_service() -> ReplayService:
+    """Dependency placeholder — replaced at app startup."""
+    raise RuntimeError("ReplayService not initialized")
+
+
+def get_perturbation_service() -> PerturbationService:
+    """Dependency placeholder — replaced at app startup."""
+    raise RuntimeError("PerturbationService not initialized")
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
@@ -739,3 +758,374 @@ async def _stream_n_sse(
         logger.exception("Streaming generation error (n>1)")
         error = {"error": detail}
         yield f"event: error\ndata: {json_module.dumps(error)}\n\n"
+
+
+# -- Replay --
+
+
+@router.post(
+    "/{rhizome_id}/replay",
+    response_model=None,
+)
+async def replay(
+    rhizome_id: str,
+    request: ReplayRequest,
+    replay_service: ReplayService = Depends(get_replay_service),
+) -> list[NodeResponse] | StreamingResponse:
+    try:
+        provider = get_provider(request.provider)
+    except ProviderNotFoundError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    if request.stream:
+        return StreamingResponse(
+            _stream_replay_sse(
+                replay_service, rhizome_id, provider, request,
+            ),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
+    try:
+        return await replay_service.replay_path(
+            rhizome_id,
+            request.path_node_ids,
+            provider,
+            mode=request.mode,
+            model=request.model,
+            system_prompt=request.system_prompt,
+            sampling_params=request.sampling_params,
+        )
+    except InvalidReplayPathError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except RhizomeNotFoundForGenerationError:
+        raise HTTPException(
+            status_code=404, detail=f"Rhizome not found: {rhizome_id}",
+        )
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+async def _stream_replay_sse(
+    replay_service: ReplayService,
+    rhizome_id: str,
+    provider: LLMProvider,
+    request: ReplayRequest,
+) -> AsyncIterator[str]:
+    """SSE generator for streaming replay."""
+    try:
+        async for chunk in replay_service.replay_path_stream(
+            rhizome_id,
+            request.path_node_ids,
+            provider,
+            mode=request.mode,
+            model=request.model,
+            system_prompt=request.system_prompt,
+            sampling_params=request.sampling_params,
+        ):
+            if chunk.type == "replay_step":
+                yield (
+                    f"event: replay_step\n"
+                    f"data: {chunk.text}\n\n"
+                )
+            elif chunk.type == "replay_complete":
+                yield (
+                    f"event: replay_complete\n"
+                    f"data: {chunk.text}\n\n"
+                )
+            elif chunk.type == "message_stop":
+                data = {
+                    "type": "message_stop",
+                    "completion_index": chunk.completion_index,
+                }
+                if chunk.result:
+                    data.update({
+                        "content": chunk.result.content,
+                        "finish_reason": chunk.result.finish_reason,
+                        "node_id": (
+                            chunk.result.raw_response.get("node_id")
+                            if chunk.result.raw_response
+                            else None
+                        ),
+                    })
+                yield (
+                    f"event: message_stop\n"
+                    f"data: {json_module.dumps(data)}\n\n"
+                )
+            elif chunk.text:
+                data = {
+                    "type": "text_delta",
+                    "text": chunk.text,
+                    "completion_index": chunk.completion_index,
+                }
+                yield (
+                    f"event: text_delta\n"
+                    f"data: {json_module.dumps(data)}\n\n"
+                )
+    except InvalidReplayPathError as e:
+        error = {"error": str(e)}
+        yield f"event: error\ndata: {json_module.dumps(error)}\n\n"
+    except Exception as e:
+        detail = str(e) or f"{type(e).__name__} (no message)"
+        logger.exception("Streaming replay error")
+        error = {"error": detail}
+        yield f"event: error\ndata: {json_module.dumps(error)}\n\n"
+
+
+# -- Cross-model generation --
+
+
+@router.post(
+    "/{rhizome_id}/nodes/{node_id}/generate-cross",
+    response_model=None,
+)
+async def generate_cross(
+    rhizome_id: str,
+    node_id: str,
+    request: CrossModelGenerateRequest,
+    gen_service: GenerationService = Depends(get_generation_service),
+) -> list[NodeResponse] | StreamingResponse:
+    # Validate all providers exist up front
+    for target in request.targets:
+        try:
+            get_provider(target.provider)
+        except ProviderNotFoundError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+    targets = [{"provider": t.provider, "model": t.model} for t in request.targets]
+
+    if request.stream:
+        return StreamingResponse(
+            _stream_cross_sse(gen_service, rhizome_id, node_id, targets, request),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
+    try:
+        return await gen_service.generate_cross(
+            rhizome_id,
+            node_id,
+            targets,
+            system_prompt=request.system_prompt,
+            sampling_params=request.sampling_params,
+        )
+    except RhizomeNotFoundForGenerationError:
+        raise HTTPException(
+            status_code=404, detail=f"Rhizome not found: {rhizome_id}",
+        )
+    except NodeNotFoundForGenerationError:
+        raise HTTPException(
+            status_code=404, detail=f"Node not found: {node_id}",
+        )
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+async def _stream_cross_sse(
+    gen_service: GenerationService,
+    rhizome_id: str,
+    node_id: str,
+    targets: list[dict],
+    request: CrossModelGenerateRequest,
+) -> AsyncIterator[str]:
+    """SSE generator for cross-model streaming (reuses generate_n_stream SSE format)."""
+    try:
+        async for chunk in gen_service.generate_cross_stream(
+            rhizome_id,
+            node_id,
+            targets,
+            system_prompt=request.system_prompt,
+            sampling_params=request.sampling_params,
+        ):
+            if chunk.type == "generation_complete":
+                data = {"type": "generation_complete"}
+                yield (
+                    f"event: generation_complete\n"
+                    f"data: {json_module.dumps(data)}\n\n"
+                )
+            elif chunk.type == "error":
+                data = {
+                    "error": chunk.text,
+                    "completion_index": chunk.completion_index,
+                }
+                yield (
+                    f"event: error\n"
+                    f"data: {json_module.dumps(data)}\n\n"
+                )
+            elif chunk.is_final and chunk.result:
+                data = {
+                    "type": "message_stop",
+                    "completion_index": chunk.completion_index,
+                    "content": chunk.result.content,
+                    "finish_reason": chunk.result.finish_reason,
+                    "usage": chunk.result.usage,
+                    "latency_ms": chunk.result.latency_ms,
+                    "node_id": (
+                        chunk.result.raw_response.get("node_id")
+                        if chunk.result.raw_response
+                        else None
+                    ),
+                }
+                yield (
+                    f"event: message_stop\n"
+                    f"data: {json_module.dumps(data)}\n\n"
+                )
+            elif chunk.text:
+                data = {
+                    "type": "text_delta",
+                    "text": chunk.text,
+                    "completion_index": chunk.completion_index,
+                }
+                yield (
+                    f"event: text_delta\n"
+                    f"data: {json_module.dumps(data)}\n\n"
+                )
+    except RhizomeNotFoundForGenerationError:
+        error = {"error": f"Rhizome not found: {rhizome_id}"}
+        yield f"event: error\ndata: {json_module.dumps(error)}\n\n"
+    except NodeNotFoundForGenerationError:
+        error = {"error": f"Node not found: {node_id}"}
+        yield f"event: error\ndata: {json_module.dumps(error)}\n\n"
+    except Exception as e:
+        detail = str(e) or f"{type(e).__name__} (no message)"
+        logger.exception("Streaming cross-model error")
+        error = {"error": detail}
+        yield f"event: error\ndata: {json_module.dumps(error)}\n\n"
+
+
+# -- Perturbation experiments --
+
+
+@router.post(
+    "/{rhizome_id}/nodes/{node_id}/perturb",
+    response_model=None,
+)
+async def perturb(
+    rhizome_id: str,
+    node_id: str,
+    request: PerturbationRequest,
+    perturb_service: PerturbationService = Depends(get_perturbation_service),
+) -> PerturbationReportResponse | StreamingResponse:
+    try:
+        provider = get_provider(request.provider)
+    except ProviderNotFoundError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    if request.stream:
+        return StreamingResponse(
+            _stream_perturbation_sse(
+                perturb_service, rhizome_id, node_id, provider, request,
+            ),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
+    try:
+        return await perturb_service.run_experiment(
+            rhizome_id,
+            node_id,
+            request.perturbations,
+            provider,
+            model=request.model,
+            sampling_params=request.sampling_params,
+            include_control=request.include_control,
+        )
+    except RhizomeNotFoundForGenerationError:
+        raise HTTPException(
+            status_code=404, detail=f"Rhizome not found: {rhizome_id}",
+        )
+    except NodeNotFoundForGenerationError:
+        raise HTTPException(
+            status_code=404, detail=f"Node not found: {node_id}",
+        )
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+async def _stream_perturbation_sse(
+    perturb_service: PerturbationService,
+    rhizome_id: str,
+    node_id: str,
+    provider: LLMProvider,
+    request: PerturbationRequest,
+) -> AsyncIterator[str]:
+    """SSE generator for streaming perturbation experiments."""
+    try:
+        async for chunk in perturb_service.run_experiment_stream(
+            rhizome_id,
+            node_id,
+            request.perturbations,
+            provider,
+            model=request.model,
+            sampling_params=request.sampling_params,
+            include_control=request.include_control,
+        ):
+            if chunk.type == "perturbation_step":
+                yield (
+                    f"event: perturbation_step\n"
+                    f"data: {chunk.text}\n\n"
+                )
+            elif chunk.type == "perturbation_complete":
+                yield (
+                    f"event: perturbation_complete\n"
+                    f"data: {chunk.text}\n\n"
+                )
+            elif chunk.type == "message_stop":
+                yield (
+                    f"event: message_stop\n"
+                    f"data: {chunk.text}\n\n"
+                )
+            elif chunk.type == "text_delta" and chunk.text:
+                data = {
+                    "type": "text_delta",
+                    "text": chunk.text,
+                    "step_index": chunk.completion_index,
+                }
+                yield (
+                    f"event: text_delta\n"
+                    f"data: {json_module.dumps(data)}\n\n"
+                )
+    except RhizomeNotFoundForGenerationError:
+        error = {"error": f"Rhizome not found: {rhizome_id}"}
+        yield f"event: error\ndata: {json_module.dumps(error)}\n\n"
+    except NodeNotFoundForGenerationError:
+        error = {"error": f"Node not found: {node_id}"}
+        yield f"event: error\ndata: {json_module.dumps(error)}\n\n"
+    except Exception as e:
+        detail = str(e) or f"{type(e).__name__} (no message)"
+        logger.exception("Streaming perturbation error")
+        error = {"error": detail}
+        yield f"event: error\ndata: {json_module.dumps(error)}\n\n"
+
+
+# -- Perturbation report CRUD --
+
+
+@router.get("/{rhizome_id}/perturbation-reports")
+async def list_perturbation_reports(
+    rhizome_id: str,
+    service: RhizomeService = Depends(get_rhizome_service),
+) -> list[PerturbationReportResponse]:
+    return await service.list_perturbation_reports(rhizome_id)
+
+
+@router.get("/{rhizome_id}/perturbation-reports/{report_id}")
+async def get_perturbation_report(
+    rhizome_id: str,
+    report_id: str,
+    service: RhizomeService = Depends(get_rhizome_service),
+) -> PerturbationReportResponse:
+    report = await service.get_perturbation_report(rhizome_id, report_id)
+    if report is None:
+        raise HTTPException(status_code=404, detail=f"Report not found: {report_id}")
+    return report
+
+
+@router.delete("/{rhizome_id}/perturbation-reports/{report_id}")
+async def delete_perturbation_report(
+    rhizome_id: str,
+    report_id: str,
+    service: RhizomeService = Depends(get_rhizome_service),
+):
+    await service.remove_perturbation_report(rhizome_id, report_id)
+    return {"status": "ok"}

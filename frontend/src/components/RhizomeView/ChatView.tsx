@@ -4,6 +4,8 @@ import { ComparisonView } from '../ComparisonView/ComparisonView.tsx'
 import { ComparisonPickerBanner } from './ComparisonPickerBanner.tsx'
 import { ContextModal } from './ContextModal.tsx'
 import { ContextSplitView } from './ContextSplitView.tsx'
+import { CrossModelPanel } from './CrossModelPanel.tsx'
+import { PerturbationPanel } from './PerturbationPanel.tsx'
 import { reconstructContext } from './contextReconstruction.ts'
 import {
   computeDiffSummary,
@@ -17,6 +19,7 @@ import { DigressionCreator } from './DigressionPanel.tsx'
 import { ForkPanel } from './ForkPanel.tsx'
 import { GenerationErrorPanel } from './GenerationErrorPanel.tsx'
 import { MessageRow } from './MessageRow.tsx'
+import { ReplayPanel } from './ReplayPanel.tsx'
 import { StreamingDisplay } from './StreamingDisplay.tsx'
 import { SummarizePanel } from './SummarizePanel.tsx'
 import { useActivePath, useAutoScroll, useScrollToNode, useBranchDefaults, useForkPanel } from './useViewShared.ts'
@@ -62,6 +65,9 @@ export function ChatView() {
   const bottomRef = useRef<HTMLDivElement>(null)
   const [comparingAtParent, setComparingAtParent] = useState<string | null>(null)
   const [summarizeTargetId, setSummarizeTargetId] = useState<string | null>(null)
+  const [replayFromNodeId, setReplayFromNodeId] = useState<string | null>(null)
+  const [crossModelNodeId, setCrossModelNodeId] = useState<string | null>(null)
+  const [experimentNodeId, setExperimentNodeId] = useState<string | null>(null)
 
   // Shared hooks
   const { nodes, path, childMap, leafNodeId } = useActivePath()
@@ -310,6 +316,15 @@ export function ChatView() {
                   onSummarize: isPicking ? undefined : () => setSummarizeTargetId(
                     summarizeTargetId === node.node_id ? null : node.node_id
                   ),
+                  onReplay: isPicking ? undefined : () => setReplayFromNodeId(
+                    replayFromNodeId === node.node_id ? null : node.node_id
+                  ),
+                  onCrossModel: isPicking ? undefined : () => setCrossModelNodeId(
+                    crossModelNodeId === node.node_id ? null : node.node_id
+                  ),
+                  onExperiment: isPicking ? undefined : () => setExperimentNodeId(
+                    experimentNodeId === node.node_id ? null : node.node_id
+                  ),
                 }}
                 isExcludedOnPath={effectiveExcludedIds.has(node.node_id)}
                 groupSelectable={!isPicking && groupSelectionMode}
@@ -352,6 +367,44 @@ export function ChatView() {
                 <SummarizePanel
                   nodeId={node.node_id}
                   onClose={() => setSummarizeTargetId(null)}
+                />
+              )}
+              {!isPicking && replayFromNodeId === node.node_id && (() => {
+                // Compute path from this node to the active leaf
+                const nodeIdx = path.findIndex(n => n.node_id === node.node_id)
+                if (nodeIdx === -1) return null
+                const replayPath = path.slice(nodeIdx)
+                const replayNodeIds = replayPath.map(n => n.node_id)
+                const desc = `From "${(node.content || '').slice(0, 40)}${node.content.length > 40 ? '...' : ''}"`
+                return (
+                  <ReplayPanel
+                    pathNodeIds={replayNodeIds}
+                    pathDescription={desc}
+                    onCancel={() => setReplayFromNodeId(null)}
+                    providers={providers}
+                    defaults={branchDefaults}
+                  />
+                )
+              })()}
+              {!isPicking && crossModelNodeId === node.node_id && (
+                <CrossModelPanel
+                  nodeId={node.node_id}
+                  onCancel={() => setCrossModelNodeId(null)}
+                  isGenerating={isGenerating}
+                  providers={providers}
+                  defaults={{
+                    provider: branchDefaults.provider,
+                    model: branchDefaults.model,
+                  }}
+                />
+              )}
+              {!isPicking && experimentNodeId === node.node_id && (
+                <PerturbationPanel
+                  nodeId={node.node_id}
+                  onCancel={() => setExperimentNodeId(null)}
+                  providers={providers}
+                  digressionGroups={digressionGroups}
+                  defaults={branchDefaults}
                 />
               )}
             </Fragment>

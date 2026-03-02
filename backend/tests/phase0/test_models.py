@@ -222,6 +222,7 @@ class TestEventTypesRegistry:
             "DigressionGroupCreated", "DigressionGroupToggled",
             "SummaryGenerated", "SummaryRemoved",
             "GarbageCollected", "GarbagePurged",
+            "PerturbationReportGenerated", "PerturbationReportRemoved",
         }
         assert set(EVENT_TYPES.keys()) == expected_types
 

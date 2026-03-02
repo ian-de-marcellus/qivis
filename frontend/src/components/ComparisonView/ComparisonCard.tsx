@@ -1,6 +1,7 @@
-import type { NodeResponse, SamplingParams } from '../../api/types.ts'
+import { useState } from 'react'
+import type { LogprobData, NodeResponse, SamplingParams, TokenLogprob } from '../../api/types.ts'
 import { useRhizomeStore } from '../../store/rhizomeStore.ts'
-import { averageCertainty, uncertaintyColor } from '../RhizomeView/LogprobOverlay.tsx'
+import { LogprobOverlay, averageCertainty, uncertaintyColor } from '../RhizomeView/LogprobOverlay.tsx'
 import { ThinkingSection } from '../RhizomeView/ThinkingSection.tsx'
 import type { DiffSegment } from './wordDiff.ts'
 
@@ -24,6 +25,49 @@ function formatSamplingMeta(sp: SamplingParams | null | undefined): string[] {
   return parts
 }
 
+const HISTOGRAM_BINS = 10
+
+function buildHistogram(logprobs: LogprobData): number[] {
+  const bins = new Array(HISTOGRAM_BINS).fill(0)
+  for (const token of logprobs.tokens) {
+    const bin = Math.min(Math.floor(token.linear_prob * HISTOGRAM_BINS), HISTOGRAM_BINS - 1)
+    bins[bin]++
+  }
+  return bins
+}
+
+function findMinCertaintyToken(logprobs: LogprobData): TokenLogprob | null {
+  if (logprobs.tokens.length === 0) return null
+  let min = logprobs.tokens[0]
+  for (const t of logprobs.tokens) {
+    if (t.linear_prob < min.linear_prob) min = t
+  }
+  return min
+}
+
+function CertaintyHistogram({ logprobs }: { logprobs: LogprobData }) {
+  const bins = buildHistogram(logprobs)
+  const max = Math.max(...bins, 1)
+
+  return (
+    <div className="certainty-histogram" title="Token probability distribution (0-100%)">
+      {bins.map((count, i) => (
+        <div
+          key={i}
+          className="certainty-histogram-bar"
+          style={{
+            height: `${(count / max) * 100}%`,
+            backgroundColor: uncertaintyColor(i / HISTOGRAM_BINS) === 'transparent'
+              ? 'var(--accent)'
+              : uncertaintyColor(i / HISTOGRAM_BINS),
+            opacity: count === 0 ? 0.15 : 1,
+          }}
+        />
+      ))}
+    </div>
+  )
+}
+
 function DiffContent({ segments }: { segments: DiffSegment[] }) {
   return (
     <>
@@ -38,8 +82,10 @@ function DiffContent({ segments }: { segments: DiffSegment[] }) {
 
 export function ComparisonCard({ node, isSelected, diffSegments, onSelect }: ComparisonCardProps) {
   const setComparisonHoveredNodeId = useRhizomeStore((s) => s.setComparisonHoveredNodeId)
+  const [showLogprobs, setShowLogprobs] = useState(false)
   const logprobs = node.logprobs
   const avgCertainty = logprobs ? averageCertainty(logprobs) : null
+  const minToken = logprobs ? findMinCertaintyToken(logprobs) : null
 
   const roleLabel = node.role === 'researcher_note'
     ? 'Note'
@@ -65,12 +111,58 @@ export function ComparisonCard({ node, isSelected, diffSegments, onSelect }: Com
       )}
 
       <div className="comparison-card-content">
-        {diffSegments ? (
+        {showLogprobs && logprobs ? (
+          <LogprobOverlay logprobs={logprobs} />
+        ) : diffSegments ? (
           <DiffContent segments={diffSegments} />
         ) : (
           node.content
         )}
       </div>
+
+      {logprobs && (
+        <div className="comparison-card-certainty">
+          <CertaintyHistogram logprobs={logprobs} />
+          <div className="comparison-card-certainty-stats">
+            {avgCertainty != null && (
+              <span
+                className="comparison-certainty"
+                style={{
+                  color: uncertaintyColor(avgCertainty) === 'transparent'
+                    ? 'var(--ctx-green)'
+                    : uncertaintyColor(avgCertainty),
+                }}
+              >
+                avg {(avgCertainty * 100).toFixed(0)}%
+              </span>
+            )}
+            {minToken && (
+              <span className="comparison-min-token" title={`Least confident: "${minToken.token}"`}>
+                min{' '}
+                <span style={{
+                  color: uncertaintyColor(minToken.linear_prob) === 'transparent'
+                    ? 'var(--ctx-green)'
+                    : uncertaintyColor(minToken.linear_prob),
+                  fontWeight: 600,
+                }}>
+                  {(minToken.linear_prob * 100).toFixed(0)}%
+                </span>
+                {' '}
+                <span className="comparison-min-token-preview">
+                  {JSON.stringify(minToken.token)}
+                </span>
+              </span>
+            )}
+            <button
+              className={`comparison-logprob-toggle${showLogprobs ? ' active' : ''}`}
+              onClick={(e) => { e.stopPropagation(); setShowLogprobs(!showLogprobs) }}
+              title={showLogprobs ? 'Hide token confidence' : 'Show token confidence'}
+            >
+              {showLogprobs ? 'hide overlay' : 'show overlay'}
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="comparison-card-meta">
         {node.latency_ms != null && (
@@ -82,7 +174,7 @@ export function ComparisonCard({ node, isSelected, diffSegments, onSelect }: Com
             {node.usage.input_tokens.toLocaleString()}+{node.usage.output_tokens.toLocaleString()} tok
           </span>
         )}
-        {avgCertainty != null && (
+        {!logprobs && avgCertainty != null && (
           <span>
             {(node.latency_ms != null || node.usage) && ' \u00b7 '}
             <span
