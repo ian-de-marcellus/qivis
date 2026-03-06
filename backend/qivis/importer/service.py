@@ -13,6 +13,7 @@ from qivis.importer.parsers.chatgpt import parse_chatgpt
 from qivis.importer.parsers.claude import parse_claude
 from qivis.importer.parsers.detection import ImportFormatError, detect_format
 from qivis.importer.parsers.linear import parse_linear
+from qivis.importer.parsers.openrouter import parse_openrouter
 from qivis.importer.schemas import (
     ConversationPreview,
     ImportPreviewResponse,
@@ -128,6 +129,8 @@ class ImportService:
             return parse_chatgpt(data)
         if fmt == "claude":
             return parse_claude(data)
+        if fmt == "openrouter":
+            return parse_openrouter(data)
         if fmt == "linear":
             if not isinstance(data, list):
                 raise ImportFormatError("Linear format requires a JSON array")

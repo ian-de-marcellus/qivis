@@ -129,6 +129,140 @@ GENERIC_LINEAR_DATA = [
 _CLAUDE_ROOT_SENTINEL = "00000000-0000-4000-8000-000000000000"
 
 
+# ---------------------------------------------------------------------------
+# OpenRouter fixture data
+# ---------------------------------------------------------------------------
+
+def make_openrouter_conversation(
+    *,
+    title: str = "Test OpenRouter Chat",
+    model_slug: str = "anthropic/claude-opus-4.6",
+    messages: list[dict] | None = None,
+    items: dict | None = None,
+) -> dict:
+    """Build a complete OpenRouter export (orpg.3.0 format)."""
+    char_id = "char-test-abc"
+
+    if messages is None:
+        messages = {
+            "msg-u1": {
+                "id": "msg-u1",
+                "context": "main-chat",
+                "contentType": "text",
+                "characterId": "USER",
+                "type": "user",
+                "createdAt": "2026-03-03T03:00:00.000Z",
+                "updatedAt": "2026-03-03T03:00:00.000Z",
+                "isEdited": False,
+                "items": [{"id": "item-u1", "type": "message"}],
+            },
+            "msg-a1": {
+                "id": "msg-a1",
+                "parentMessageId": "msg-u1",
+                "context": "main-chat",
+                "contentType": "text",
+                "characterId": char_id,
+                "type": "assistant",
+                "createdAt": "2026-03-03T03:00:01.000Z",
+                "updatedAt": "2026-03-03T03:00:30.000Z",
+                "isEdited": False,
+                "metadata": {
+                    "tokensCount": 100,
+                    "cost": "0.05",
+                    "generationId": "gen-test-1",
+                },
+                "items": [{"id": "item-a1", "type": "message"}],
+            },
+            "msg-u2": {
+                "id": "msg-u2",
+                "context": "main-chat",
+                "contentType": "text",
+                "characterId": "USER",
+                "type": "user",
+                "createdAt": "2026-03-03T03:01:00.000Z",
+                "updatedAt": "2026-03-03T03:01:00.000Z",
+                "isEdited": False,
+                "items": [{"id": "item-u2", "type": "message"}],
+            },
+            "msg-a2": {
+                "id": "msg-a2",
+                "parentMessageId": "msg-u2",
+                "context": "main-chat",
+                "contentType": "text",
+                "characterId": char_id,
+                "type": "assistant",
+                "createdAt": "2026-03-03T03:01:01.000Z",
+                "updatedAt": "2026-03-03T03:01:30.000Z",
+                "isEdited": False,
+                "metadata": {"tokensCount": 80},
+                "items": [{"id": "item-a2", "type": "message"}],
+            },
+        }
+
+    if items is None:
+        items = {
+            "item-u1": {
+                "id": "item-u1",
+                "messageId": "msg-u1",
+                "data": {
+                    "type": "message",
+                    "role": "user",
+                    "content": [{"type": "input_text", "text": "What is Python?"}],
+                },
+            },
+            "item-a1": {
+                "id": "item-a1",
+                "messageId": "msg-a1",
+                "data": {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": "Python is a programming language."}],
+                },
+            },
+            "item-u2": {
+                "id": "item-u2",
+                "messageId": "msg-u2",
+                "data": {
+                    "type": "message",
+                    "role": "user",
+                    "content": [{"type": "input_text", "text": "Tell me more."}],
+                },
+            },
+            "item-a2": {
+                "id": "item-a2",
+                "messageId": "msg-a2",
+                "data": {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": "It was created by Guido van Rossum."}],
+                },
+            },
+        }
+
+    return {
+        "version": "orpg.3.0",
+        "title": title,
+        "characters": {
+            char_id: {
+                "id": char_id,
+                "model": model_slug,
+                "modelInfo": {
+                    "slug": model_slug,
+                    "short_name": "Claude Opus 4.6",
+                },
+                "description": "",
+                "samplingParameters": {},
+            },
+        },
+        "messages": messages,
+        "items": items,
+        "artifacts": {},
+        "artifactFiles": {},
+        "artifactVersions": {},
+        "artifactFileContents": {},
+    }
+
+
 def _claude_message(
     uuid: str,
     sender: str,
@@ -521,6 +655,108 @@ class TestClaudeParser:
         assert any("Skipped empty" in w for w in tree.warnings)
 
 
+class TestOpenRouterParser:
+    """OpenRouter conversation export parser (orpg.3.0)."""
+
+    def test_openrouter_linear_conversation(self):
+        """Basic linear conversation produces correct chain."""
+        from qivis.importer.parsers.openrouter import parse_openrouter
+
+        conv = make_openrouter_conversation()
+        trees = parse_openrouter(conv)
+        assert len(trees) == 1
+        tree = trees[0]
+        assert tree.title == "Test OpenRouter Chat"
+        assert tree.source_format == "openrouter"
+        assert len(tree.nodes) == 4
+        roles = [n.role for n in tree.nodes]
+        assert roles == ["user", "assistant", "user", "assistant"]
+
+    def test_openrouter_chain_reconstructed(self):
+        """User messages chain to previous assistant (not orphaned)."""
+        from qivis.importer.parsers.openrouter import parse_openrouter
+
+        tree = parse_openrouter(make_openrouter_conversation())[0]
+        by_id = {n.temp_id: n for n in tree.nodes}
+        # First user is root
+        assert by_id["msg-u1"].parent_temp_id is None
+        # First assistant chains to first user
+        assert by_id["msg-a1"].parent_temp_id == "msg-u1"
+        # Second user chains to first assistant
+        assert by_id["msg-u2"].parent_temp_id == "msg-a1"
+        # Second assistant chains to second user
+        assert by_id["msg-a2"].parent_temp_id == "msg-u2"
+
+    def test_openrouter_model_in_metadata_not_defaults(self):
+        """OpenRouter model slugs stored in metadata, not as defaults.
+
+        OpenRouter slugs (e.g. 'claude-opus-4.6') don't match provider API
+        model IDs (e.g. 'claude-opus-4-6'), so they shouldn't be used as
+        defaults for future generations.
+        """
+        from qivis.importer.parsers.openrouter import parse_openrouter
+
+        tree = parse_openrouter(make_openrouter_conversation())[0]
+        # Tree defaults are unset
+        assert tree.default_model is None
+        assert tree.default_provider is None
+        # Node model/provider fields are unset
+        for node in tree.nodes:
+            assert node.model is None
+            assert node.provider is None
+        # But assistant nodes have OpenRouter info in metadata
+        assert tree.nodes[1].metadata["openrouter_model"] == "claude-opus-4.6"
+        assert tree.nodes[1].metadata["openrouter_provider"] == "anthropic"
+        # User nodes don't have it
+        assert "openrouter_model" not in tree.nodes[0].metadata
+
+    def test_openrouter_timestamps_parsed(self):
+        """ISO timestamps converted to Unix epoch."""
+        from qivis.importer.parsers.openrouter import parse_openrouter
+
+        tree = parse_openrouter(make_openrouter_conversation())[0]
+        assert tree.created_at is not None
+        for node in tree.nodes:
+            assert node.timestamp is not None
+            assert isinstance(node.timestamp, float)
+
+    def test_openrouter_metadata_preserved(self):
+        """Token counts, cost, and model info from assistant metadata preserved."""
+        from qivis.importer.parsers.openrouter import parse_openrouter
+
+        tree = parse_openrouter(make_openrouter_conversation())[0]
+        # First assistant has full metadata
+        a1 = tree.nodes[1]
+        assert a1.metadata["tokens_count"] == 100
+        assert a1.metadata["cost"] == "0.05"
+        assert a1.metadata["generation_id"] == "gen-test-1"
+        assert a1.metadata["openrouter_model"] == "claude-opus-4.6"
+
+    def test_openrouter_image_and_file_skipped_with_warnings(self):
+        """Image and file attachments produce warnings, text still extracted."""
+        from qivis.importer.parsers.openrouter import parse_openrouter
+
+        conv = make_openrouter_conversation()
+        # Add image and file blocks to first user item
+        conv["items"]["item-u1"]["data"]["content"] = [
+            {"type": "input_text", "text": "Look at this:"},
+            {"type": "input_image", "detail": "auto", "image_url": "data:image/png;base64,abc"},
+            {"type": "input_file", "filename": "report.pdf", "file_data": "data:..."},
+        ]
+        tree = parse_openrouter(conv)[0]
+        assert tree.nodes[0].content == "Look at this:"
+        assert any("Skipped image" in w for w in tree.warnings)
+        assert any("report.pdf" in w for w in tree.warnings)
+
+    def test_openrouter_single_root(self):
+        """Only first user message is a root."""
+        from qivis.importer.parsers.openrouter import parse_openrouter
+
+        tree = parse_openrouter(make_openrouter_conversation())[0]
+        assert len(tree.root_temp_ids) == 1
+        assert tree.root_temp_ids[0] == "msg-u1"
+
+
 class TestFormatDetection:
     """Auto-detection of import format from data shape."""
 
@@ -538,6 +774,9 @@ class TestFormatDetection:
 
         # Array of Claude.ai conversations
         assert detect_format([make_claude_conversation()]) == "claude"
+
+        # OpenRouter conversation
+        assert detect_format(make_openrouter_conversation()) == "openrouter"
 
         # ShareGPT format
         assert detect_format(SHAREGPT_DATA) == "linear"
@@ -664,6 +903,24 @@ class TestImportService:
         )
         assert len(results) == 1
         assert results[0].title == "Second"
+
+    async def test_import_openrouter_conversation(self, import_service, projector):
+        """OpenRouter import creates correct chain with model info."""
+        data = json.dumps(make_openrouter_conversation()).encode()
+        results = await import_service.import_rhizomes(data, "test.json")
+        assert len(results) == 1
+        result = results[0]
+        assert result.node_count == 4
+        assert result.title == "Test OpenRouter Chat"
+
+        nodes = await projector.get_nodes(result.rhizome_id)
+        assert len(nodes) == 4
+        # Verify linear chain
+        assert nodes[0]["parent_id"] is None
+        for i in range(1, len(nodes)):
+            assert nodes[i]["parent_id"] == nodes[i - 1]["node_id"]
+        # Verify roles
+        assert [n["role"] for n in nodes] == ["user", "assistant", "user", "assistant"]
 
     async def test_import_with_branches(self, import_service, projector):
         """ChatGPT branching creates correct sibling structure."""

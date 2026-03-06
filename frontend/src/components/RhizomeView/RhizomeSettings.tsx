@@ -181,8 +181,11 @@ export function RhizomeSettings() {
     if (title !== (currentRhizome.title ?? '')) req.title = title || null
     if (provider !== (currentRhizome.default_provider ?? ''))
       req.default_provider = provider || null
-    if (model !== (currentRhizome.default_model ?? ''))
-      req.default_model = model || null
+    // When model is blank but a provider is selected, use the provider's
+    // first suggested model so the placeholder value becomes the actual default
+    const effectiveModel = model || (provider ? suggestedModels[0] : undefined)
+    if ((effectiveModel ?? '') !== (currentRhizome.default_model ?? ''))
+      req.default_model = effectiveModel || null
     if (systemPrompt !== (currentRhizome.default_system_prompt ?? ''))
       req.default_system_prompt = systemPrompt || null
 

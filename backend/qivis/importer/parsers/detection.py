@@ -10,10 +10,14 @@ class ImportFormatError(Exception):
 def detect_format(data: Any) -> str:
     """Detect import format from parsed JSON structure.
 
-    Returns "chatgpt", "claude", or "linear".
+    Returns "chatgpt", "claude", "openrouter", or "linear".
     Raises ImportFormatError for unrecognized structures.
     """
     if isinstance(data, dict):
+        # OpenRouter: version starts with "orpg"
+        version = data.get("version", "")
+        if isinstance(version, str) and version.startswith("orpg"):
+            return "openrouter"
         if "mapping" in data:
             return "chatgpt"
         if "chat_messages" in data:
