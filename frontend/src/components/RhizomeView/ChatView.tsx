@@ -6,6 +6,7 @@ import { ContextModal } from './ContextModal.tsx'
 import { ContextSplitView } from './ContextSplitView.tsx'
 import { CrossModelPanel } from './CrossModelPanel.tsx'
 import { PerturbationPanel } from './PerturbationPanel.tsx'
+import { WriteResponsePanel } from './WriteResponsePanel.tsx'
 import { reconstructContext } from './contextReconstruction.ts'
 import {
   computeDiffSummary,
@@ -61,6 +62,7 @@ export function ChatView() {
   const enterComparisonPicking = useRhizomeStore(s => s.enterComparisonPicking)
   const pickComparisonTarget = useRhizomeStore(s => s.pickComparisonTarget)
   const cancelComparisonPicking = useRhizomeStore(s => s.cancelComparisonPicking)
+  const prefillAssistant = useRhizomeStore(s => s.prefillAssistant)
 
   const bottomRef = useRef<HTMLDivElement>(null)
   const [comparingAtParent, setComparingAtParent] = useState<string | null>(null)
@@ -68,6 +70,7 @@ export function ChatView() {
   const [replayFromNodeId, setReplayFromNodeId] = useState<string | null>(null)
   const [crossModelNodeId, setCrossModelNodeId] = useState<string | null>(null)
   const [experimentNodeId, setExperimentNodeId] = useState<string | null>(null)
+  const [writeResponseNodeId, setWriteResponseNodeId] = useState<string | null>(null)
 
   // Shared hooks
   const { nodes, path, childMap, leafNodeId } = useActivePath()
@@ -325,6 +328,9 @@ export function ChatView() {
                   onExperiment: isPicking ? undefined : () => setExperimentNodeId(
                     experimentNodeId === node.node_id ? null : node.node_id
                   ),
+                  onWriteResponse: isPicking ? undefined : node.role === 'user' ? () => setWriteResponseNodeId(
+                    writeResponseNodeId === node.node_id ? null : node.node_id
+                  ) : undefined,
                 }}
                 isExcludedOnPath={effectiveExcludedIds.has(node.node_id)}
                 groupSelectable={!isPicking && groupSelectionMode}
@@ -405,6 +411,15 @@ export function ChatView() {
                   providers={providers}
                   digressionGroups={digressionGroups}
                   defaults={branchDefaults}
+                />
+              )}
+              {!isPicking && writeResponseNodeId === node.node_id && (
+                <WriteResponsePanel
+                  onSubmit={(content) => {
+                    prefillAssistant(node.node_id, content)
+                    setWriteResponseNodeId(null)
+                  }}
+                  onCancel={() => setWriteResponseNodeId(null)}
                 />
               )}
             </Fragment>

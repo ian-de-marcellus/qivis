@@ -54,6 +54,7 @@ interface RhizomeStore {
   streamingTotal: number
   activeStreamIndex: number
   regeneratingParentId: string | null
+  streamingParentId: string | null
   systemPromptOverride: string | null
   error: string | null
   generationError: GenerationError | null
@@ -260,6 +261,7 @@ const STREAMING_RESET = {
   isGenerating: false,
   streamingContent: '',
   streamingThinkingContent: '',
+  streamingParentId: null,
   _abortController: null,
 } as const
 
@@ -353,6 +355,7 @@ export const useRhizomeStore = create<RhizomeStore>((set, get) => ({
   streamingTotal: 0,
   activeStreamIndex: 0,
   regeneratingParentId: null,
+  streamingParentId: null,
   systemPromptOverride: null,
   error: null,
   generationError: null,
@@ -390,16 +393,62 @@ export const useRhizomeStore = create<RhizomeStore>((set, get) => ({
   perturbationReports: [],
 
   stopGeneration: () => {
-    const { _abortController } = get()
+    const {
+      _abortController,
+      streamingContent,
+      streamingParentId,
+      streamingContents,
+      streamingNodeIds,
+      streamingTotal,
+      currentRhizome,
+    } = get()
+
     if (_abortController) {
       _abortController.abort()
-      set({ _abortController: null })
     }
-    // Streaming reset + rhizome refresh happen in the abort error handler
-    // of each generation method, but force reset here as a safety net
-    set({ ...STREAMING_RESET, regeneratingParentId: null })
-    const { currentRhizome } = get()
-    if (currentRhizome) refreshRhizome(currentRhizome.rhizome_id, set)
+
+    // Clear all streaming state
+    set({ ...MULTI_STREAMING_RESET, regeneratingParentId: null })
+
+    const rhizomeId = currentRhizome?.rhizome_id
+    if (!rhizomeId || !streamingParentId) {
+      if (rhizomeId) refreshRhizome(rhizomeId, set)
+      return
+    }
+
+    // Collect partial content to save
+    const partials: string[] = []
+
+    if (streamingTotal > 0) {
+      // Multi-stream: save uncompleted streams
+      for (const [idxStr, content] of Object.entries(streamingContents)) {
+        const idx = Number(idxStr)
+        if (streamingNodeIds[idx]) continue // Already completed server-side
+        if (content.trim()) partials.push(content)
+      }
+    } else if (streamingContent.trim()) {
+      // Single stream
+      partials.push(streamingContent)
+    }
+
+    if (partials.length === 0) {
+      refreshRhizome(rhizomeId, set)
+      return
+    }
+
+    // Save partial content as assistant nodes, then refresh
+    Promise.allSettled(
+      partials.map((content) =>
+        api.createNode(rhizomeId, {
+          content,
+          role: 'assistant',
+          parent_id: streamingParentId,
+          mode: 'chat',
+        }),
+      ),
+    ).then(() => {
+      refreshRhizome(rhizomeId, set)
+    })
   },
 
   fetchRhizomes: async (includeArchived?: boolean) => {
@@ -573,7 +622,7 @@ export const useRhizomeStore = create<RhizomeStore>((set, get) => ({
       }))
 
       const ac = new AbortController()
-      set({ ...STREAMING_RESET, isGenerating: true, _abortController: ac })
+      set({ ...STREAMING_RESET, isGenerating: true, _abortController: ac, streamingParentId: userNode.node_id })
 
       // Branch-local defaults: prefer last assistant's provider/model over rhizome defaults
       const lastAssistant = [...activePath].reverse().find((n) => n.role === 'assistant')
@@ -794,7 +843,7 @@ export const useRhizomeStore = create<RhizomeStore>((set, get) => ({
       const ac = new AbortController()
 
       if (shouldStream && n > 1) {
-        set({ ...MULTI_STREAMING_RESET, isGenerating: true, streamingTotal: n, _abortController: ac })
+        set({ ...MULTI_STREAMING_RESET, isGenerating: true, streamingTotal: n, _abortController: ac, streamingParentId: userNode.node_id })
         await api.generateMultiStream(
           rhizomeId,
           userNode.node_id,
@@ -845,7 +894,7 @@ export const useRhizomeStore = create<RhizomeStore>((set, get) => ({
           ac.signal,
         )
       } else if (shouldStream) {
-        set({ ...STREAMING_RESET, isGenerating: true, _abortController: ac })
+        set({ ...STREAMING_RESET, isGenerating: true, _abortController: ac, streamingParentId: userNode.node_id })
         await api.generateStream(
           rhizomeId,
           userNode.node_id,
@@ -913,6 +962,7 @@ export const useRhizomeStore = create<RhizomeStore>((set, get) => ({
       ...STREAMING_RESET, isGenerating: true,
       _abortController: ac,
       regeneratingParentId: parentNodeId,
+      streamingParentId: parentNodeId,
     })
 
     const n = overrides.n ?? 1
@@ -1068,7 +1118,7 @@ export const useRhizomeStore = create<RhizomeStore>((set, get) => ({
     try {
       if (shouldStream) {
         // Initialize streaming content with the prefill text so it appears immediately
-        set({ ...STREAMING_RESET, isGenerating: true, streamingContent: prefillContent, _abortController: ac })
+        set({ ...STREAMING_RESET, isGenerating: true, streamingContent: prefillContent, _abortController: ac, streamingParentId: parentId })
         await api.generateStream(
           rhizomeId,
           parentId,
@@ -1696,6 +1746,7 @@ export const useRhizomeStore = create<RhizomeStore>((set, get) => ({
       streamingTotal: targets.length,
       _abortController: ac,
       regeneratingParentId: nodeId,
+      streamingParentId: nodeId,
     })
 
     try {
