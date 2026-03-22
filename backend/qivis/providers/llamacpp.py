@@ -205,6 +205,7 @@ class LlamaCppProvider(LLMProvider):
         body["stream"] = True
 
         accumulated_text = ""
+        accumulated_probs: list[dict] = []
         is_llama3 = bool(
             request.prompt_text and "<|begin_of_text|>" in request.prompt_text
         )
@@ -218,11 +219,49 @@ class LlamaCppProvider(LLMProvider):
                     continue
                 data = json.loads(line[6:])
 
+                # llama.cpp build 8460+ may emit an error event when it
+                # encounters raw-byte EOG tokens during stop-sequence
+                # matching.  If we already have accumulated text, treat
+                # this as a successful completion rather than an error.
+                if "error" in data:
+                    if accumulated_text.strip():
+                        logger.warning(
+                            "llama.cpp stream error after %d chars of "
+                            "output, treating as completion: %s",
+                            len(accumulated_text),
+                            data["error"].get("message", "")[:120],
+                        )
+                        clean = self._truncate_at_boundary(
+                            accumulated_text, is_llama3
+                        )
+                        logprobs = LogprobNormalizer.from_llamacpp(
+                            accumulated_probs
+                        )
+                        yield StreamChunk(
+                            type="message_stop",
+                            is_final=True,
+                            result=GenerationResult(
+                                content=clean,
+                                model=request.model,
+                                finish_reason="stop",
+                                usage={},
+                                logprobs=logprobs,
+                            ),
+                        )
+                        return
+                    raise RuntimeError(
+                        f"llama.cpp error: {data['error'].get('message', '')}"
+                    )
+
                 content = data.get("content", "")
                 is_stop = data.get("stop", False)
 
                 if content and not is_stop:
                     accumulated_text += content
+                    # Collect per-token logprob data from streaming chunks
+                    chunk_probs = data.get("completion_probabilities", [])
+                    if chunk_probs:
+                        accumulated_probs.extend(chunk_probs)
                     yield StreamChunk(type="text_delta", text=content)
 
                     # Check for leaked turn boundary after each chunk
@@ -235,6 +274,9 @@ class LlamaCppProvider(LLMProvider):
                                 "Detected turn boundary after %d chars, "
                                 "truncating to %d",
                                 len(accumulated_text), len(clean),
+                            )
+                            logprobs = LogprobNormalizer.from_llamacpp(
+                                accumulated_probs
                             )
                             yield StreamChunk(
                                 type="message_stop",
@@ -251,11 +293,19 @@ class LlamaCppProvider(LLMProvider):
                                             "tokens_predicted", 0
                                         ),
                                     },
+                                    logprobs=logprobs,
                                 ),
                             )
                             return
 
                 if is_stop:
+                    # Include any probs from the final chunk itself
+                    final_probs = data.get("completion_probabilities", [])
+                    if final_probs:
+                        accumulated_probs.extend(final_probs)
+                    logprobs = LogprobNormalizer.from_llamacpp(
+                        accumulated_probs
+                    )
                     yield StreamChunk(
                         type="message_stop",
                         is_final=True,
@@ -267,6 +317,7 @@ class LlamaCppProvider(LLMProvider):
                                 "input_tokens": data.get("tokens_evaluated", 0),
                                 "output_tokens": data.get("tokens_predicted", 0),
                             },
+                            logprobs=logprobs,
                         ),
                     )
 

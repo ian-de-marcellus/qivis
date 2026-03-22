@@ -134,8 +134,9 @@ class LogprobNormalizer:
     def from_llamacpp(completion_probabilities: Any) -> LogprobData | None:
         """Convert llama.cpp completion_probabilities to canonical format.
 
-        llama.cpp returns {content, probs: [{tok_str, prob}, ...]} per token.
-        The first entry in probs is the chosen token. prob is linear (0-1).
+        Supports two formats:
+        - Legacy: {content, probs: [{tok_str, prob}, ...]} per token
+        - Modern (build 8460+): {token, logprob, top_logprobs: [{token, logprob}, ...]}
         """
         if not completion_probabilities:
             return None
@@ -144,6 +145,36 @@ class LogprobNormalizer:
         max_alts = 0
 
         for entry in completion_probabilities:
+            # Modern format (build 8460+): top_logprobs with logprob values
+            if "top_logprobs" in entry:
+                chosen_logprob = entry.get("logprob", 0.0)
+                chosen_prob = math.exp(chosen_logprob) if chosen_logprob > -30 else 0.0
+                chosen_token = entry.get("token", "")
+
+                alternatives: list[AlternativeToken] = []
+                for p in entry["top_logprobs"][1:]:  # Skip first (chosen token)
+                    lp = p.get("logprob", float("-inf"))
+                    prob = math.exp(lp) if lp > -30 else 0.0
+                    alternatives.append(
+                        AlternativeToken(
+                            token=p.get("token", ""),
+                            logprob=lp,
+                            linear_prob=prob,
+                        )
+                    )
+
+                max_alts = max(max_alts, len(entry["top_logprobs"]))
+                tokens.append(
+                    TokenLogprob(
+                        token=chosen_token,
+                        logprob=chosen_logprob,
+                        linear_prob=chosen_prob,
+                        top_alternatives=alternatives,
+                    )
+                )
+                continue
+
+            # Legacy format: probs with tok_str and prob (linear)
             all_probs = entry.get("probs", [])
             if not all_probs:
                 continue
@@ -152,7 +183,7 @@ class LogprobNormalizer:
             chosen_prob = chosen["prob"]
             chosen_logprob = math.log(chosen_prob) if chosen_prob > 0 else float("-inf")
 
-            alternatives: list[AlternativeToken] = []
+            alternatives = []
             for p in all_probs[1:]:
                 prob = p["prob"]
                 alternatives.append(
