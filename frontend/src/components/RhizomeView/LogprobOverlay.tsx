@@ -8,6 +8,9 @@ interface LogprobOverlayProps {
 }
 
 
+/** A template token like <|eot_id|>: recorded (it was a choice), shown as a quiet marker */
+const isSpecial = (token: string) => /^<\|[^|<>]+\|>$/.test(token)
+
 function formatProb(linearProb: number): string {
   return `${(linearProb * 100).toFixed(1)}%`
 }
@@ -59,7 +62,7 @@ export function LogprobOverlay({ logprobs }: LogprobOverlayProps) {
           onMouseEnter={() => setHoveredIndex(i)}
           onMouseLeave={() => setHoveredIndex(null)}
         >
-          {token.token}
+          {isSpecial(token.token) ? <span className="logprob-special">↵</span> : token.token}
           {hoveredIndex === i && <TokenTooltip token={token} />}
         </span>
       ))}

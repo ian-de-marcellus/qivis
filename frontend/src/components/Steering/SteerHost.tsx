@@ -42,6 +42,7 @@ export function SteerHost() {
       key={`${steerTarget}:${model}`}
       rhizomeId={currentRhizome.rhizome_id}
       parentId={steerTarget || null}
+      parentRole={currentRhizome.nodes.find((n) => n.node_id === steerTarget)?.role ?? null}
       provider={STEERABLE}
       model={model}
       modelOptions={options.includes(model) ? options : [model, ...options]}

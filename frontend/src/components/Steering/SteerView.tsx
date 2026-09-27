@@ -36,6 +36,8 @@ interface SteerViewProps {
   rhizomeId: string
   /** The node being answered (null: the model speaks first) */
   parentId: string | null
+  /** Its role: after one of the model's own turns, it's the researcher's turn first */
+  parentRole: string | null
   provider: string
   model: string
   /** Other models that can be steered; choosing one starts over with it */
@@ -47,7 +49,7 @@ interface SteerViewProps {
 const keyOf = (ids: number[]) => ids.join(',')
 
 export function SteerView({
-  rhizomeId, parentId, provider, model, modelOptions, onModelChange, onClose,
+  rhizomeId, parentId, parentRole, provider, model, modelOptions, onModelChange, onClose,
 }: SteerViewProps) {
   const showNode = useRhizomeStore(s => s.showNode)
   const openSteer = useRhizomeStore(s => s.openSteer)
@@ -66,6 +68,8 @@ export function SteerView({
   // The reply ended and was kept: the researcher writes the next turn
   const [yourTurn, setYourTurn] = useState<string | null>(null)
   const [myMessage, setMyMessage] = useState('')
+  // Opened on the model's turn (nothing kept this time), vs arriving at end of turn
+  const [turnFromOpen, setTurnFromOpen] = useState(false)
 
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const finishTurn = useRef<() => void>(() => {})
@@ -105,12 +109,24 @@ export function SteerView({
         live.current.sessionId = s.session_id
         live.current.stops = s.stop_sequences
         setSession(s)
+        // A conversation with turns that ends on the model's: the researcher speaks next
+        // (a base model's plain continuation has no turns, so it just keeps steering)
+        if (parentId && parentRole === 'assistant' && s.stop_sequences.length > 0) {
+          setYourTurn(parentId)
+          setTurnFromOpen(true)
+        }
       })
       .catch((e) => setError(String(e)))
     return () => {
       cancelled = true
     }
-  }, [rhizomeId, parentId, provider, model])
+  }, [rhizomeId, parentId, parentRole, provider, model])
+
+  // Unkept sessions end with the view (the server would expire them anyway)
+  useEffect(() => () => {
+    const id = live.current.sessionId
+    if (id) api.steerDiscard(id).catch(() => {})
+  }, [])
 
   const fetchDist = useCallback((ids: number[]) => {
     const { cache, inflight, sessionId } = live.current
@@ -614,7 +630,10 @@ export function SteerView({
           {yourTurn && (
             <div className="steer-your-turn">
               <div className="steer-label">Your turn</div>
-              <p className="steer-help">Her reply is kept. Write yours; Enter sends it and steers her next reply.</p>
+              <p className="steer-help">
+                {turnFromOpen ? 'The conversation ends on her turn.' : 'Her reply is kept.'}{' '}
+                Write yours; Enter sends it and steers her next reply.
+              </p>
               <textarea
                 autoFocus
                 rows={3}
@@ -632,6 +651,15 @@ export function SteerView({
               />
               <div className="steer-actions">
                 <button className="steer-discard" onClick={onClose}>Done</button>
+                {turnFromOpen && (
+                  <button
+                    className="steer-discard"
+                    onClick={() => { setYourTurn(null); setTurnFromOpen(false) }}
+                    title="Steer another turn of hers after this one"
+                  >
+                    Steer her next turn instead
+                  </button>
+                )}
                 <button className="steer-keep" onClick={() => void sendMyTurn()} disabled={!myMessage.trim()}>
                   Send and steer her reply
                 </button>
