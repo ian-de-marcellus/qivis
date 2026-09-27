@@ -517,3 +517,13 @@
   font-size: var(--text-sm);
   font-style: italic;
 }
+
+.create-transcript-names {
+  display: flex;
+  gap: var(--space-xs);
+}
+
+.create-transcript-names input {
+  flex: 1;
+  min-width: 0;
+}

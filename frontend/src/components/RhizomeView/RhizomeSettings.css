@@ -410,3 +410,13 @@
   border-left: 2px solid var(--border-subtle);
   margin-left: 6px;
 }
+
+.rhizome-settings-names {
+  display: flex;
+  gap: var(--space-xs);
+}
+
+.rhizome-settings-names input {
+  flex: 1;
+  min-width: 0;
+}

@@ -48,6 +48,15 @@ interface SteerViewProps {
 
 const keyOf = (ids: number[]) => ids.join(',')
 
+/** The reply has reached its end of turn: a stop token (chat templates), or
+ *  text ending in a stop string (a transcript's next speaker line). */
+function reachedEnd(tokens: { token: string }[], stops: string[]): boolean {
+  const last = tokens[tokens.length - 1]?.token
+  if (last && stops.includes(last)) return true
+  const text = tokens.map((t) => t.token).join('')
+  return stops.some((stop) => stop.length > 0 && text.endsWith(stop))
+}
+
 export function SteerView({
   rhizomeId, parentId, parentRole, provider, model, modelOptions, onModelChange, onClose,
 }: SteerViewProps) {
@@ -153,7 +162,7 @@ export function SteerView({
     if (L.progress < 0.99) L.view = { c: 0.5, s: L.height * REST }
     L.progress = 0
     L.tokens.push({ id: box.id, token: box.token, prob: box.prob, chosenBy })
-    if (L.stops.includes(box.token) && !L.pastEnd) {
+    if (reachedEnd(L.tokens, L.stops) && !L.pastEnd) {
       L.ended = true
       setEnded(true)
       setPaused(true)
@@ -195,7 +204,7 @@ export function SteerView({
         const dist = L.cache.get(keyOf(L.tokens.map((t) => t.id)))
         const prob = dist?.find((c) => c.id === piece.id)?.prob ?? 0
         L.tokens.push({ id: piece.id, token: piece.token, prob, chosenBy: 'researcher' })
-        if (L.stops.includes(piece.token) && !L.pastEnd) {
+        if (reachedEnd(L.tokens, L.stops) && !L.pastEnd) {
           L.ended = true
           setEnded(true)
           setPaused(true)

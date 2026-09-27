@@ -146,6 +146,7 @@ class Prepared:
     device_id: str = "local"
     completion_index: int | None = None
     steered: bool = False  # token by token, by a researcher (qivis.steering)
+    template: str | None = None  # completion-mode prompt template used
 
     @property
     def recorded_mode(self) -> Literal["chat", "completion", "prefill", "steered"]:
@@ -394,13 +395,16 @@ class GenerationService:
             messages = [m.copy() for m in built.messages]
             params = ctx.params
             prompt_text = None
+            template = None
             if mode == "completion":
-                prompt_text, params = self._render_completion(
+                prompt_text, params, template = self._render_completion(
                     model, messages, built.system_prompt, params, ctx.metadata,
                 )
             if prefill:
                 if prompt_text is not None:
-                    prompt_text += prefill
+                    # A transcript turn reads "Sun: text"; words carry their space
+                    space = " " if template == "transcript" and not prefill.startswith(" ") else ""
+                    prompt_text += space + prefill
                 else:
                     messages.append({"role": "assistant", "content": prefill})
 
@@ -425,6 +429,7 @@ class GenerationService:
                 prefill=prefill,
                 device_id=device_id,
                 completion_index=index if len(targets) > 1 else None,
+                template=template,
             ))
         return prepared
 
@@ -493,19 +498,21 @@ class GenerationService:
         system_prompt: str | None,
         params: SamplingParams,
         metadata: dict,
-    ) -> tuple[str, SamplingParams]:
+    ) -> tuple[str, SamplingParams, str]:
         """Render the prompt text; the template's stop tokens join the sampling params.
 
         The template is the rhizome's, unless unset or "auto": then the model's
-        own (its profile), else raw.
+        own (its profile), else raw. Transcripts name their speakers from the
+        rhizome (speaker_name, model_name). Returns the template used too.
         """
         template_name = metadata.get("prompt_template")
         if not template_name or template_name == "auto":
             template_name = (get_catalog().profile(model) or {}).get("prompt_template") or "raw"
-        prompt_text, stop_tokens = render_prompt(template_name, messages, system_prompt)
+        names = {"user": metadata.get("speaker_name"), "assistant": metadata.get("model_name")}
+        prompt_text, stop_tokens = render_prompt(template_name, messages, system_prompt, names)
         stops = list(params.stop_sequences or [])
         stops += [t for t in stop_tokens if t not in stops]
-        return prompt_text, params.model_copy(update={"stop_sequences": stops})
+        return prompt_text, params.model_copy(update={"stop_sequences": stops}), template_name
 
     @staticmethod
     def _debug_context_limit(metadata: dict) -> int | None:
@@ -716,6 +723,10 @@ class GenerationService:
 
     async def persist(self, p: Prepared, result: GenerationResult) -> NodeResponse:
         """Store a reply as a node, recording exactly what produced it."""
+        if p.template == "transcript":
+            # The turn's text, without the space after "Sun:" or the blank line
+            # before the next speaker (the template adds them back when rendering)
+            result = result.model_copy(update={"content": result.content.strip()})
         sampling_params = p.request.sampling_params
         if result.applied_sampling_params:
             # What the provider applied beyond the request (e.g. a model's logit bias)

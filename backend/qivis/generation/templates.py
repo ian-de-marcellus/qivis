@@ -89,19 +89,82 @@ def render_raw(
     return "".join(parts), []
 
 
+DEFAULT_SPEAKER = "Person"
+DEFAULT_MODEL_NAME = "Sun"
+
+
+def render_transcript(
+    messages: list[dict[str, str]],
+    system_prompt: str | None,
+    names: dict[str, str | None] | None = None,
+) -> tuple[str, list[str]]:
+    """Render messages as a plain transcript, for base models.
+
+        <header>
+
+        Ada: hi, how are you?
+
+        Sun:
+
+    No special tokens: a base model has seen countless transcripts, while
+    chat-template tokens are untrained until post-training. The prompt ends
+    at "Sun:" with no trailing space (words carry their leading space, so a
+    trailing one would force an unnatural first token), and the model ends
+    its turn by starting the next speaker's line.
+    """
+    names = names or {}
+    speaker = (names.get("user") or DEFAULT_SPEAKER).strip()
+    model = (names.get("assistant") or DEFAULT_MODEL_NAME).strip()
+    label = {"user": speaker, "assistant": model}
+    parts: list[str] = []
+    if system_prompt and system_prompt.strip():
+        parts.append(system_prompt.strip() + "\n\n")
+    for msg in messages:
+        who = label.get(msg["role"], msg["role"].capitalize())
+        parts.append(f"{who}: {msg['content'].strip()}\n\n")
+    parts.append(f"{model}:")
+    return "".join(parts), [f"\n{speaker}:"]
+
+
+def render_document(
+    messages: list[dict[str, str]],
+    system_prompt: str | None,
+) -> tuple[str, list[str]]:
+    """One continuous text: every part joined exactly as written.
+
+    For looming things that aren't conversations. The system prompt, if any,
+    is simply the text's beginning.
+    """
+    parts = [system_prompt] if system_prompt else []
+    parts += [msg["content"] for msg in messages]
+    return "".join(parts), []
+
+
 TEMPLATES: dict[str, Callable[..., tuple[str, list[str]]]] = {
     "raw": render_raw,
     "chatml": render_chatml,
     "alpaca": render_alpaca,
     "llama3": render_llama3,
+    "transcript": render_transcript,
+    "document": render_document,
 }
+
+# Templates whose output depends on who's speaking
+NAMED_TEMPLATES = {"transcript"}
 
 
 def render_prompt(
     template_name: str,
     messages: list[dict[str, str]],
     system_prompt: str | None,
+    names: dict[str, str | None] | None = None,
 ) -> tuple[str, list[str]]:
-    """Render messages using the named template. Falls back to raw if unknown."""
+    """Render messages using the named template. Falls back to raw if unknown.
+
+    names: {"user": speaker name, "assistant": model name}, for templates that
+    label turns by name (transcript).
+    """
     template_fn = TEMPLATES.get(template_name, render_raw)
+    if template_name in NAMED_TEMPLATES:
+        return template_fn(messages, system_prompt, names)
     return template_fn(messages, system_prompt)

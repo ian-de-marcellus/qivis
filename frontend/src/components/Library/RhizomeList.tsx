@@ -6,6 +6,7 @@ import { type FolderNode, buildFolderTrie, countRhizomesInFolder } from '../../u
 import { RhizomeContextMenu } from './RhizomeContextMenu.tsx'
 import { ImportWizard } from './ImportWizard.tsx'
 import { AdvancedGroup, AdvancedSection } from '../shared/AdvancedSection.tsx'
+import { DEFAULT_MODEL_NAME, DEFAULT_SPEAKER, TEMPLATE_OPTIONS } from '../shared/templates.ts'
 import { ModelPicker } from '../shared/ModelPicker.tsx'
 import { findModel, type ModelChoice } from '../shared/modelChoice.ts'
 import './RhizomeList.css'
@@ -43,6 +44,9 @@ export function RhizomeList() {
   const [newModelChoice, setNewModelChoice] = useState<ModelChoice | null>(null)
   const [newModeOverride, setNewModeOverride] = useState<'' | 'chat' | 'completion'>('')
   const [newPromptTemplate, setNewPromptTemplate] = useState('auto')
+  // Transcript format: who's talking (varies per conversation) and the model's name
+  const [newSpeakerName, setNewSpeakerName] = useState('')
+  const [newModelName, setNewModelName] = useState('')
   const [newIncludeTimestamps, setNewIncludeTimestamps] = useState(false)
   const [newStreamResponses, setNewStreamResponses] = useState(true)
   const [showImport, setShowImport] = useState(false)
@@ -116,17 +120,25 @@ export function RhizomeList() {
   const modelMode: 'chat' | 'completion' = completionOnly ? 'completion' : modelEntry?.mode ?? 'chat'
   const newGenerationMode = newModeOverride || modelMode
   const modelTemplate = modelEntry?.prompt_template ?? 'raw'
+  const newTemplate = newGenerationMode === 'completion'
+    ? (newPromptTemplate === 'auto' ? modelTemplate : newPromptTemplate)
+    : null
+  const isTranscript = newTemplate === 'transcript'
+  // Chat's system prompt; a transcript's header; a document's opening text
+  const takesPreamble = newGenerationMode === 'chat' || isTranscript || newTemplate === 'document'
 
   const handleCreate = async () => {
     if (!newTitle.trim()) return
     await createRhizome(newTitle.trim(), {
-      systemPrompt: newGenerationMode === 'chat' ? (newSystemPrompt.trim() || undefined) : undefined,
+      systemPrompt: takesPreamble ? (newSystemPrompt.trim() || undefined) : undefined,
       defaultProvider: modelChoice.provider || undefined,
       defaultModel: modelChoice.model || undefined,
       metadata: {
         generation_mode: newGenerationMode,
         // "auto": each generation uses the generating model's own template
         ...(newGenerationMode === 'completion' && { prompt_template: newPromptTemplate }),
+        ...(isTranscript && newSpeakerName.trim() && { speaker_name: newSpeakerName.trim() }),
+        ...(isTranscript && newModelName.trim() && { model_name: newModelName.trim() }),
         ...(newGenerationMode === 'chat' && { include_timestamps: newIncludeTimestamps }),
         stream_responses: newStreamResponses,
       },
@@ -136,6 +148,8 @@ export function RhizomeList() {
     setNewModelChoice(null)
     setNewModeOverride('')
     setNewPromptTemplate('auto')
+    setNewSpeakerName('')
+    setNewModelName('')
     setNewIncludeTimestamps(false)
     setNewStreamResponses(true)
     setIsCreating(false)
@@ -357,9 +371,29 @@ export function RhizomeList() {
             />
           </div>
 
-          {newGenerationMode === 'chat' && (
+          {isTranscript && (
+            <div className="create-transcript-names">
+              <input
+                placeholder={`Speaker (${DEFAULT_SPEAKER})`}
+                value={newSpeakerName}
+                onChange={(e) => setNewSpeakerName(e.target.value)}
+                title="Who's talking in this conversation: vary it between conversations"
+              />
+              <input
+                placeholder={`Model's name (${DEFAULT_MODEL_NAME})`}
+                value={newModelName}
+                onChange={(e) => setNewModelName(e.target.value)}
+              />
+            </div>
+          )}
+
+          {takesPreamble && (
             <textarea
-              placeholder="System prompt (optional)..."
+              placeholder={
+                isTranscript ? 'Header, e.g. "A conversation between…" (optional)...'
+                  : newTemplate === 'document' ? 'The text so far (optional)...'
+                    : 'System prompt (optional)...'
+              }
               value={newSystemPrompt}
               onChange={(e) => setNewSystemPrompt(e.target.value)}
               rows={2}
@@ -387,10 +421,7 @@ export function RhizomeList() {
                     onChange={(e) => setNewPromptTemplate(e.target.value)}
                   >
                     <option value="auto">From model ({modelTemplate})</option>
-                    <option value="raw">Raw (no template)</option>
-                    <option value="alpaca">Alpaca</option>
-                    <option value="chatml">ChatML</option>
-                    <option value="llama3">Llama 3</option>
+                    {TEMPLATE_OPTIONS.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
                   </select>
                 </div>
               )}

@@ -4,6 +4,7 @@ import { exportRhizome } from '../../api/client.ts'
 import { useRhizomeStore, useRhizomeData, useRightPane } from '../../store/rhizomeStore.ts'
 import { useShallow } from 'zustand/react/shallow'
 import { SamplingParamsPanel, type SamplingParamValues } from '../shared/SamplingParamsPanel.tsx'
+import { DEFAULT_MODEL_NAME, DEFAULT_SPEAKER, TEMPLATE_OPTIONS } from '../shared/templates.ts'
 import { AdvancedGroup, AdvancedSection } from '../shared/AdvancedSection.tsx'
 import { ModelPicker } from '../shared/ModelPicker.tsx'
 import { findModel } from '../shared/modelChoice.ts'
@@ -56,6 +57,9 @@ export function RhizomeSettings() {
   const [generationMode, setGenerationMode] = useState('chat')
   // "auto" (or unset): each generation uses the generating model's template
   const [promptTemplate, setPromptTemplate] = useState('auto')
+  // Transcript format: who's talking, and the model's name
+  const [speakerName, setSpeakerName] = useState('')
+  const [modelName, setModelName] = useState('')
   const [debugContextLimit, setDebugContextLimit] = useState('')
 
   // Eviction strategy state
@@ -104,6 +108,8 @@ export function RhizomeSettings() {
       setIncludeThinking(!!meta?.include_thinking_in_context)
       setGenerationMode((meta?.generation_mode as string) ?? 'chat')
       setPromptTemplate((meta?.prompt_template as string) ?? 'auto')
+      setSpeakerName((meta?.speaker_name as string) ?? '')
+      setModelName((meta?.model_name as string) ?? '')
       setDebugContextLimit(meta?.debug_context_limit != null ? String(meta.debug_context_limit) : '')
 
       // Eviction strategy from metadata
@@ -159,6 +165,12 @@ export function RhizomeSettings() {
   const currentEs = currentMeta.eviction_strategy as Partial<EvictionStrategy> | undefined
   const currentInterventions = (currentMeta.context_interventions as InterventionConfig[] | undefined) ?? []
   const isChat = generationMode === 'chat'
+  const effectiveTemplate = isChat
+    ? null
+    : promptTemplate === 'auto' ? (defaultEntry?.prompt_template ?? 'raw') : promptTemplate
+  const isTranscript = effectiveTemplate === 'transcript'
+  const preambleLabel = isChat ? 'Default system prompt'
+    : isTranscript ? 'Header' : effectiveTemplate === 'document' ? 'Opening text' : null
 
   const formEviction: Partial<EvictionStrategy> | undefined =
     evictionMode === 'default' ? undefined
@@ -185,6 +197,10 @@ export function RhizomeSettings() {
   setIfChanged('debug_context_limit', debugLimit, (currentMeta.debug_context_limit as number | null | undefined) ?? null)
   if (!isChat) {
     setIfChanged('prompt_template', promptTemplate, (currentMeta.prompt_template as string) ?? 'auto')
+    if (isTranscript) {
+      setIfChanged('speaker_name', speakerName.trim() || null, (currentMeta.speaker_name as string) ?? null)
+      setIfChanged('model_name', modelName.trim() || null, (currentMeta.model_name as string) ?? null)
+    }
   } else {
     setIfChanged('include_timestamps', includeTimestamps, !!currentMeta.include_timestamps)
     setIfChanged('include_thinking_in_context', includeThinking, !!currentMeta.include_thinking_in_context)
@@ -410,13 +426,35 @@ export function RhizomeSettings() {
               />
             </div>
 
-            {generationMode === 'chat' && (
+            {isTranscript && (
               <div className="rhizome-settings-field">
-                <label>Default system prompt</label>
+                <label>Speakers</label>
+                <div className="rhizome-settings-names">
+                  <input
+                    value={speakerName}
+                    onChange={(e) => setSpeakerName(e.target.value)}
+                    placeholder={`Speaker (${DEFAULT_SPEAKER})`}
+                    title="Who's talking in this conversation"
+                  />
+                  <input
+                    value={modelName}
+                    onChange={(e) => setModelName(e.target.value)}
+                    placeholder={`Model's name (${DEFAULT_MODEL_NAME})`}
+                  />
+                </div>
+              </div>
+            )}
+
+            {preambleLabel && (
+              <div className="rhizome-settings-field">
+                <label>{preambleLabel}</label>
                 <textarea
                   value={systemPrompt}
                   onChange={(e) => setSystemPrompt(e.target.value)}
-                  placeholder="Enter default system prompt..."
+                  placeholder={
+                    isTranscript ? 'e.g. "A conversation between…" (optional)'
+                      : isChat ? 'Enter default system prompt...' : 'The text the document begins with (optional)'
+                  }
                   rows={3}
                 />
               </div>
@@ -468,14 +506,11 @@ export function RhizomeSettings() {
                       onChange={(e) => setPromptTemplate(e.target.value)}
                     >
                       <option value="auto">From each model ({defaultEntry?.prompt_template ?? 'raw'} for {defaultEntry?.label ?? 'the default model'})</option>
-                      <option value="raw">Raw (no template)</option>
-                      <option value="alpaca">Alpaca</option>
-                      <option value="chatml">ChatML</option>
-                      <option value="llama3">Llama 3</option>
+                      {TEMPLATE_OPTIONS.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
                     </select>
                     <span className="rhizome-settings-note">
-                      Raw sends plain text with no turn markers: right for base models, wrong for chat-tuned ones
-                      (they may start writing your lines).
+                      Transcript and Document are for base models; chat-tuned models want their own
+                      template (with plain text they may start writing your lines).
                     </span>
                   </div>
                 )}

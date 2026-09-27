@@ -17,6 +17,7 @@ from qivis.main import app
 from qivis.providers.base import GenerationRequest, GenerationResult, LLMProvider, StreamChunk
 from qivis.providers.registry import clear_providers, register_provider
 from qivis.rhizomes.router import get_rhizome_service
+from qivis.rhizomes.schemas import CreateNodeRequest, CreateRhizomeRequest
 from qivis.rhizomes.service import RhizomeService
 from qivis.steering.router import get_steering_service
 from qivis.steering.service import SteeringService
@@ -171,3 +172,27 @@ async def test_special_tokens_are_named(env):
     s = (await _start(c, rid, nid)).json()
     shown = (await c.post(f"/api/steer/{s['session_id']}/next", json={"continuation": []})).json()
     assert "<|eot_id|>" in [t["token"] for t in shown]
+
+
+async def test_transcript_turn_ends_at_the_next_speaker(db):
+    """In a transcript, the turn ends when the text reaches the next speaker's line."""
+    class Transcriber(SteerableModel):
+        async def detokenize(self, ids, model=""):
+            return {(1, 2): "Hi there\n\nAda:"}.get(tuple(ids), "")
+
+    store, projector, service = EventStore(db), StateProjector(db), RhizomeService(db)
+    steering = SteeringService(GenerationService(service, store, projector))
+    clear_providers()
+    model = Transcriber()
+    register_provider(model)
+    rid = (await service.create_rhizome(CreateRhizomeRequest(
+        title="t", default_provider="steerable", default_model="m",
+        metadata={"prompt_template": "transcript", "speaker_name": "Ada"},
+    ))).rhizome_id
+    nid = (await service.create_node(rid, CreateNodeRequest(
+        content="hello"))).node_id
+    s = await steering.start(rid, nid, model, model="m")
+    assert s["prompt_text"] == "Ada: hello\n\nSun:"
+    node = await steering.commit(s["session_id"], [1, 2], ["researcher", "researcher"])
+    assert node.content == "Hi there" and node.finish_reason == "stop"
+    clear_providers()

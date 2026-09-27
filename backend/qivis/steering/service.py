@@ -146,7 +146,9 @@ class SteeringService:
                     chosen_by=who,
                 ))
 
-            # A reply that reaches the model's end-of-turn ends there, like any generation
+            # A reply that reaches the model's end of turn ends there, like any
+            # generation: a stop token (chat templates) or a stop string the text
+            # ends with (a transcript's next speaker line)
             stops = session.prepared.request.sampling_params.stop_sequences or []
             finish = "researcher"
             kept = len(tokens)
@@ -155,6 +157,9 @@ class SteeringService:
             content = await self._provider(session).detokenize(
                 token_ids[:kept], session.prepared.model,
             )
+            for stop in stops:
+                if finish != "stop" and stop and content.endswith(stop):
+                    finish, content = "stop", content[: -len(stop)]
         except Exception:
             self._sessions[session.session_id] = session  # let them retry the commit
             raise
