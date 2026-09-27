@@ -51,3 +51,6 @@ htmlcov/
 
 # Local
 local/
+
+# Local per-model sampling defaults (see backend/model_defaults.example.json)
+backend/model_defaults.json

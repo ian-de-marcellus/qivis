@@ -1,5 +1,6 @@
 """Qivis FastAPI application entry point."""
 
+import json
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -88,7 +89,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if os.environ.get("LLAMACPP_BASE_URL"):
         from qivis.providers.llamacpp import LlamaCppProvider
 
-        llamacpp = LlamaCppProvider(base_url=os.environ["LLAMACPP_BASE_URL"])
+        # Per-model sampling defaults (gitignored; see model_defaults.example.json)
+        defaults_path = Path(os.environ.get(
+            "QIVIS_MODEL_DEFAULTS", Path(__file__).resolve().parent.parent / "model_defaults.json",
+        ))
+        model_defaults = json.loads(defaults_path.read_text()) if defaults_path.exists() else {}
+        llamacpp = LlamaCppProvider(
+            base_url=os.environ["LLAMACPP_BASE_URL"], model_defaults=model_defaults,
+        )
         discovered = await llamacpp.discover_models()
         if discovered:
             llamacpp.suggested_models = discovered

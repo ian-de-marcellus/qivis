@@ -73,6 +73,8 @@ class SamplingParams:
     top_logprobs: int | None = 5
     extended_thinking: bool = False    # Anthropic extended thinking
     thinking_budget: int | None = None # max thinking tokens (when extended_thinking=True)
+    logit_bias: dict[int, float] | None = None  # token id -> additive bias (llama.cpp); includes any per-model
+                                                # defaults the provider applied, so the node records what shaped the output
 ```
 
 ### LogprobData

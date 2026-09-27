@@ -1,0 +1,6 @@
+{
+  "_comment": "Per-model sampling defaults for llama.cpp, keyed by the served model's name (llama-server's model_alias, usually the GGUF filename). Copy to model_defaults.json (gitignored). Applied under any explicit request/rhizome values and recorded in each node's sampling_params. Example: Sun 1.0.1 restores end-of-turn mass her untrained <|eot_id|> row shared with 385 twins (+ln 386).",
+  "Sun-v1.0.1-8B.Q4_K_M.gguf": {
+    "logit_bias": {"128009": 5.955837}
+  }
+}

@@ -38,13 +38,15 @@ _SPECIAL_TOKEN_IDS: dict[int, str] = {
 # Python's \w would match, preventing detection.
 _TURN_BOUNDARY_RE = re.compile(r"(?<!\w )(user|assistant)(?![a-zA-Z])")
 
-# Lost end-of-turn: some fine-tunes (Sun: Llama 3.1 8B, CPT+SFT) have a
-# damaged <|eot_id|> path.  Where the model means to end its turn, the
-# next-token distribution goes flat over junk -- every candidate sits near
-# -6 logprob -- and a fragment like "еристи" or '">\r\r\n' gets sampled.
+# Lost end-of-turn: in Llama 3 fine-tunes that never trained lm_head (e.g.
+# Sun 1.0: CPT and SFT on one LoRA adapter), <|eot_id|>'s output row is still
+# the untrained placeholder shared by ~385 other tokens. Where the model means
+# to end its turn, the mass splits evenly across all of them -- each near
+# -ln(386) = -5.96 -- and a random twin like "еристи" or '">\r\r\n' is sampled.
 # Real text never looks like this: even a surprising token comes from a
-# distribution whose best candidate is reasonably likely.  Validated on 44
+# distribution whose best candidate is reasonably likely. Validated on 44
 # stored Sun turns (1811 tokens): fires only at turn ends, no false cuts.
+# (Sun 1.0.1 fixes this at the source; this remains a fallback.)
 _LOST_TURN_END_SAMPLED = -5.0  # sampled token's logprob is below this...
 _LOST_TURN_END_BEST = -4.0  # ...and so is every candidate's
 # Probes requested for detection when the caller didn't ask for logprobs
@@ -88,8 +90,19 @@ class LlamaCppProvider(LLMProvider):
         *,
         base_url: str = "http://localhost:8080",
         http_client: httpx.AsyncClient | None = None,
+        model_defaults: dict[str, dict] | None = None,
     ):
         self._base_url = base_url.rstrip("/")
+        # Per-model sampling defaults, keyed by the served model's name (see
+        # model_defaults.example.json). Currently only logit_bias is used.
+        self._model_defaults = {
+            name: {
+                **cfg,
+                "logit_bias": {int(t): float(b) for t, b in (cfg.get("logit_bias") or {}).items()},
+            }
+            for name, cfg in (model_defaults or {}).items()
+            if isinstance(cfg, dict)  # skip "_comment" and other notes
+        }
         # Local inference on CPU can take a long time for prompt evaluation
         # before the first token arrives — default 5s is far too short.
         self._client = http_client or httpx.AsyncClient(
@@ -110,7 +123,29 @@ class LlamaCppProvider(LLMProvider):
     # these, causing the model to emit them instead of real special tokens.
     _LLAMA3_RESERVED_RANGE = range(128011, 128256)
 
-    def _build_request_body(self, request: GenerationRequest) -> dict[str, Any]:
+    async def _served_model(self) -> str | None:
+        """Name of the model llama-server actually has loaded (it ignores the requested name)."""
+        try:
+            resp = await self._client.get(f"{self._base_url}/props")
+            resp.raise_for_status()
+            data = resp.json()
+            name = data.get("model_alias") or (data.get("model_path") or "").rsplit("/", 1)[-1]
+            return name if isinstance(name, str) and name else None
+        except Exception:
+            return None
+
+    async def _effective_logit_bias(self, request: GenerationRequest) -> dict[int, float] | None:
+        """The served model's default logit_bias, overridden per token by the request's."""
+        defaults: dict[int, float] = {}
+        if self._model_defaults:
+            served = await self._served_model()
+            defaults = self._model_defaults.get(served or "", {}).get("logit_bias", {})
+        merged = {**defaults, **(request.sampling_params.logit_bias or {})}
+        return merged or None
+
+    def _build_request_body(
+        self, request: GenerationRequest, logit_bias: dict[int, float] | None = None,
+    ) -> dict[str, Any]:
         """Map GenerationRequest to llama.cpp /completion request body."""
         body: dict[str, Any] = {
             "prompt": request.prompt_text or "",
@@ -144,13 +179,17 @@ class LlamaCppProvider(LLMProvider):
             # Needed to detect a lost end-of-turn; not returned to the caller
             body["n_probs"] = _DETECTION_N_PROBS
 
+        bias: dict[int, float] = {}
         # Llama 3 template-specific adjustments
         if request.prompt_text and "<|begin_of_text|>" in request.prompt_text:
-            # Suppress reserved tokens (128011-128255) — LoRA fine-tunes often
-            # have damaged embeddings for these unused vocabulary slots.
-            body["logit_bias"] = [
-                [tid, -100.0] for tid in self._LLAMA3_RESERVED_RANGE
-            ]
+            # Suppress reserved tokens (128011-128255): their output rows are
+            # untrained placeholders, identical to each other and, in fine-tunes
+            # that never trained lm_head, to <|eot_id|>'s own row.
+            bias.update({tid: -100.0 for tid in self._LLAMA3_RESERVED_RANGE})
+        # Model defaults and request overrides (already merged) take precedence
+        bias.update(logit_bias or {})
+        if bias:
+            body["logit_bias"] = [[tid, b] for tid, b in bias.items()]
 
         return body
 
@@ -223,6 +262,17 @@ class LlamaCppProvider(LLMProvider):
     async def generate_stream(
         self, request: GenerationRequest
     ) -> AsyncIterator[StreamChunk]:
+        """Stream a completion; report any logit_bias applied beyond the reserved range."""
+        applied = await self._effective_logit_bias(request)
+        body = self._build_request_body(request, applied)
+        async for chunk in self._stream_completion(request, body):
+            if chunk.result is not None and applied:
+                chunk.result.applied_sampling_params = {"logit_bias": applied}
+            yield chunk
+
+    async def _stream_completion(
+        self, request: GenerationRequest, body: dict[str, Any],
+    ) -> AsyncIterator[StreamChunk]:
         """Streaming completion via POST /completion with stream=true.
 
         llama.cpp sends SSE lines: 'data: {...}\\n\\n'. The final chunk
@@ -233,7 +283,6 @@ class LlamaCppProvider(LLMProvider):
         clean response text.  A few garbage characters may briefly appear in
         the streaming display but the persisted node content will be clean.
         """
-        body = self._build_request_body(request)
         body["stream"] = True
 
         accumulated_text = ""

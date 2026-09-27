@@ -31,6 +31,10 @@ class GenerationResult(BaseModel):
     logprobs: LogprobData | None = None
     thinking_content: str | None = None
     raw_response: dict[str, Any] | None = None
+    # Sampling settings the provider applied beyond the request's (e.g. a
+    # served model's defaults). Recorded into the node's sampling_params, so
+    # the record shows everything that shaped the output.
+    applied_sampling_params: dict[str, Any] | None = None
 
 
 class StreamChunk(BaseModel):

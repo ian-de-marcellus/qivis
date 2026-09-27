@@ -27,6 +27,8 @@ class SamplingParams(BaseModel):
     top_logprobs: int | None = 5
     extended_thinking: bool = False
     thinking_budget: int | None = None
+    # Token id -> additive logit bias (providers that support it, e.g. llama.cpp)
+    logit_bias: dict[int, float] | None = None
 
 
 class AlternativeToken(BaseModel):

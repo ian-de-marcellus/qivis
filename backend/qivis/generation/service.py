@@ -1031,6 +1031,10 @@ class GenerationService:
         prompt_text: str | None = None,
     ) -> NodeResponse:
         node_id = str(uuid4())
+        if result.applied_sampling_params:
+            sampling_params = sampling_params.model_copy(update=SamplingParams.model_validate(
+                {**sampling_params.model_dump(), **result.applied_sampling_params}
+            ).model_dump(include=set(result.applied_sampling_params)))
         payload = NodeCreatedPayload(
             node_id=node_id,
             generation_id=generation_id,
