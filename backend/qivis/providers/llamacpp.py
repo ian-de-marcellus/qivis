@@ -36,6 +36,9 @@ _SPECIAL_TOKEN_IDS: dict[int, str] = {
 # a word char.  The lookahead uses [a-zA-Z] instead of \w because garbage
 # bytes from decoded special tokens are often Unicode (Cyrillic etc.) which
 # Python's \w would match, preventing detection.
+_LLAMA3_BOS = "<|begin_of_text|>"
+_LLAMA3_BOS_ID = 128000
+
 _TURN_BOUNDARY_RE = re.compile(r"(?<!\w )(user|assistant)(?![a-zA-Z])")
 
 # Lost end-of-turn: in Llama 3 fine-tunes that never trained lm_head (e.g.
@@ -113,6 +116,8 @@ class LlamaCppProvider(LLMProvider):
         # Used as extra stop sequences when the server decodes special tokens
         # as raw bytes instead of their text form.
         self._extra_stops: list[str] = []
+        # Whether the server prepends BOS to string prompts; probed once
+        self._adds_bos: bool | None = None
 
     @property
     def name(self) -> str:
@@ -134,14 +139,54 @@ class LlamaCppProvider(LLMProvider):
         except Exception:
             return None
 
-    async def _effective_logit_bias(self, request: GenerationRequest) -> dict[int, float] | None:
+    def _effective_logit_bias(
+        self, request: GenerationRequest, served: str | None,
+    ) -> dict[int, float] | None:
         """The served model's default logit_bias, overridden per token by the request's."""
-        defaults: dict[int, float] = {}
-        if self._model_defaults:
-            served = await self._served_model()
-            defaults = self._model_defaults.get(served or "", {}).get("logit_bias", {})
+        defaults = self._model_defaults.get(served or "", {}).get("logit_bias", {})
         merged = {**defaults, **(request.sampling_params.logit_bias or {})}
         return merged or None
+
+    async def _server_adds_bos(self) -> bool | None:
+        """Whether llama-server prepends BOS to string prompts (None if unknown)."""
+        if self._adds_bos is None:
+            try:
+                resp = await self._client.post(
+                    f"{self._base_url}/tokenize",
+                    json={"content": "x", "add_special": True, "parse_special": False},
+                )
+                resp.raise_for_status()
+                tokens = resp.json().get("tokens")
+                if isinstance(tokens, list) and tokens and isinstance(tokens[0], int):
+                    self._adds_bos = tokens[0] == _LLAMA3_BOS_ID
+            except Exception:
+                return None
+        return self._adds_bos
+
+    async def _prompt_for_bos_count(
+        self, prompt: str, served: str | None,
+    ) -> tuple[str, str | None]:
+        """Adjust a llama3 prompt so the model sees exactly `bos_tokens` BOS.
+
+        Returns (prompt to send, effective prompt if it differs from the
+        rendered one). Standard Llama 3 models expect one BOS; some fine-tunes
+        were trained with two (Sun 1.0: her SFT text began with
+        <|begin_of_text|> and the trainer added another). The count is a
+        per-model setting, default 1.
+        """
+        if not prompt.startswith(_LLAMA3_BOS):
+            return prompt, None
+        adds = await self._server_adds_bos()
+        if adds is None:
+            return prompt, None  # can't tell what the server does; send as rendered
+        want = int(self._model_defaults.get(served or "", {}).get("bos_tokens", 1))
+        body = prompt
+        while body.startswith(_LLAMA3_BOS):
+            body = body[len(_LLAMA3_BOS):]
+        in_text = max(want - int(adds), 0)
+        send = _LLAMA3_BOS * in_text + body
+        effective = _LLAMA3_BOS * (in_text + int(adds)) + body
+        return send, (effective if effective != prompt else None)
 
     def _build_request_body(
         self, request: GenerationRequest, logit_bias: dict[int, float] | None = None,
@@ -263,11 +308,20 @@ class LlamaCppProvider(LLMProvider):
         self, request: GenerationRequest
     ) -> AsyncIterator[StreamChunk]:
         """Stream a completion; report any logit_bias applied beyond the reserved range."""
-        applied = await self._effective_logit_bias(request)
+        served = await self._served_model() if self._model_defaults else None
+        applied = self._effective_logit_bias(request, served)
         body = self._build_request_body(request, applied)
+        effective_prompt = None
+        if request.prompt_text:
+            body["prompt"], effective_prompt = await self._prompt_for_bos_count(
+                request.prompt_text, served,
+            )
         async for chunk in self._stream_completion(request, body):
-            if chunk.result is not None and applied:
-                chunk.result.applied_sampling_params = {"logit_bias": applied}
+            if chunk.result is not None:
+                if applied:
+                    chunk.result.applied_sampling_params = {"logit_bias": applied}
+                if effective_prompt is not None:
+                    chunk.result.effective_prompt_text = effective_prompt
             yield chunk
 
     async def _stream_completion(

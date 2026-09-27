@@ -35,6 +35,10 @@ class GenerationResult(BaseModel):
     # served model's defaults). Recorded into the node's sampling_params, so
     # the record shows everything that shaped the output.
     applied_sampling_params: dict[str, Any] | None = None
+    # The prompt the model actually saw, when it differs from the rendered
+    # template (e.g. an extra BOS the server prepends). Recorded as the node's
+    # prompt_text so "what the model saw" is literal.
+    effective_prompt_text: str | None = None
 
 
 class StreamChunk(BaseModel):

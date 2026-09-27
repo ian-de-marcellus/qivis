@@ -81,6 +81,7 @@ def _stream_client(lines: list[str]) -> tuple[AsyncMock, MockStreamResponse]:
     resp = MockStreamResponse(lines)
     client = AsyncMock()
     client.stream = MagicMock(return_value=resp)
+    client.post = AsyncMock(side_effect=ConnectionError("no /tokenize in this mock"))
     return client, resp
 
 

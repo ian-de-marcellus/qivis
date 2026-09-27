@@ -68,6 +68,7 @@ def _make_mock_client(response_data: dict | None = None) -> AsyncMock:
     }))
     client = AsyncMock()
     client.stream = MagicMock(side_effect=lambda *a, **kw: MockStreamResponse(lines))
+    client.post = AsyncMock(side_effect=ConnectionError("no /tokenize in this mock"))
     return client
 
 

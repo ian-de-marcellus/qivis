@@ -472,6 +472,7 @@ class GenerationService:
                 include_timestamps=include_ts,
                 active_interventions=active_interventions,
                 mode=mode_hint,
+                prompt_text=prompt_text,
             )
 
         results = await asyncio.gather(*[_generate_one(t) for t in targets])
@@ -553,6 +554,7 @@ class GenerationService:
                             include_timestamps=include_ts,
                             active_interventions=active_interventions,
                             mode=mode_hint,
+                            prompt_text=prompt_text,
                         )
                         tagged = StreamChunk(
                             type=chunk.type,
@@ -1031,6 +1033,8 @@ class GenerationService:
         prompt_text: str | None = None,
     ) -> NodeResponse:
         node_id = str(uuid4())
+        if result.effective_prompt_text is not None:
+            prompt_text = result.effective_prompt_text
         if result.applied_sampling_params:
             sampling_params = sampling_params.model_copy(update=SamplingParams.model_validate(
                 {**sampling_params.model_dump(), **result.applied_sampling_params}

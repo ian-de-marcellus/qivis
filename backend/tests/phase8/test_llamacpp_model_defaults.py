@@ -57,6 +57,7 @@ def _client(served: str | None) -> AsyncMock:
     ]
     client = AsyncMock()
     client.stream = MagicMock(side_effect=lambda *a, **kw: MockStream(lines))
+    client.post = AsyncMock(side_effect=ConnectionError("no /tokenize in this mock"))
     if served is None:
         client.get = AsyncMock(side_effect=ConnectionError("no props"))
     else:
