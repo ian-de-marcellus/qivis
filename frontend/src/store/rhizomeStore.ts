@@ -627,6 +627,8 @@ export const useRhizomeStore = create<RhizomeStore>((set, get) => ({
   },
 
   selectRhizome: async (rhizomeId: string) => {
+    // Re-selecting the open rhizome keeps your place (branches, panels)
+    if (get().selectedRhizomeId === rhizomeId && get().currentRhizome?.rhizome_id === rhizomeId) return
     set({
       isLoading: true,
       error: null,
@@ -656,28 +658,21 @@ export const useRhizomeStore = create<RhizomeStore>((set, get) => ({
       perturbationState: null,
       perturbationReports: [],
     })
+    // Everything below lands only if this rhizome is still the selected one
+    const stillSelected = () => get().selectedRhizomeId === rhizomeId
+    const load = <T,>(fetch: Promise<T>, apply: (data: T) => Partial<RhizomeStore>) =>
+      fetch.then((data) => { if (stillSelected()) set(apply(data)) }).catch(() => {/* non-critical */})
     try {
       const rhizome = await api.getRhizome(rhizomeId)
+      if (!stillSelected()) return
       set({ currentRhizome: rhizome, isLoading: false })
-      // Fetch bookmarks, exclusions, etc. for the new rhizome in the background
-      api.getRhizomeBookmarks(rhizomeId).then((bookmarks) => {
-        set({ bookmarks })
-      }).catch(() => {/* ignore bookmark fetch errors */})
-      api.getExclusions(rhizomeId).then((exclusions) => {
-        set({ exclusions })
-      }).catch(() => {/* ignore exclusion fetch errors */})
-      api.getDigressionGroups(rhizomeId).then((digressionGroups) => {
-        set({ digressionGroups })
-      }).catch(() => {/* ignore group fetch errors */})
-      api.getRhizomeNotes(rhizomeId).then((rhizomeNotes) => {
-        set({ rhizomeNotes })
-      }).catch(() => {/* ignore */})
-      api.getRhizomeAnnotations(rhizomeId).then((rhizomeAnnotations) => {
-        set({ rhizomeAnnotations })
-      }).catch(() => {/* ignore */})
-      api.getRhizomeSummaries(rhizomeId).then((rhizomeSummaries) => {
-        set({ rhizomeSummaries })
-      }).catch(() => {/* ignore */})
+      load(api.getRhizomeBookmarks(rhizomeId), (bookmarks) => ({ bookmarks }))
+      load(api.getExclusions(rhizomeId), (exclusions) => ({ exclusions }))
+      load(api.getDigressionGroups(rhizomeId), (digressionGroups) => ({ digressionGroups }))
+      load(api.getRhizomeNotes(rhizomeId), (rhizomeNotes) => ({ rhizomeNotes }))
+      load(api.getRhizomeAnnotations(rhizomeId), (rhizomeAnnotations) => ({ rhizomeAnnotations }))
+      load(api.getRhizomeSummaries(rhizomeId), (rhizomeSummaries) => ({ rhizomeSummaries }))
+      load(api.getPerturbationReports(rhizomeId), (perturbationReports) => ({ perturbationReports }))
     } catch (e) {
       set({ error: String(e), isLoading: false })
     }

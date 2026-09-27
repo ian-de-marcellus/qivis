@@ -42,6 +42,7 @@ function applyTheme(mode: ThemeMode) {
 
 function App() {
   const { currentRhizome, error } = useRhizomeData()
+  const isCompletion = currentRhizome?.metadata?.generation_mode === 'completion'
   const { branchSelections } = useNavigation()
   const { rightPaneMode, canvasOpen, libraryOpen } = useRightPane()
   const searchQuery = useRhizomeStore(s => s.searchQuery)
@@ -145,41 +146,29 @@ function App() {
         )}
 
         {currentRhizome ? (
-          rightPaneMode != null ? (
-            <div className="split-layout">
-              <div className="linear-pane">
-                <RhizomeSettings />
-                {(currentRhizome.metadata?.generation_mode as string) !== 'completion' && <SystemPromptInput />}
-                {(currentRhizome.metadata?.generation_mode as string) === 'completion'
-                  ? <CompletionView />
-                  : <ChatView />
-                }
-                <MessageInput />
-              </div>
-              <div
-                className="split-divider"
-                onPointerDown={startResize}
-              />
-              <div
-                className="graph-pane"
-                style={graphPaneWidth > 0 ? { width: graphPaneWidth } : undefined}
-              >
-                {rightPaneMode === 'graph' && <GraphView />}
-                {rightPaneMode === 'digressions' && <DigressionSidePanel />}
-                {rightPaneMode === 'research' && <ResearchPanel />}
-              </div>
-            </div>
-          ) : (
-            <>
+          // One tree whether or not the right pane is open, so toggling it
+          // doesn't remount the conversation (and lose open panels, scroll)
+          <div className="split-layout">
+            <div className="linear-pane">
               <RhizomeSettings />
-              {(currentRhizome.metadata?.generation_mode as string) !== 'completion' && <SystemPromptInput />}
-              {(currentRhizome.metadata?.generation_mode as string) === 'completion'
-                ? <CompletionView />
-                : <ChatView />
-              }
+              {!isCompletion && <SystemPromptInput />}
+              {isCompletion ? <CompletionView /> : <ChatView />}
               <MessageInput />
-            </>
-          )
+            </div>
+            {rightPaneMode != null && (
+              <>
+                <div className="split-divider" onPointerDown={startResize} />
+                <div
+                  className="graph-pane"
+                  style={graphPaneWidth > 0 ? { width: graphPaneWidth } : undefined}
+                >
+                  {rightPaneMode === 'graph' && <GraphView />}
+                  {rightPaneMode === 'digressions' && <DigressionSidePanel />}
+                  {rightPaneMode === 'research' && <ResearchPanel />}
+                </div>
+              </>
+            )}
+          </div>
         ) : (
           <div className="empty-state">
             <h1>Qivis</h1>
