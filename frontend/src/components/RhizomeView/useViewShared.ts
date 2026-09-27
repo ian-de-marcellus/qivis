@@ -39,7 +39,8 @@ export function useActivePath() {
   // When regenerating, truncate the path at the regeneration point
   // so the old assistant message (and everything below it) disappears
   if (regeneratingParentId != null) {
-    const cutIndex = path.findIndex((n) => n.parent_id === regeneratingParentId)
+    // '' is the root key: regenerating a root node truncates the whole path
+    const cutIndex = path.findIndex((n) => (n.parent_id ?? '') === regeneratingParentId)
     if (cutIndex !== -1) {
       path = path.slice(0, cutIndex)
     }

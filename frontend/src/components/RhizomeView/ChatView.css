@@ -213,3 +213,28 @@
 .message-row:hover .message-meta {
   opacity: 1;
 }
+
+/* ---- Empty rhizome: generate the first turn at the root ---- */
+.first-turn-row {
+  display: flex;
+  justify-content: center;
+  padding: var(--space-sm) 0;
+}
+
+.first-turn-btn {
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  padding: var(--space-xs) var(--space-md);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.first-turn-btn:hover {
+  color: var(--text-primary);
+  border-color: var(--text-tertiary);
+  background: var(--bg-tertiary);
+}

@@ -285,8 +285,9 @@ function refreshRhizomeSelectNewest(
   set: SetFn,
 ) {
   api.getRhizome(rhizomeId).then((rhizome) => {
+    // '' is the root key (root generations have parent_id null)
     const newChildren = rhizome.nodes.filter(
-      (nd) => nd.parent_id === parentNodeId,
+      (nd) => (nd.parent_id ?? '') === parentNodeId,
     )
     const newest = newChildren[newChildren.length - 1]
     if (newest) {
@@ -411,7 +412,8 @@ export const useRhizomeStore = create<RhizomeStore>((set, get) => ({
     set({ ...MULTI_STREAMING_RESET, regeneratingParentId: null })
 
     const rhizomeId = currentRhizome?.rhizome_id
-    if (!rhizomeId || !streamingParentId) {
+    // streamingParentId is '' for a root generation, so check null explicitly
+    if (!rhizomeId || streamingParentId === null) {
       if (rhizomeId) refreshRhizome(rhizomeId, set)
       return
     }
@@ -442,7 +444,7 @@ export const useRhizomeStore = create<RhizomeStore>((set, get) => ({
         api.createNode(rhizomeId, {
           content,
           role: 'assistant',
-          parent_id: streamingParentId,
+          parent_id: streamingParentId || undefined,
           mode: 'chat',
         }),
       ),

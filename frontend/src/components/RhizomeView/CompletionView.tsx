@@ -18,6 +18,7 @@ import { CompletionNode } from './CompletionNode.tsx'
 import { ContextModal } from './ContextModal.tsx'
 import { reconstructContext } from './contextReconstruction.ts'
 import { ForkPanel } from './ForkPanel.tsx'
+import { FirstTurnAction } from './FirstTurnAction.tsx'
 import { GenerationErrorPanel } from './GenerationErrorPanel.tsx'
 import { MessageRow } from './MessageRow.tsx'
 import { StreamingDisplay } from './StreamingDisplay.tsx'
@@ -264,6 +265,28 @@ export function CompletionView() {
             </Fragment>
           )
         })}
+
+        {path.length === 0 && !isGenerating && (
+          <FirstTurnAction
+            open={forkTarget?.parentId === ''}
+            onOpen={() => setForkTarget({ parentId: '', mode: 'generate' })}
+            panel={
+              <ForkPanel
+                mode={forkTarget?.mode ?? 'generate'}
+                onForkSubmit={handleForkSubmit}
+                onRegenerateSubmit={handleRegenerateSubmit}
+                onPrefillSubmit={handlePrefillSubmit}
+                onPrefillContinue={handlePrefillContinue}
+                onCancel={() => setForkTarget(null)}
+                isGenerating={isGenerating}
+                providers={providers}
+                defaults={branchDefaults}
+                streamDefault={currentRhizome.metadata?.stream_responses !== false}
+                samplingDefaults={currentRhizome.default_sampling_params}
+              />
+            }
+          />
+        )}
 
         <StreamingDisplay
           isGenerating={isGenerating}

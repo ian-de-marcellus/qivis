@@ -371,12 +371,19 @@ export function getRhizomePaths(
 
 // -- Generation (non-streaming) --
 
+/** Generate endpoint path. A null/empty nodeId is a root generation: the model speaks first. */
+function generatePath(rhizomeId: string, nodeId: string | null): string {
+  return nodeId
+    ? `/rhizomes/${rhizomeId}/nodes/${nodeId}/generate`
+    : `/rhizomes/${rhizomeId}/generate`
+}
+
 export function generate(
   rhizomeId: string,
-  nodeId: string,
+  nodeId: string | null,
   req: GenerateRequest = {},
 ): Promise<NodeResponse> {
-  return request(`/rhizomes/${rhizomeId}/nodes/${nodeId}/generate`, {
+  return request(generatePath(rhizomeId, nodeId), {
     method: 'POST',
     body: JSON.stringify({ ...req, stream: false }),
   })
@@ -386,7 +393,7 @@ export function generate(
 
 export async function generateStream(
   rhizomeId: string,
-  nodeId: string,
+  nodeId: string | null,
   req: GenerateRequest,
   onDelta: (text: string) => void,
   onComplete: (event: MessageStopEvent) => void,
@@ -395,7 +402,7 @@ export async function generateStream(
   signal?: AbortSignal,
 ): Promise<void> {
   try {
-    const res = await fetch(`${BASE}/rhizomes/${rhizomeId}/nodes/${nodeId}/generate`, {
+    const res = await fetch(`${BASE}${generatePath(rhizomeId, nodeId)}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...req, stream: true }),
@@ -475,7 +482,7 @@ export async function generateStream(
 
 export async function generateMultiStream(
   rhizomeId: string,
-  nodeId: string,
+  nodeId: string | null,
   req: GenerateRequest,
   onDelta: (text: string, completionIndex: number) => void,
   onStreamComplete: (event: MessageStopEvent) => void,
@@ -485,7 +492,7 @@ export async function generateMultiStream(
   signal?: AbortSignal,
 ): Promise<void> {
   try {
-    const res = await fetch(`${BASE}/rhizomes/${rhizomeId}/nodes/${nodeId}/generate`, {
+    const res = await fetch(`${BASE}${generatePath(rhizomeId, nodeId)}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...req, stream: true }),

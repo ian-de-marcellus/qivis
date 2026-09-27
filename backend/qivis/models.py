@@ -125,7 +125,7 @@ class RhizomeUnarchivedPayload(BaseModel):
 
 class GenerationStartedPayload(BaseModel):
     generation_id: str
-    parent_node_id: str
+    parent_node_id: str | None = None
     model: str
     provider: str
     system_prompt: str | None = None

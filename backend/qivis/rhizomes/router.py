@@ -566,6 +566,29 @@ async def generate(
     request: GenerateRequest,
     gen_service: GenerationService = Depends(get_generation_service),
 ) -> NodeResponse | StreamingResponse:
+    return await _dispatch_generate(rhizome_id, node_id, request, gen_service)
+
+
+@router.post(
+    "/{rhizome_id}/generate",
+    status_code=status.HTTP_201_CREATED,
+    response_model=None,
+)
+async def generate_root(
+    rhizome_id: str,
+    request: GenerateRequest,
+    gen_service: GenerationService = Depends(get_generation_service),
+) -> NodeResponse | StreamingResponse:
+    """Generate a new root assistant node: the model speaks first, with no prior turns."""
+    return await _dispatch_generate(rhizome_id, None, request, gen_service)
+
+
+async def _dispatch_generate(
+    rhizome_id: str,
+    node_id: str | None,
+    request: GenerateRequest,
+    gen_service: GenerationService,
+) -> NodeResponse | StreamingResponse:
     try:
         provider = get_provider(request.provider)
     except ProviderNotFoundError as e:
@@ -625,7 +648,7 @@ async def generate(
 async def _stream_sse(
     gen_service: GenerationService,
     rhizome_id: str,
-    node_id: str,
+    node_id: str | None,
     provider: LLMProvider,
     request: GenerateRequest,
 ) -> AsyncIterator[str]:
@@ -677,7 +700,7 @@ async def _stream_sse(
 async def _stream_n_sse(
     gen_service: GenerationService,
     rhizome_id: str,
-    node_id: str,
+    node_id: str | None,
     provider: LLMProvider,
     request: GenerateRequest,
 ) -> AsyncIterator[str]:

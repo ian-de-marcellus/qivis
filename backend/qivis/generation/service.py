@@ -96,7 +96,7 @@ class GenerationService:
     async def generate(
         self,
         rhizome_id: str,
-        node_id: str,
+        node_id: str | None,
         provider: LLMProvider,
         *,
         model: str | None = None,
@@ -174,7 +174,7 @@ class GenerationService:
     async def generate_n(
         self,
         rhizome_id: str,
-        node_id: str,
+        node_id: str | None,
         provider: LLMProvider,
         *,
         n: int,
@@ -254,7 +254,7 @@ class GenerationService:
     async def generate_n_stream(
         self,
         rhizome_id: str,
-        node_id: str,
+        node_id: str | None,
         provider: LLMProvider,
         *,
         n: int,
@@ -600,7 +600,7 @@ class GenerationService:
     async def generate_stream(
         self,
         rhizome_id: str,
-        node_id: str,
+        node_id: str | None,
         provider: LLMProvider,
         *,
         model: str | None = None,
@@ -743,7 +743,7 @@ class GenerationService:
     async def _resolve_context(
         self,
         rhizome_id: str,
-        node_id: str,
+        node_id: str | None,
         model: str | None,
         system_prompt: str | None,
         sampling_params: SamplingParams | None,
@@ -763,8 +763,9 @@ class GenerationService:
             raise RhizomeNotFoundForGenerationError(rhizome_id)
 
         nodes = await self._projector.get_nodes(rhizome_id)
+        # node_id=None is a root generation: the model speaks with no prior turns
         node_ids = {n["node_id"] for n in nodes}
-        if node_id not in node_ids:
+        if node_id is not None and node_id not in node_ids:
             raise NodeNotFoundForGenerationError(node_id)
 
         resolved_model = model or rhizome.get("default_model") or "claude-sonnet-4-5-20250929"
@@ -827,7 +828,7 @@ class GenerationService:
     def _build_context_with_interventions(
         self,
         nodes: list[dict],
-        node_id: str,
+        node_id: str | None,
         system_prompt: str | None,
         context_limit: int,
         *,
@@ -946,7 +947,7 @@ class GenerationService:
         return prompt_text, updated, "completion"
 
     @staticmethod
-    def _get_path_node_ids(nodes: list[dict], target_node_id: str) -> set[str]:
+    def _get_path_node_ids(nodes: list[dict], target_node_id: str | None) -> set[str]:
         """Walk parent chain from target to root, return set of node IDs on path."""
         by_id = {n["node_id"]: n for n in nodes}
         path_ids: set[str] = set()
@@ -963,7 +964,7 @@ class GenerationService:
         self,
         rhizome_id: str,
         generation_id: str,
-        parent_node_id: str,
+        parent_node_id: str | None,
         model: str,
         provider_name: str,
         system_prompt: str | None,
@@ -999,7 +1000,7 @@ class GenerationService:
         self,
         rhizome_id: str,
         generation_id: str,
-        parent_id: str,
+        parent_id: str | None,
         result: GenerationResult,
         provider_name: str,
         system_prompt: str | None,

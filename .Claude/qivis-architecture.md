@@ -204,7 +204,7 @@ RhizomeUnarchived {}
 ```
 GenerationStarted {
   generation_id: UUID
-  parent_node_id: UUID
+  parent_node_id: UUID | null        // null = root generation (model speaks first)
   model: string                     // per-generation override or rhizome default
   provider: string
   system_prompt: string | null
@@ -829,6 +829,9 @@ DELETE /api/rhizomes/{id}                         # archive
 ```
 POST   /api/rhizomes/{id}/nodes                  # add user message or researcher note
 POST   /api/rhizomes/{id}/nodes/{nid}/generate   # generate response(s)
+POST   /api/rhizomes/{id}/generate               # root generation: same body; new root assistant node(s),
+                                                 # empty context (system prompt only; completion mode renders
+                                                 # just the opened assistant turn)
   Body: {
     "model": "...",                            // optional per-generation override
     "provider": "...",

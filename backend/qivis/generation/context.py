@@ -57,7 +57,7 @@ class ContextBuilder:
     def build(
         self,
         nodes: list[dict],
-        target_node_id: str,
+        target_node_id: str | None,
         system_prompt: str | None,
         model_context_limit: int,
         *,
@@ -181,7 +181,7 @@ class ContextBuilder:
     def build_messages(
         self,
         nodes: list[dict],
-        target_node_id: str,
+        target_node_id: str | None,
         *,
         include_timestamps: bool = False,
         include_thinking: bool = False,
@@ -318,11 +318,14 @@ class ContextBuilder:
 
         return messages, usage, report
 
-    def _walk_path(self, nodes: list[dict], target_node_id: str) -> list[dict]:
+    def _walk_path(self, nodes: list[dict], target_node_id: str | None) -> list[dict]:
         """Walk parent chain from target to root, return in chronological order.
 
+        A target of None means a root generation: the path is empty.
         Raises ValueError if target not found, chain is broken, or cycle detected.
         """
+        if target_node_id is None:
+            return []
         by_id = {n["node_id"]: n for n in nodes}
         if target_node_id not in by_id:
             raise ValueError(f"Node not found: {target_node_id}")
