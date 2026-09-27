@@ -9,6 +9,7 @@ not from the client; the client only says who chose each token.
 
 import dataclasses
 import math
+import re
 import time
 from dataclasses import dataclass, field
 from typing import Any, Literal
@@ -42,6 +43,8 @@ class SteeringSession:
     shown: dict[tuple[int, ...], list[dict[str, Any]]] = field(default_factory=dict)
     logit_bias: dict[int, float] | None = None
     effective_prompt: str | None = None  # what the model saw, if it differs from the rendering
+    # Special tokens' text by id: llama.cpp reports them with empty text
+    special_text: dict[int, str] = field(default_factory=dict)
 
 
 class SteeringService:
@@ -71,6 +74,7 @@ class SteeringService:
         if prepared.request.prompt_text is None:
             raise InvalidRequestError("Steering needs a completion-mode prompt")
         session = SteeringSession(str(uuid4()), dataclasses.replace(prepared, steered=True))
+        session.special_text = await self._special_text(provider, prepared)
         self._sessions[session.session_id] = session
         while len(self._sessions) > MAX_SESSIONS:
             oldest = min(self._sessions.values(), key=lambda s: s.created)
@@ -101,7 +105,7 @@ class SteeringService:
             result = await self._provider(session).next_tokens(
                 session.prepared.request, continuation, k,
             )
-            shown = result["candidates"]
+            shown = self._named(session, result["candidates"])
             session.shown[key] = shown
             session.logit_bias = result["logit_bias"]
             session.effective_prompt = result["effective_prompt"]
@@ -184,9 +188,27 @@ class SteeringService:
             result = await self._provider(session).next_tokens(
                 session.prepared.request, before, LOOKUP_K,
             )
-            shown = result["candidates"]
+            shown = self._named(session, result["candidates"])
             session.shown[key] = shown
         return shown
+
+    @staticmethod
+    async def _special_text(provider: Any, prepared: Prepared) -> dict[int, str]:
+        """Ids of the special tokens this conversation uses (its template's, and the
+        stop sequences), so a distribution can name them: end of turn especially."""
+        specials = set(re.findall(r"<\|[^|<>]+\|>", prepared.request.prompt_text or ""))
+        specials |= set(prepared.request.sampling_params.stop_sequences or [])
+        if not specials:
+            return {}
+        pieces = await provider.tokenize("".join(sorted(specials)))
+        return {p["id"]: p["token"] for p in pieces if p["token"] in specials}
+
+    @staticmethod
+    def _named(session: SteeringSession, candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        return [
+            {**c, "token": session.special_text.get(c["id"], c["token"])} if not c["token"] else c
+            for c in candidates
+        ]
 
     @staticmethod
     def _provider(session: SteeringSession) -> Any:

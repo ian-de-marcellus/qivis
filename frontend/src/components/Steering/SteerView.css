@@ -205,6 +205,13 @@
   font-size: var(--text-xs);
 }
 
+.steer-stage {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+}
+
 .steer-canvas {
   flex: 1;
   min-width: 0;
@@ -219,4 +226,51 @@
   padding: var(--space-lg);
   font-family: var(--font-ui);
   color: var(--text-secondary);
+}
+
+/* After end of turn: the researcher's turn, over the (stopped) canvas */
+.steer-your-turn {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(520px, 80%);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-md);
+  background: var(--bg-primary);
+  border: 1px solid var(--text-accent);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
+  font-family: var(--font-ui);
+}
+
+.steer-your-turn textarea {
+  resize: vertical;
+  padding: var(--space-sm);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+}
+
+.steer-your-turn button {
+  padding: var(--space-xs) var(--space-sm);
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.steer-your-turn .steer-keep {
+  border-color: var(--text-accent);
+  color: var(--text-accent);
 }

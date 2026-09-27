@@ -48,6 +48,7 @@ export function SteerView({
   rhizomeId, parentId, provider, model, modelOptions, onModelChange, onClose,
 }: SteerViewProps) {
   const showNode = useRhizomeStore(s => s.showNode)
+  const openSteer = useRhizomeStore(s => s.openSteer)
 
   const [session, setSession] = useState<SteeringSession | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -58,8 +59,14 @@ export function SteerView({
   const [ended, setEnded] = useState(false)
   const [typed, setTyped] = useState('')
   const [saving, setSaving] = useState(false)
+  // Steer through end of turn into the model's version of the next turn (user sim)
+  const [pastEnd, setPastEnd] = useState(false)
+  // The reply ended and was kept: the researcher writes the next turn
+  const [yourTurn, setYourTurn] = useState<string | null>(null)
+  const [myMessage, setMyMessage] = useState('')
 
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const finishTurn = useRef<() => void>(() => {})
   // Animation state lives in refs: the frame loop reads and writes it directly
   const live = useRef({
     view: { c: 0.5, s: 400 } as View,
@@ -67,7 +74,7 @@ export function SteerView({
     cache: new Map<string, TokenCandidate[]>(),
     inflight: new Set<string>(),
     pointer: { x: 0, y: 0, inside: false },
-    paused: true, cruise: false, speed: 1.2, ended: false,
+    paused: true, cruise: false, speed: 1.2, ended: false, pastEnd: false,
     // How far the current column has traveled toward the line, 0..1
     progress: 0,
     stops: [] as string[],
@@ -80,8 +87,8 @@ export function SteerView({
     height: 600,
   })
   useEffect(() => {
-    Object.assign(live.current, { paused, cruise, speed, ended })
-  }, [paused, cruise, speed, ended])
+    Object.assign(live.current, { paused, cruise, speed, ended, pastEnd })
+  }, [paused, cruise, speed, ended, pastEnd])
 
   // -- Session --
 
@@ -128,10 +135,11 @@ export function SteerView({
     if (L.progress < 0.99) L.view = { c: 0.5, s: L.height * REST }
     L.progress = 0
     L.tokens.push({ id: box.id, token: box.token, prob: box.prob, chosenBy })
-    if (L.stops.includes(box.token)) {
+    if (L.stops.includes(box.token) && !L.pastEnd) {
       L.ended = true
       setEnded(true)
       setPaused(true)
+      queueMicrotask(() => finishTurn.current())
     }
     publish()
     fetchDist(L.tokens.map((t) => t.id))
@@ -169,6 +177,13 @@ export function SteerView({
         const dist = L.cache.get(keyOf(L.tokens.map((t) => t.id)))
         const prob = dist?.find((c) => c.id === piece.id)?.prob ?? 0
         L.tokens.push({ id: piece.id, token: piece.token, prob, chosenBy: 'researcher' })
+        if (L.stops.includes(piece.token) && !L.pastEnd) {
+          L.ended = true
+          setEnded(true)
+          setPaused(true)
+          queueMicrotask(() => finishTurn.current())
+          break
+        }
       }
       L.view = { c: 0.5, s: L.view.s }
       setTyped('')
@@ -179,7 +194,7 @@ export function SteerView({
     }
   }
 
-  const keep = async () => {
+  const keep = useCallback(async ({ thenYourTurn }: { thenYourTurn: boolean }) => {
     const L = live.current
     if (!L.sessionId || L.tokens.length === 0) return
     setSaving(true)
@@ -189,10 +204,34 @@ export function SteerView({
       )
       L.sessionId = null
       await showNode(node.node_id)
-      onClose()
+      if (thenYourTurn) {
+        setSaving(false)
+        setYourTurn(node.node_id)
+      } else {
+        onClose()
+      }
     } catch (e) {
       setError(String(e))
       setSaving(false)
+    }
+  }, [showNode, onClose])
+
+  // Reaching end of turn keeps the reply and hands the conversation back
+  // (choose() runs in the frame loop, so it reaches keep through a ref)
+  useEffect(() => {
+    finishTurn.current = () => void keep({ thenYourTurn: true })
+  }, [keep])
+
+  const sendMyTurn = async () => {
+    if (!yourTurn || !myMessage.trim()) return
+    try {
+      const mine = await api.createNode(rhizomeId, {
+        content: myMessage.trim(), role: 'user', parent_id: yourTurn,
+      })
+      await showNode(mine.node_id)
+      openSteer(mine.node_id) // a fresh session steering her reply to it
+    } catch (e) {
+      setError(String(e))
     }
   }
 
@@ -206,7 +245,8 @@ export function SteerView({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.target as HTMLElement)?.tagName === 'INPUT') {
+      const tag = (e.target as HTMLElement)?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA') {
         if (e.key === 'Escape') (e.target as HTMLElement).blur()
         return
       }
@@ -370,13 +410,13 @@ export function SteerView({
         const isStop = L.stops.includes(box.token)
         const focused = depth === 0 && box.id === focusId
         g.fillStyle = isStop
-          ? color('--ctx-red')
+          ? color('--accent')
           : focused ? color('--bg-selected')
             : (box.rank + depth) % 2 === 0 ? color('--bg-secondary') : color('--bg-hover')
-        g.globalAlpha = isStop ? 0.35 : 1
+        g.globalAlpha = isStop ? (focused ? 0.4 : 0.22) : 1
         g.fillRect(x, y, W - x, h)
         g.globalAlpha = 1
-        g.strokeStyle = color('--border-subtle')
+        g.strokeStyle = isStop ? color('--accent') : color('--border-subtle')
         g.lineWidth = 1
         g.strokeRect(x + 0.5, y + 0.5, W - x - 1, h - 1)
 
@@ -384,12 +424,12 @@ export function SteerView({
           const size = Math.max(10, Math.min(26, h * 0.32))
           g.font = `${size}px ${color('--font-mono')}`
           g.textBaseline = 'middle'
-          const label = isStop ? 'end of turn' : tokenLabel(box.token)
+          const label = isStop ? '↵ end of turn' : tokenLabel(box.token)
           // Keep the label on screen, and level with the crosshair when the box spans it
           const labelY = h > 60
             ? Math.max(Math.max(y, 0) + size, Math.min(Math.min(y + h, H) - size, crossY))
             : y + h / 2
-          g.fillStyle = focused ? color('--text-accent') : color('--text-primary')
+          g.fillStyle = focused || isStop ? color('--text-accent') : color('--text-primary')
           g.fillText(label, x + 8, labelY, Math.max(20, W - x - 16))
           let used = g.measureText(label).width
           if (h > 34) {
@@ -404,7 +444,7 @@ export function SteerView({
         }
 
         // What could come next after this option: the next column, inside it
-        if (depth < MAX_DEPTH && !isStop && h > 60) {
+        if (depth < MAX_DEPTH && (!isStop || L.pastEnd) && h > 60) {
           const childIds = [...prefix, box.id]
           const children = L.cache.get(keyOf(childIds))
           if (!children) fetchDist(childIds)
@@ -476,6 +516,13 @@ export function SteerView({
             <button onClick={() => setCruise((c) => !c)} className={cruise ? 'active' : ''}>
               {cruise ? 'Cruise' : 'Pointer speed'}
             </button>
+            <button
+              onClick={() => setPastEnd((v) => !v)}
+              className={pastEnd ? 'active' : ''}
+              title="Steer through end of turn into the model's version of the next turn"
+            >
+              Past end of turn
+            </button>
           </div>
 
           <label className="steer-slider">
@@ -493,20 +540,53 @@ export function SteerView({
 
           <div className="steer-actions">
             <button className="steer-discard" onClick={close}>Discard</button>
-            <button className="steer-keep" onClick={keep} disabled={saving || tokens.length === 0}>
-              {saving ? 'Saving…' : ended ? 'Keep reply' : 'Keep so far'}
+            <button
+              className="steer-keep"
+              onClick={() => keep({ thenYourTurn: false })}
+              disabled={saving || tokens.length === 0 || yourTurn != null}
+            >
+              {saving ? 'Saving…' : 'Keep so far'}
             </button>
           </div>
         </div>
 
-        <canvas
-          ref={canvasRef}
-          className="steer-canvas"
-          onPointerMove={onPointer}
-          onPointerEnter={onPointer}
-          onPointerLeave={() => { live.current.pointer.inside = false }}
-          onClick={() => setPaused((p) => !p)}
-        />
+        <div className="steer-stage">
+          <canvas
+            ref={canvasRef}
+            className="steer-canvas"
+            onPointerMove={onPointer}
+            onPointerEnter={onPointer}
+            onPointerLeave={() => { live.current.pointer.inside = false }}
+            onClick={() => { if (!yourTurn) setPaused((p) => !p) }}
+          />
+          {yourTurn && (
+            <div className="steer-your-turn">
+              <div className="steer-label">Your turn</div>
+              <p className="steer-help">Her reply is kept. Write yours; Enter sends it and steers her next reply.</p>
+              <textarea
+                autoFocus
+                rows={3}
+                value={myMessage}
+                onChange={(e) => setMyMessage(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault()
+                    void sendMyTurn()
+                  } else if (e.key === 'Escape') {
+                    onClose()
+                  }
+                }}
+                placeholder="Your message…"
+              />
+              <div className="steer-actions">
+                <button className="steer-discard" onClick={onClose}>Done</button>
+                <button className="steer-keep" onClick={() => void sendMyTurn()} disabled={!myMessage.trim()}>
+                  Send and steer her reply
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )

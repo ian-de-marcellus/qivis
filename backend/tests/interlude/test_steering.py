@@ -21,7 +21,7 @@ from qivis.rhizomes.service import RhizomeService
 from qivis.steering.router import get_steering_service
 from qivis.steering.service import SteeringService
 
-VOCAB = {1: "Hi", 2: " there", 3: "!", 4: "<|eot_id|>", 5: " friend"}
+VOCAB = {1: "Hi", 2: " there", 3: "!", 4: "<|eot_id|>", 5: " friend", 6: "<|start_header_id|>"}
 
 
 class SteerableModel(LLMProvider):
@@ -39,11 +39,27 @@ class SteerableModel(LLMProvider):
     async def next_tokens(self, request: GenerationRequest, continuation: list[int], k: int):
         self.calls.append((list(continuation), k))
         dist = [(1, 0.6), (2, 0.25), (3, 0.1), (4, 0.04), (5, 0.01)]
+        # Like llama.cpp: special tokens come back with empty text
         return {
-            "candidates": [{"id": i, "token": VOCAB[i], "bytes": None, "prob": p} for i, p in dist[:k]],
+            "candidates": [
+                {"id": i, "token": "" if i == 4 else VOCAB[i], "bytes": None, "prob": p}
+                for i, p in dist[:k]
+            ],
             "logit_bias": {4: 1.5},
             "effective_prompt": "<BOS><BOS>" + (request.prompt_text or ""),
         }
+
+    async def tokenize(self, text: str) -> list[dict]:
+        by_text = {v: k for k, v in VOCAB.items()}
+        out, rest = [], text
+        while rest:
+            piece = next((t for t in sorted(by_text, key=len, reverse=True) if rest.startswith(t)), None)
+            if piece is None:  # not in this tiny vocabulary: skip a character
+                rest = rest[1:]
+                continue
+            out.append({"id": by_text[piece], "token": piece})
+            rest = rest[len(piece):]
+        return out
 
     async def detokenize(self, ids: list[int]) -> str:
         return "".join(VOCAB[i] for i in ids)
@@ -147,3 +163,11 @@ async def test_errors(env):
     ok = await c.post(f"/api/steer/{s['session_id']}/commit", json={
         "token_ids": [1], "chosen_by": ["researcher"]})
     assert ok.status_code == 201
+
+
+async def test_special_tokens_are_named(env):
+    """llama.cpp gives end-of-turn empty text; steering names it, so it can end the turn."""
+    c, _, rid, nid = env
+    s = (await _start(c, rid, nid)).json()
+    shown = (await c.post(f"/api/steer/{s['session_id']}/next", json={"continuation": []})).json()
+    assert "<|eot_id|>" in [t["token"] for t in shown]
