@@ -112,6 +112,9 @@ class ContextBuilder:
                 thinking = n.get("thinking_content")
                 if thinking:
                     content = f"[Model thinking: {thinking}]\n\n{content}"
+            # Skip messages with empty content — providers reject them
+            if not content.strip():
+                continue
             messages.append({"role": n["role"], "content": content})
         # Keep node_ids aligned with messages for eviction reporting
         message_node_ids = [
@@ -119,6 +122,7 @@ class ContextBuilder:
             for n in path
             if n["role"] in ("user", "assistant", "tool")
             and n["node_id"] not in effective_excluded
+            and self._maybe_prepend_timestamp(n, include_timestamps).strip()
         ]
 
         # 3. Count tokens
@@ -226,6 +230,9 @@ class ContextBuilder:
                 thinking = n.get("thinking_content")
                 if thinking:
                     content = f"[Model thinking: {thinking}]\n\n{content}"
+            # Skip messages with empty content — providers reject them
+            if not content.strip():
+                continue
             messages.append({"role": n["role"], "content": content})
             created_ats.append(n.get("created_at"))
 
@@ -234,6 +241,7 @@ class ContextBuilder:
             for n in path
             if n["role"] in ("user", "assistant", "tool")
             and n["node_id"] not in effective_excluded
+            and self._maybe_prepend_timestamp(n, include_timestamps).strip()
         ]
 
         excluded_info = {
