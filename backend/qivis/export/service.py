@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from qivis.db.connection import Database
 from qivis.events.projector import StateProjector
 from qivis.events.store import EventStore
+from qivis.rhizomes.paths import ancestry, leaf_paths
 from qivis.utils.json import json_str, parse_json_or_none
 
 
@@ -207,16 +208,9 @@ class ExportService:
         excl_rows = await self._projector.get_node_exclusions(rhizome_id)
         excluded_ids = {r["node_id"] for r in excl_rows}
 
-        # Compute path depth for each node
+        # Path depth of each node (0 for a root)
         by_id = {n["node_id"]: n for n in nodes}
-        depths: dict[str, int] = {}
-        for n in nodes:
-            depth = 0
-            cur = n
-            while cur.get("parent_id") and cur["parent_id"] in by_id:
-                depth += 1
-                cur = by_id[cur["parent_id"]]
-            depths[n["node_id"]] = depth
+        depths = {n["node_id"]: len(ancestry(by_id, n["node_id"])) - 1 for n in nodes}
 
         fieldnames = [
             "node_id", "parent_id", "role", "content", "edited_content",
@@ -271,33 +265,7 @@ class ExportService:
         if not nodes:
             return []
 
-        by_id = {n["node_id"]: n for n in nodes}
-        children: dict[str | None, list[str]] = {}
-        for n in nodes:
-            pid = n.get("parent_id")
-            children.setdefault(pid, []).append(n["node_id"])
-
-        # Find roots (no parent or parent not in rhizome)
-        roots = children.get(None, [])
-
-        # DFS to enumerate paths
-        paths: list[list[str]] = []
-
-        def _dfs(node_id: str, path: list[str]) -> None:
-            path.append(node_id)
-            child_ids = children.get(node_id, [])
-            if not child_ids:
-                # Leaf node — record path
-                paths.append(list(path))
-            else:
-                for cid in child_ids:
-                    _dfs(cid, path)
-            path.pop()
-
-        for root_id in roots:
-            _dfs(root_id, [])
-
-        return paths
+        return leaf_paths(nodes)
 
 
 def _row_to_dict(row) -> dict:

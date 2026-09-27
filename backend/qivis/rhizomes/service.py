@@ -38,6 +38,7 @@ from qivis.models import (
     SummaryGeneratedPayload,
     SummaryRemovedPayload,
 )
+from qivis.rhizomes.paths import ancestry, subtree
 from qivis.rhizomes.schemas import (
     AddAnnotationRequest,
     AnnotationResponse,
@@ -697,37 +698,6 @@ class RhizomeService:
             return eviction_raw["summary_model"]
         return "claude-haiku-4-5-20251001"
 
-    def _walk_branch(self, node_map: dict[str, dict], leaf_id: str) -> list[dict]:
-        """Walk parent chain from leaf to root, return root-first list."""
-        path: list[dict] = []
-        current = node_map.get(leaf_id)
-        while current:
-            path.append(current)
-            current = node_map.get(current["parent_id"]) if current["parent_id"] else None
-        path.reverse()
-        return path
-
-    def _collect_subtree(self, node_map: dict[str, dict], root_id: str) -> list[dict]:
-        """BFS from root collecting all descendants, ordered by created_at."""
-        children_map: dict[str, list[dict]] = {}
-        for n in node_map.values():
-            pid = n.get("parent_id")
-            if pid:
-                children_map.setdefault(pid, []).append(n)
-        collected = []
-        queue = [node_map[root_id]] if root_id in node_map else []
-        while queue:
-            node = queue.pop(0)
-            collected.append(node)
-            for child in sorted(
-                children_map.get(node["node_id"], []),
-                key=lambda n: n.get("created_at", ""),
-            ):
-                queue.append(child)
-        return collected
-
-    # -- Bookmark summary --
-
     async def generate_bookmark_summary(
         self, rhizome_id: str, bookmark_id: str,
     ) -> BookmarkResponse:
@@ -751,7 +721,7 @@ class RhizomeService:
         nodes = await self._projector.get_nodes(rhizome_id)
         node_map = {n["node_id"]: n for n in nodes}
 
-        path = self._walk_branch(node_map, bm_row["node_id"])
+        path = ancestry(node_map, bm_row["node_id"])
         transcript = self._build_transcript(path)
         summarized_node_ids = [n["node_id"] for n in path]
 
@@ -832,9 +802,9 @@ class RhizomeService:
 
         # Collect nodes based on scope
         if req.scope == "subtree":
-            scope_nodes = self._collect_subtree(node_map, anchor_node_id)
+            scope_nodes = subtree(node_map.values(), anchor_node_id)
         else:
-            scope_nodes = self._walk_branch(node_map, anchor_node_id)
+            scope_nodes = ancestry(node_map, anchor_node_id)
 
         transcript = self._build_transcript(scope_nodes)
         node_ids = [n["node_id"] for n in scope_nodes]

@@ -11,6 +11,7 @@ from datetime import datetime
 from qivis.generation.tokens import ApproximateTokenCounter, TokenCounter
 from qivis.model_catalog import get_catalog
 from qivis.models import ContextUsage, EvictionReport, EvictionStrategy
+from qivis.rhizomes.paths import ancestry
 
 # Known model context limits (tokens). Falls back to DEFAULT for unknown models.
 MODEL_CONTEXT_LIMITS: dict[str, int] = {
@@ -102,7 +103,7 @@ class ContextBuilder:
         """
         counter = token_counter or ApproximateTokenCounter()
         # 1. Walk the parent chain to get messages in chronological order
-        path = self._walk_path(nodes, target_node_id)
+        path = ancestry({n["node_id"]: n for n in nodes}, target_node_id, strict=True)
         path_node_ids = {n["node_id"] for n in path}
 
         # 1b. Build effective excluded set from node-level + group-level exclusions
@@ -221,7 +222,7 @@ class ContextBuilder:
         for passing to count_and_evict().
         """
         counter = ApproximateTokenCounter()
-        path = self._walk_path(nodes, target_node_id)
+        path = ancestry({n["node_id"]: n for n in nodes}, target_node_id, strict=True)
         path_node_ids = {n["node_id"] for n in path}
 
         effective_excluded = set(excluded_ids) if excluded_ids else set()
@@ -346,35 +347,6 @@ class ContextBuilder:
         )
 
         return messages, usage, report
-
-    def _walk_path(self, nodes: list[dict], target_node_id: str | None) -> list[dict]:
-        """Walk parent chain from target to root, return in chronological order.
-
-        A target of None means a root generation: the path is empty.
-        Raises ValueError if target not found, chain is broken, or cycle detected.
-        """
-        if target_node_id is None:
-            return []
-        by_id = {n["node_id"]: n for n in nodes}
-        if target_node_id not in by_id:
-            raise ValueError(f"Node not found: {target_node_id}")
-
-        chain: list[dict] = []
-        current_id: str | None = target_node_id
-        visited: set[str] = set()
-
-        while current_id is not None:
-            if current_id in visited:
-                raise ValueError(f"Cycle detected at node: {current_id}")
-            visited.add(current_id)
-            node = by_id.get(current_id)
-            if node is None:
-                raise ValueError(f"Broken chain: node {current_id} not found")
-            chain.append(node)
-            current_id = node.get("parent_id")
-
-        chain.reverse()
-        return chain
 
     @staticmethod
     def _maybe_prepend_timestamp(node: dict, include: bool) -> str:

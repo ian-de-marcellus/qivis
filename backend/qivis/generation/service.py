@@ -42,6 +42,7 @@ from qivis.models import (
 )
 from qivis.providers.base import GenerationRequest, GenerationResult, LLMProvider, StreamChunk
 from qivis.providers.registry import get_provider
+from qivis.rhizomes.paths import ancestry
 from qivis.rhizomes.schemas import NodeResponse
 from qivis.rhizomes.service import NodeNotFoundError, RhizomeNotFoundError, RhizomeService
 from qivis.utils.json import parse_json_field
@@ -314,7 +315,7 @@ class GenerationService:
 
         # Exclusions apply when scoped to a node on this path
         exclusion_rows = await self._projector.get_node_exclusions(rhizome_id)
-        path_ids = self._get_path_node_ids(nodes, parent_id)
+        path_ids = {n["node_id"] for n in ancestry({n["node_id"]: n for n in nodes}, parent_id)}
         groups = await self._projector.get_digression_groups(rhizome_id)
 
         eviction_raw = metadata.get("eviction_strategy")
@@ -614,22 +615,6 @@ class GenerationService:
             },
         })
         return messages, updated_usage
-
-    @staticmethod
-    def _get_path_node_ids(nodes: list[dict], target_node_id: str | None) -> set[str]:
-        """Walk parent chain from target to root, return set of node IDs on path."""
-        by_id = {n["node_id"]: n for n in nodes}
-        path_ids: set[str] = set()
-        current_id: str | None = target_node_id
-        while current_id is not None:
-            path_ids.add(current_id)
-            node = by_id.get(current_id)
-            if node is None:
-                break
-            current_id = node.get("parent_id")
-        return path_ids
-
-    # -- Run --
 
     async def complete(self, p: Prepared) -> NodeResponse:
         """Send a prepared request and store the reply."""

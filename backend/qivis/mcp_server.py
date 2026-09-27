@@ -24,12 +24,19 @@ from datetime import UTC, datetime
 import httpx
 from mcp.server.mcpserver import MCPServer
 
+from qivis.rhizomes.paths import current_path
+
 FOLDER = "Connectome"
 MAX_TEXT = 12_000
 
 
 def _slug(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+
+
+def _current_line(nodes: list[dict]) -> list[dict]:
+    """The conversation as it stands: the newest reply at each step."""
+    return [node for node, _ in current_path(nodes)]
 
 
 class QivisBridge:
@@ -93,19 +100,6 @@ class QivisBridge:
             raise ValueError(f"No conversation {rid!r}")
         return rhizome
 
-    @staticmethod
-    def _path(nodes: list[dict]) -> list[dict]:
-        """The current line of the conversation: newest child at each step."""
-        children: dict[str | None, list[dict]] = {}
-        for n in nodes:
-            children.setdefault(n["parent_id"], []).append(n)
-        path, parent = [], None
-        while children.get(parent):
-            pick = max(children[parent], key=lambda n: n["created_at"])
-            path.append(pick)
-            parent = pick["node_id"]
-        return path
-
     async def new_conversation(self, model_name: str) -> str:
         model = await self.resolve(model_name)
         await self._create(model)
@@ -129,7 +123,7 @@ class QivisBridge:
         model = await self.resolve(model_name)
         async with self._sending:
             rid = await self._conversation_for(model, conversation_id)
-            path = self._path((await self._owned(rid))["nodes"])
+            path = _current_line((await self._owned(rid))["nodes"])
             # If the last attempt went unanswered, send beside it: the thread
             # continues cleanly and the failed attempt stays on record as a branch.
             while path and path[-1]["role"] == "user":
@@ -158,7 +152,7 @@ class QivisBridge:
         out = []
         for s in (await self._conversations(model))[:20]:
             rh = (await self.q.get(f"/api/rhizomes/{s['rhizome_id']}")).json()
-            path = self._path(rh["nodes"])
+            path = _current_line(rh["nodes"])
             first = next((n["content"] for n in path if n["role"] == "user"), "")
             out.append({
                 "conversation_id": s["rhizome_id"],
@@ -180,7 +174,7 @@ class QivisBridge:
                 return f"No conversation with {model['label']} yet."
             rh = await self._owned(existing[0]["rhizome_id"])
         # Only answered exchanges read as the conversation
-        full = self._path(rh["nodes"])
+        full = _current_line(rh["nodes"])
         path = [n for i, n in enumerate(full)
                 if n["role"] == "assistant" or (i + 1 < len(full) and full[i + 1]["role"] == "assistant")]
         if not path:

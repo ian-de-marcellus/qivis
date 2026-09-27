@@ -22,6 +22,7 @@ from pydantic import BaseModel
 
 from qivis.guest import auth
 from qivis.guest.config import ConfigStore, Guest, GuestConfig, GuestModel, config_path
+from qivis.rhizomes.paths import current_path
 
 logger = logging.getLogger(__name__)
 STATIC = Path(__file__).parent / "static"
@@ -52,22 +53,6 @@ class Regenerate(BaseModel):
 
 def _sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data)}\n\n"
-
-
-def _display_path(nodes: list[dict], choose: set[str]) -> list[tuple[dict, list[dict]]]:
-    """Walk from the root, taking a chosen sibling where given, else the newest."""
-    children: dict[str | None, list[dict]] = defaultdict(list)
-    for n in nodes:
-        children[n["parent_id"]].append(n)
-    for sibs in children.values():
-        sibs.sort(key=lambda n: n["created_at"])
-    path, parent = [], None
-    while children.get(parent):
-        sibs = children[parent]
-        pick = next((s for s in sibs if s["node_id"] in choose), sibs[-1])
-        path.append((pick, sibs))
-        parent = pick["node_id"]
-    return path
 
 
 def _guest_node(node: dict, siblings: list[dict], model_label: str) -> dict:
@@ -324,7 +309,7 @@ def create_app(
         _, guest = current(request)
         rhizome = await owned(rid, guest)
         label = rhizome["metadata"]["guest"].get("model_label", "Model")
-        path = _display_path(rhizome["nodes"], set(filter(None, choose.split(","))))
+        path = current_path(rhizome["nodes"], set(filter(None, choose.split(","))))
         return {
             "id": rid,
             "model": label,
