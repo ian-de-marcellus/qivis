@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import type { LogprobData, NodeResponse, SamplingParams, TokenLogprob } from '../../api/types.ts'
 import { useRhizomeStore } from '../../store/rhizomeStore.ts'
-import { LogprobOverlay, averageCertainty, uncertaintyColor } from '../RhizomeView/LogprobOverlay.tsx'
+import { LogprobOverlay } from '../RhizomeView/LogprobOverlay.tsx'
+import { averageCertainty, uncertaintyColor } from '../RhizomeView/logprobColor.ts'
 import { ThinkingSection } from '../RhizomeView/ThinkingSection.tsx'
 import type { DiffSegment } from './wordDiff.ts'
 

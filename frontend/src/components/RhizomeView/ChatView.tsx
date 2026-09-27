@@ -1,12 +1,9 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useRhizomeStore, useRhizomeData, useStreamingState, useComparison, useDigressionState, useResearchMetadata } from '../../store/rhizomeStore.ts'
+import { useRhizomeStore, useRhizomeData, useComparison, useDigressionState, useResearchMetadata } from '../../store/rhizomeStore.ts'
 import { ComparisonView } from '../ComparisonView/ComparisonView.tsx'
 import { ComparisonPickerBanner } from './ComparisonPickerBanner.tsx'
-import { ContextModal } from './ContextModal.tsx'
 import { ContextSplitView } from './ContextSplitView.tsx'
-import { CrossModelPanel } from './CrossModelPanel.tsx'
-import { PerturbationPanel } from './PerturbationPanel.tsx'
-import { WriteResponsePanel } from './WriteResponsePanel.tsx'
+import { ConversationEnd, InspectedContext, NodePanels } from './ConversationParts.tsx'
 import { reconstructContext } from './contextReconstruction.ts'
 import {
   computeDiffSummary,
@@ -17,45 +14,22 @@ import {
 } from './contextDiffs.ts'
 import type { DiffSummary } from './contextDiffs.ts'
 import { DigressionCreator } from './DigressionPanel.tsx'
-import { ForkPanel } from './ForkPanel.tsx'
-import { FirstTurnAction } from './FirstTurnAction.tsx'
-import { GenerationErrorPanel } from './GenerationErrorPanel.tsx'
 import { MessageRow } from './MessageRow.tsx'
-import { ReplayPanel } from './ReplayPanel.tsx'
-import { StreamingDisplay } from './StreamingDisplay.tsx'
-import { SummarizePanel } from './SummarizePanel.tsx'
-import { useActivePath, useAutoScroll, useScrollToNode, useBranchDefaults, useForkPanel } from './useViewShared.ts'
+import { useAutoScroll, useConversationView, useScrollToNode } from './useViewShared.ts'
 import './DigressionPanel.css'
 import './ChatView.css'
 
 export function ChatView() {
-  const { currentRhizome, providers } = useRhizomeData()
+  const { currentRhizome } = useRhizomeData()
   const {
-    isGenerating, streamingContent, streamingThinkingContent,
-    streamingContents, streamingThinkingContents, streamingNodeIds,
-    streamingTotal, activeStreamIndex, generationError,
-    stopGeneration,
-  } = useStreamingState()
-  const {
-    splitViewNodeId, comparisonNodeId, comparisonPickingMode,
-    comparisonPickingSourceId, inspectedNodeId,
+    splitViewNodeId, comparisonNodeId, comparisonPickingMode, comparisonPickingSourceId,
   } = useComparison()
-  const { digressionGroups, groupSelectionMode, selectedGroupNodeIds } = useDigressionState()
-  const { bookmarks, exclusions, selectedEditVersion, editHistoryCache } = useResearchMetadata()
+  const { groupSelectionMode, selectedGroupNodeIds } = useDigressionState()
+  const { selectedEditVersion, editHistoryCache } = useResearchMetadata()
 
   const selectBranch = useRhizomeStore(s => s.selectBranch)
-  const editNodeContent = useRhizomeStore(s => s.editNodeContent)
-  const setActiveStreamIndex = useRhizomeStore(s => s.setActiveStreamIndex)
-  const regenerate = useRhizomeStore(s => s.regenerate)
-  const clearGenerationError = useRhizomeStore(s => s.clearGenerationError)
   const fetchProviders = useRhizomeStore(s => s.fetchProviders)
-  const setInspectedNodeId = useRhizomeStore(s => s.setInspectedNodeId)
   const setSplitViewNodeId = useRhizomeStore(s => s.setSplitViewNodeId)
-  const addBookmark = useRhizomeStore(s => s.addBookmark)
-  const removeBookmark = useRhizomeStore(s => s.removeBookmark)
-  const excludeNode = useRhizomeStore(s => s.excludeNode)
-  const includeNode = useRhizomeStore(s => s.includeNode)
-  const toggleAnchor = useRhizomeStore(s => s.toggleAnchor)
   const setGroupSelectionMode = useRhizomeStore(s => s.setGroupSelectionMode)
   const toggleGroupNodeSelection = useRhizomeStore(s => s.toggleGroupNodeSelection)
   const createDigressionGroup = useRhizomeStore(s => s.createDigressionGroup)
@@ -63,26 +37,13 @@ export function ChatView() {
   const enterComparisonPicking = useRhizomeStore(s => s.enterComparisonPicking)
   const pickComparisonTarget = useRhizomeStore(s => s.pickComparisonTarget)
   const cancelComparisonPicking = useRhizomeStore(s => s.cancelComparisonPicking)
-  const prefillAssistant = useRhizomeStore(s => s.prefillAssistant)
 
+  const view = useConversationView()
+  const { nodes, path, childMap, excludedIds } = view
   const bottomRef = useRef<HTMLDivElement>(null)
   const [comparingAtParent, setComparingAtParent] = useState<string | null>(null)
-  const [summarizeTargetId, setSummarizeTargetId] = useState<string | null>(null)
-  const [replayFromNodeId, setReplayFromNodeId] = useState<string | null>(null)
-  const [crossModelNodeId, setCrossModelNodeId] = useState<string | null>(null)
-  const [experimentNodeId, setExperimentNodeId] = useState<string | null>(null)
-  const [writeResponseNodeId, setWriteResponseNodeId] = useState<string | null>(null)
-
-  // Shared hooks
-  const { nodes, path, childMap, leafNodeId } = useActivePath()
-  useAutoScroll(bottomRef)
+  useAutoScroll(bottomRef, path.length)
   useScrollToNode()
-  const branchDefaults = useBranchDefaults(path)
-  const {
-    forkTarget, setForkTarget,
-    handleFork, handleForkSubmit, handleRegenerateSubmit,
-    handlePrefillSubmit, handlePrefillContinue,
-  } = useForkPanel()
 
   // Fetch providers once on mount
   useEffect(() => {
@@ -101,8 +62,6 @@ export function ChatView() {
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
   }, [comparisonPickingMode, cancelComparisonPicking])
-
-  if (!currentRhizome) return null
 
   // Compute highlight classes when an edit version is selected
   const highlights = useMemo(() => {
@@ -165,50 +124,6 @@ export function ChatView() {
     return map
   }, [currentRhizome, path])
 
-  // Compute which nodes are effectively excluded on the current path
-  const effectiveExcludedIds = useMemo(() => {
-    const pathNodeIds = new Set(path.map((n) => n.node_id))
-    const excluded = new Set<string>()
-
-    // Node-level exclusions: apply if scope_node_id is on the current path
-    for (const ex of exclusions) {
-      if (pathNodeIds.has(ex.scope_node_id)) {
-        excluded.add(ex.node_id)
-      }
-    }
-
-    // Group-level exclusions: if group is toggled off and all its nodes are on the path
-    for (const group of digressionGroups) {
-      if (!group.included && group.node_ids.every((nid) => pathNodeIds.has(nid))) {
-        for (const nid of group.node_ids) {
-          excluded.add(nid)
-        }
-      }
-    }
-
-    return excluded
-  }, [path, exclusions, digressionGroups])
-
-  const handleExcludeToggle = useCallback((nodeId: string) => {
-    if (!leafNodeId) return
-    if (effectiveExcludedIds.has(nodeId)) {
-      // Find the exclusion record that applies on this path to remove it
-      const pathNodeIds = new Set(path.map((n) => n.node_id))
-      const matchingExclusion = exclusions.find(
-        (ex) => ex.node_id === nodeId && pathNodeIds.has(ex.scope_node_id),
-      )
-      if (matchingExclusion) {
-        includeNode(nodeId, matchingExclusion.scope_node_id)
-      }
-    } else {
-      excludeNode(nodeId, leafNodeId)
-    }
-  }, [leafNodeId, effectiveExcludedIds, path, exclusions, excludeNode, includeNode])
-
-  const handleGroupNodeToggle = useCallback((nodeId: string) => {
-    toggleGroupNodeSelection(nodeId)
-  }, [toggleGroupNodeSelection])
-
   const handleCreateGroup = useCallback(async (label: string) => {
     if (selectedGroupNodeIds.length < 2) return
     // Order by path position
@@ -219,10 +134,6 @@ export function ChatView() {
     const ok = await createDigressionGroup({ node_ids: ordered, label })
     if (ok) setGroupSelectionMode(false)
   }, [selectedGroupNodeIds, path, createDigressionGroup, setGroupSelectionMode])
-
-  const handleSelectSibling = (parentId: string, siblingId: string) => {
-    selectBranch(parentId, siblingId)
-  }
 
   // In picking mode, determine which nodes are pickable (non-manual assistant nodes, excluding source)
   const pickableNodeIds = useMemo(() => {
@@ -235,6 +146,8 @@ export function ChatView() {
     }
     return set
   }, [comparisonPickingMode, path, comparisonPickingSourceId])
+
+  if (!currentRhizome) return null
 
   // Find the source node for the picker banner
   const pickingSourceNode = comparisonPickingMode && comparisonPickingSourceId
@@ -256,7 +169,7 @@ export function ChatView() {
         {!comparisonPickingMode && groupSelectionMode && (
           <DigressionCreator
             selectedNodeIds={selectedGroupNodeIds}
-            onToggleNode={handleGroupNodeToggle}
+            onToggleNode={toggleGroupNodeSelection}
             onCancel={() => setGroupSelectionMode(false)}
             onCreate={handleCreateGroup}
           />
@@ -268,73 +181,31 @@ export function ChatView() {
           const isPicking = comparisonPickingMode
           const isPickable = pickableNodeIds?.has(node.node_id) ?? false
 
+          // While picking a comparison target, rows only offer "pick this one"
+          const actions = isPicking
+            ? {
+                onSelectSibling: (siblingId: string) => selectBranch(nodeParentKey, siblingId),
+                onFork: () => {},
+                onGroupToggle: () => toggleGroupNodeSelection(node.node_id),
+                onComparisonPick: isPickable ? () => pickComparisonTarget(node.node_id) : undefined,
+              }
+            : {
+                ...view.actionsFor(node),
+                onSplitView: diffSummaries.has(node.node_id)
+                  ? () => setSplitViewNodeId(splitViewNodeId === node.node_id ? null : node.node_id)
+                  : undefined,
+                onCompare: siblings.length > 1
+                  ? () => setComparingAtParent(comparingAtParent === nodeParentKey ? null : nodeParentKey)
+                  : undefined,
+              }
+
           return (
             <Fragment key={node.node_id}>
               <MessageRow
                 node={node}
                 siblings={siblings}
-                actions={{
-                  onSelectSibling: (siblingId) =>
-                    handleSelectSibling(nodeParentKey, siblingId),
-                  onFork: isPicking ? () => {} : () => handleFork(nodeParentKey, node.role),
-                  onPrefill: isPicking ? undefined : node.role === 'user' ? () => {
-                    if (forkTarget?.parentId === node.node_id && forkTarget.mode === 'prefill') {
-                      setForkTarget(null)
-                    } else {
-                      setForkTarget({ parentId: node.node_id, mode: 'prefill' })
-                    }
-                  } : undefined,
-                  onGenerate: isPicking ? undefined : node.role === 'user' ? () => {
-                    if (forkTarget?.parentId === node.node_id && forkTarget.mode === 'generate') {
-                      setForkTarget(null)
-                    } else {
-                      setForkTarget({ parentId: node.node_id, mode: 'generate' })
-                    }
-                  } : undefined,
-                  onEdit: isPicking ? undefined : (nodeId, editedContent) => editNodeContent(nodeId, editedContent),
-                  onInspect: isPicking ? undefined : node.role === 'assistant' && node.mode !== 'manual'
-                    ? () => setInspectedNodeId(
-                        inspectedNodeId === node.node_id ? null : node.node_id
-                      )
-                    : undefined,
-                  onSplitView: isPicking ? undefined : diffSummaries.has(node.node_id)
-                    ? () => setSplitViewNodeId(
-                        splitViewNodeId === node.node_id ? null : node.node_id
-                      )
-                    : undefined,
-                  onBookmarkToggle: isPicking ? undefined : () => {
-                    if (node.is_bookmarked) {
-                      const bm = bookmarks.find((b) => b.node_id === node.node_id)
-                      if (bm) removeBookmark(bm.bookmark_id)
-                    } else {
-                      addBookmark(node.node_id, node.content.slice(0, 60))
-                    }
-                  },
-                  onExcludeToggle: isPicking ? undefined : () => handleExcludeToggle(node.node_id),
-                  onAnchorToggle: isPicking ? undefined : () => toggleAnchor(node.node_id),
-                  onGroupToggle: () => handleGroupNodeToggle(node.node_id),
-                  onCompare: isPicking ? undefined : siblings.length > 1 ? () => setComparingAtParent(
-                    comparingAtParent === nodeParentKey ? null : nodeParentKey,
-                  ) : undefined,
-                  onComparisonPick: isPicking && isPickable ? () => pickComparisonTarget(node.node_id) : undefined,
-                  onSummarize: isPicking ? undefined : () => setSummarizeTargetId(
-                    summarizeTargetId === node.node_id ? null : node.node_id
-                  ),
-                  onReplay: isPicking ? undefined : () => setReplayFromNodeId(
-                    replayFromNodeId === node.node_id ? null : node.node_id
-                  ),
-                  onCrossModel: isPicking ? undefined : () => setCrossModelNodeId(
-                    crossModelNodeId === node.node_id ? null : node.node_id
-                  ),
-                  // Perturbation experiments are parked until they're rebuilt
-                  // around specific experiments (with replicates per condition).
-                  // PerturbationPanel stays wired below; this just hides the entry.
-                  onExperiment: undefined,
-                  onWriteResponse: isPicking ? undefined : node.role === 'user' ? () => setWriteResponseNodeId(
-                    writeResponseNodeId === node.node_id ? null : node.node_id
-                  ) : undefined,
-                }}
-                isExcludedOnPath={effectiveExcludedIds.has(node.node_id)}
+                actions={actions}
+                isExcludedOnPath={excludedIds.has(node.node_id)}
                 groupSelectable={!isPicking && groupSelectionMode}
                 groupSelected={selectedGroupNodeIds.includes(node.node_id)}
                 diffSummary={isPicking ? undefined : diffSummaries.get(node.node_id)}
@@ -352,141 +223,16 @@ export function ChatView() {
                   onDismiss={() => setComparingAtParent(null)}
                 />
               )}
-              {!isPicking && !isGenerating && forkTarget != null && (
-                forkTarget.mode === 'prefill' || forkTarget.mode === 'generate'
-                  ? forkTarget.parentId === node.node_id
-                  : forkTarget.parentId === nodeParentKey
-              ) && (
-                <ForkPanel
-                  mode={forkTarget.mode}
-                  onForkSubmit={handleForkSubmit}
-                  onRegenerateSubmit={handleRegenerateSubmit}
-                  onPrefillSubmit={handlePrefillSubmit}
-                  onPrefillContinue={handlePrefillContinue}
-                  onCancel={() => setForkTarget(null)}
-                  isGenerating={isGenerating}
-                  providers={providers}
-                  defaults={branchDefaults}
-                  streamDefault={currentRhizome.metadata?.stream_responses !== false}
-                  samplingDefaults={currentRhizome.default_sampling_params}
-                />
-              )}
-              {!isPicking && summarizeTargetId === node.node_id && (
-                <SummarizePanel
-                  nodeId={node.node_id}
-                  onClose={() => setSummarizeTargetId(null)}
-                />
-              )}
-              {!isPicking && replayFromNodeId === node.node_id && (() => {
-                // Compute path from this node to the active leaf
-                const nodeIdx = path.findIndex(n => n.node_id === node.node_id)
-                if (nodeIdx === -1) return null
-                const replayPath = path.slice(nodeIdx)
-                const replayNodeIds = replayPath.map(n => n.node_id)
-                const desc = `From "${(node.content || '').slice(0, 40)}${node.content.length > 40 ? '...' : ''}"`
-                return (
-                  <ReplayPanel
-                    pathNodeIds={replayNodeIds}
-                    pathDescription={desc}
-                    onCancel={() => setReplayFromNodeId(null)}
-                    providers={providers}
-                    defaults={branchDefaults}
-                  />
-                )
-              })()}
-              {!isPicking && crossModelNodeId === node.node_id && (
-                <CrossModelPanel
-                  nodeId={node.node_id}
-                  onCancel={() => setCrossModelNodeId(null)}
-                  isGenerating={isGenerating}
-                  providers={providers}
-                  defaults={{
-                    provider: branchDefaults.provider,
-                    model: branchDefaults.model,
-                  }}
-                />
-              )}
-              {!isPicking && experimentNodeId === node.node_id && (
-                <PerturbationPanel
-                  nodeId={node.node_id}
-                  onCancel={() => setExperimentNodeId(null)}
-                  providers={providers}
-                  digressionGroups={digressionGroups}
-                  defaults={branchDefaults}
-                />
-              )}
-              {!isPicking && writeResponseNodeId === node.node_id && (
-                <WriteResponsePanel
-                  onSubmit={(content) => {
-                    prefillAssistant(node.node_id, content)
-                    setWriteResponseNodeId(null)
-                  }}
-                  onCancel={() => setWriteResponseNodeId(null)}
-                />
-              )}
+              {!isPicking && <NodePanels view={view} node={node} />}
             </Fragment>
           )
         })}
 
-        {!comparisonPickingMode && path.length === 0 && !isGenerating && (
-          <FirstTurnAction
-            open={forkTarget?.parentId === ''}
-            onOpen={() => setForkTarget({ parentId: '', mode: 'generate' })}
-            panel={
-              <ForkPanel
-                mode={forkTarget?.mode ?? 'generate'}
-                onForkSubmit={handleForkSubmit}
-                onRegenerateSubmit={handleRegenerateSubmit}
-                onPrefillSubmit={handlePrefillSubmit}
-                onPrefillContinue={handlePrefillContinue}
-                onCancel={() => setForkTarget(null)}
-                isGenerating={isGenerating}
-                providers={providers}
-                defaults={branchDefaults}
-                streamDefault={currentRhizome.metadata?.stream_responses !== false}
-                samplingDefaults={currentRhizome.default_sampling_params}
-              />
-            }
-          />
-        )}
-
-        <StreamingDisplay
-          isGenerating={isGenerating}
-          streamingContent={streamingContent}
-          streamingThinkingContent={streamingThinkingContent}
-          streamingContents={streamingContents}
-          streamingThinkingContents={streamingThinkingContents}
-          streamingNodeIds={streamingNodeIds}
-          streamingTotal={streamingTotal}
-          activeStreamIndex={activeStreamIndex}
-          setActiveStreamIndex={setActiveStreamIndex}
-          stopGeneration={stopGeneration}
-        />
-
-        {!isGenerating && generationError && (
-          <GenerationErrorPanel
-            generationError={generationError}
-            leafNodeId={leafNodeId}
-            onRetry={regenerate}
-            onChangeSettings={setForkTarget}
-            onDismiss={clearGenerationError}
-          />
-        )}
-
+        <ConversationEnd view={view} showFirstTurn={!comparisonPickingMode} />
         <div ref={bottomRef} />
       </div>
 
-      {inspectedNodeId && (() => {
-        const inspectedNode = nodes.find((n) => n.node_id === inspectedNodeId)
-        if (!inspectedNode) return null
-        return (
-          <ContextModal
-            context={reconstructContext(inspectedNode, nodes)}
-            onDismiss={() => setInspectedNodeId(null)}
-          />
-        )
-      })()}
-
+      <InspectedContext nodes={nodes} />
       {splitViewNodeId && currentRhizome && (() => {
         const splitNode = nodes.find((n) => n.node_id === splitViewNodeId)
         if (!splitNode) return null

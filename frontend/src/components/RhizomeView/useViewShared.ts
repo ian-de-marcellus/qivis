@@ -22,8 +22,8 @@ export function useActivePath() {
   const { branchSelections } = useNavigation()
   const { regeneratingParentId } = useStreamingState()
 
-  const nodes = currentRhizome?.nodes ?? []
-  let path = getActivePath(nodes, branchSelections)
+  const nodes = useMemo(() => currentRhizome?.nodes ?? [], [currentRhizome])
+  const fullPath = useMemo(() => getActivePath(nodes, branchSelections), [nodes, branchSelections])
 
   // Build childMap for sibling lookups
   const childMap = useMemo(() => {
@@ -38,13 +38,12 @@ export function useActivePath() {
 
   // When regenerating, truncate the path at the regeneration point
   // so the old assistant message (and everything below it) disappears
-  if (regeneratingParentId != null) {
+  const path = useMemo(() => {
+    if (regeneratingParentId == null) return fullPath
     // '' is the root key: regenerating a root node truncates the whole path
-    const cutIndex = path.findIndex((n) => (n.parent_id ?? '') === regeneratingParentId)
-    if (cutIndex !== -1) {
-      path = path.slice(0, cutIndex)
-    }
-  }
+    const cutIndex = fullPath.findIndex((n) => (n.parent_id ?? '') === regeneratingParentId)
+    return cutIndex === -1 ? fullPath : fullPath.slice(0, cutIndex)
+  }, [fullPath, regeneratingParentId])
 
   const leafNodeId = path.length > 0 ? path[path.length - 1].node_id : null
 
@@ -52,29 +51,33 @@ export function useActivePath() {
 }
 
 /**
- * Auto-scroll to bottom when the path grows (new messages) or streaming content arrives.
+ * Keep the newest content in view: scroll to the bottom when the path grows
+ * (a message was added), and follow streaming text -- unless the reader has
+ * scrolled up to read something, in which case leave them there.
  */
-export function useAutoScroll(bottomRef: RefObject<HTMLDivElement | null>) {
+export function useAutoScroll(bottomRef: RefObject<HTMLDivElement | null>, pathLength: number) {
   const {
     streamingContent, streamingThinkingContent,
     streamingContents, activeStreamIndex,
   } = useStreamingState()
-  const { currentRhizome } = useRhizomeData()
-  const { branchSelections } = useNavigation()
-
-  const nodes = currentRhizome?.nodes ?? []
-  const path = getActivePath(nodes, branchSelections)
   const activeMultiContent = streamingContents[activeStreamIndex]
 
-  const prevPathLenRef = useRef(path.length)
+  const prevPathLenRef = useRef(pathLength)
   useEffect(() => {
-    const pathGrew = path.length > prevPathLenRef.current
-    prevPathLenRef.current = path.length
-    const hasStreamContent = !!streamingContent || !!streamingThinkingContent || !!activeMultiContent
-    if (pathGrew || hasStreamContent) {
+    const pathGrew = pathLength > prevPathLenRef.current
+    prevPathLenRef.current = pathLength
+    const streaming = !!streamingContent || !!streamingThinkingContent || !!activeMultiContent
+    if (pathGrew || (streaming && isNearBottom(bottomRef.current))) {
       bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
     }
-  }, [path.length, streamingContent, streamingThinkingContent, activeMultiContent, bottomRef])
+  }, [pathLength, streamingContent, streamingThinkingContent, activeMultiContent, bottomRef])
+}
+
+function isNearBottom(el: HTMLElement | null): boolean {
+  let scroller = el?.parentElement ?? null
+  while (scroller && scroller.scrollHeight <= scroller.clientHeight) scroller = scroller.parentElement
+  if (!scroller) return true
+  return scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 160
 }
 
 /**
@@ -175,5 +178,112 @@ export function useForkPanel() {
     handleRegenerateSubmit,
     handlePrefillSubmit,
     handlePrefillContinue,
+  }
+}
+
+export type NodePanelKind = 'summarize' | 'replay' | 'crossModel' | 'writeResponse'
+
+/**
+ * Everything a conversation view (chat or completion) shares: the active
+ * path, the fork panel, which per-node panel is open, which nodes are
+ * excluded on this path, and the actions every node row offers.
+ */
+export function useConversationView() {
+  const active = useActivePath()
+  const { path, leafNodeId } = active
+  const fork = useForkPanel()
+  const branchDefaults = useBranchDefaults(path)
+  const { forkTarget, setForkTarget, handleFork } = fork
+
+  const [openPanel, setOpenPanel] = useState<{ kind: NodePanelKind; nodeId: string } | null>(null)
+  const togglePanel = useCallback((kind: NodePanelKind, nodeId: string) => {
+    setOpenPanel((open) => (open?.kind === kind && open.nodeId === nodeId ? null : { kind, nodeId }))
+  }, [])
+  const closePanel = useCallback(() => setOpenPanel(null), [])
+
+  const exclusions = useRhizomeStore(s => s.exclusions)
+  const digressionGroups = useRhizomeStore(s => s.digressionGroups)
+  const bookmarks = useRhizomeStore(s => s.bookmarks)
+  const inspectedNodeId = useRhizomeStore(s => s.inspectedNodeId)
+  const selectBranch = useRhizomeStore(s => s.selectBranch)
+  const editNodeContent = useRhizomeStore(s => s.editNodeContent)
+  const setInspectedNodeId = useRhizomeStore(s => s.setInspectedNodeId)
+  const addBookmark = useRhizomeStore(s => s.addBookmark)
+  const removeBookmark = useRhizomeStore(s => s.removeBookmark)
+  const excludeNode = useRhizomeStore(s => s.excludeNode)
+  const includeNode = useRhizomeStore(s => s.includeNode)
+  const toggleAnchor = useRhizomeStore(s => s.toggleAnchor)
+  const toggleGroupNodeSelection = useRhizomeStore(s => s.toggleGroupNodeSelection)
+
+  // Nodes excluded on this path: by a node exclusion scoped to a node on the
+  // path, or by a switched-off digression group lying wholly on the path
+  const excludedIds = useMemo(() => {
+    const onPath = new Set(path.map((n) => n.node_id))
+    const excluded = new Set<string>()
+    for (const ex of exclusions) {
+      if (onPath.has(ex.scope_node_id)) excluded.add(ex.node_id)
+    }
+    for (const group of digressionGroups) {
+      if (!group.included && group.node_ids.every((nid) => onPath.has(nid))) {
+        for (const nid of group.node_ids) excluded.add(nid)
+      }
+    }
+    return excluded
+  }, [path, exclusions, digressionGroups])
+
+  const toggleExclude = useCallback((nodeId: string) => {
+    if (!leafNodeId) return
+    if (!excludedIds.has(nodeId)) {
+      excludeNode(nodeId, leafNodeId)
+      return
+    }
+    const onPath = new Set(path.map((n) => n.node_id))
+    const applying = exclusions.find((ex) => ex.node_id === nodeId && onPath.has(ex.scope_node_id))
+    if (applying) includeNode(nodeId, applying.scope_node_id)
+  }, [leafNodeId, excludedIds, path, exclusions, excludeNode, includeNode])
+
+  const toggleForkTarget = useCallback((nodeId: string, mode: 'prefill' | 'generate') => {
+    setForkTarget(forkTarget?.parentId === nodeId && forkTarget.mode === mode ? null : { parentId: nodeId, mode })
+  }, [forkTarget, setForkTarget])
+
+  /** The actions every node row offers, in either view. */
+  const actionsFor = (node: NodeResponse) => {
+    const parentKey = node.parent_id ?? ''
+    const isUser = node.role === 'user'
+    return {
+      onSelectSibling: (siblingId: string) => selectBranch(parentKey, siblingId),
+      onFork: () => handleFork(parentKey, node.role),
+      onPrefill: isUser ? () => toggleForkTarget(node.node_id, 'prefill') : undefined,
+      onGenerate: isUser ? () => toggleForkTarget(node.node_id, 'generate') : undefined,
+      onEdit: (nodeId: string, editedContent: string | null) => editNodeContent(nodeId, editedContent),
+      onInspect: node.role === 'assistant' && node.mode !== 'manual'
+        ? () => setInspectedNodeId(inspectedNodeId === node.node_id ? null : node.node_id)
+        : undefined,
+      onBookmarkToggle: () => {
+        if (!node.is_bookmarked) {
+          addBookmark(node.node_id, node.content.slice(0, 60))
+          return
+        }
+        const bm = bookmarks.find((b) => b.node_id === node.node_id)
+        if (bm) removeBookmark(bm.bookmark_id)
+      },
+      onExcludeToggle: () => toggleExclude(node.node_id),
+      onAnchorToggle: () => toggleAnchor(node.node_id),
+      onGroupToggle: () => toggleGroupNodeSelection(node.node_id),
+      onSummarize: () => togglePanel('summarize', node.node_id),
+      onReplay: () => togglePanel('replay', node.node_id),
+      onCrossModel: () => togglePanel('crossModel', node.node_id),
+      onWriteResponse: isUser ? () => togglePanel('writeResponse', node.node_id) : undefined,
+    }
+  }
+
+  return {
+    ...active,
+    fork,
+    branchDefaults,
+    openPanel,
+    closePanel,
+    excludedIds,
+    actionsFor,
   }
 }
