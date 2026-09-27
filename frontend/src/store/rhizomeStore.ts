@@ -4,6 +4,7 @@ import { create } from 'zustand'
 import { useShallow } from 'zustand/react/shallow'
 import * as api from '../api/client.ts'
 import type {
+  MessageStopEvent,
   AnnotationResponse,
   BookmarkResponse,
   CreateDigressionGroupRequest,
@@ -277,35 +278,164 @@ const MULTI_STREAMING_RESET = {
   activeStreamIndex: 0,
 } as const
 
+// Refreshes land only if the user is still looking at that rhizome: a slow
+// response must not replace a rhizome they've since switched to.
 function refreshRhizome(rhizomeId: string, set: SetFn) {
-  api.getRhizome(rhizomeId).then((rhizome) => set({ currentRhizome: rhizome }))
+  api.getRhizome(rhizomeId).then((rhizome) =>
+    set((state) => (state.selectedRhizomeId === rhizomeId ? { currentRhizome: rhizome } : {})),
+  )
   api.listRhizomes().then((rhizomes) => set({ rhizomes }))
 }
 
+/** Refresh, and follow the newest child of parentNodeId ('' is the root key). */
 function refreshRhizomeSelectNewest(
   rhizomeId: string,
   parentNodeId: string,
   set: SetFn,
 ) {
   api.getRhizome(rhizomeId).then((rhizome) => {
-    // '' is the root key (root generations have parent_id null)
     const newChildren = rhizome.nodes.filter(
       (nd) => (nd.parent_id ?? '') === parentNodeId,
     )
     const newest = newChildren[newChildren.length - 1]
-    if (newest) {
-      set((state) => ({
-        currentRhizome: rhizome,
-        branchSelections: {
-          ...state.branchSelections,
-          [parentNodeId]: newest.node_id,
-        },
-      }))
-    } else {
-      set({ currentRhizome: rhizome })
-    }
+    set((state) => {
+      if (state.selectedRhizomeId !== rhizomeId) return {}
+      return newest
+        ? {
+            currentRhizome: rhizome,
+            branchSelections: { ...state.branchSelections, [parentNodeId]: newest.node_id },
+          }
+        : { currentRhizome: rhizome }
+    })
   })
   api.listRhizomes().then((rhizomes) => set({ rhizomes }))
+}
+
+const errorMessage = (e: unknown) => (e instanceof Error ? e.message : String(e))
+
+/** Streaming-state updates shared by every kind of generation. */
+function streamCallbacks(set: SetFn) {
+  return {
+    delta: (text: string) =>
+      set((s) => ({ streamingContent: s.streamingContent + text })),
+    thinking: (text: string) =>
+      set((s) => ({ streamingThinkingContent: s.streamingThinkingContent + text })),
+    multiDelta: (text: string, idx: number) =>
+      set((s) => ({
+        streamingContents: { ...s.streamingContents, [idx]: (s.streamingContents[idx] ?? '') + text },
+      })),
+    multiThinking: (text: string, idx: number) =>
+      set((s) => ({
+        streamingThinkingContents: {
+          ...s.streamingThinkingContents,
+          [idx]: (s.streamingThinkingContents[idx] ?? '') + text,
+        },
+      })),
+    multiStop: (event: MessageStopEvent) => {
+      if (event.node_id != null && event.completion_index != null) {
+        set((s) => ({
+          streamingNodeIds: { ...s.streamingNodeIds, [event.completion_index!]: event.node_id! },
+        }))
+      }
+    },
+    // One completion of several failed: say so in its column, let the others finish
+    multiError: (error: Error, idx: number) =>
+      set((s) => ({
+        streamingContents: {
+          ...s.streamingContents,
+          [idx]: `${s.streamingContents[idx] ?? ''}\n[failed: ${error.message}]`,
+        },
+      })),
+  }
+}
+
+interface GenerationRun {
+  rhizomeId: string
+  /** The node being answered ('' for a root generation) */
+  parentId: string
+  req: GenerateRequest
+  /** Show the answer as replacing the parent's current reply (regenerate) */
+  regenerating?: boolean
+  /** What the reply starts with before any tokens arrive (prefill) */
+  initialContent?: string
+}
+
+/**
+ * Run a generation -- one or n, streamed or not -- with the same streaming
+ * state, error reporting, and branch selection for every caller. When it
+ * ends, the view follows the newest reply.
+ */
+async function runGeneration(set: SetFn, run: GenerationRun): Promise<void> {
+  const { rhizomeId, parentId, req } = run
+  const n = req.n ?? 1
+  const stream = req.stream !== false
+  const ac = new AbortController()
+  const running = {
+    isGenerating: true,
+    _abortController: ac,
+    streamingParentId: parentId,
+    regeneratingParentId: run.regenerating ? parentId : null,
+  }
+  set(stream && n > 1
+    ? { ...MULTI_STREAMING_RESET, ...running, streamingTotal: n }
+    : { ...MULTI_STREAMING_RESET, ...running, streamingContent: run.initialContent ?? '' })
+
+  const done = () => {
+    set({ ...MULTI_STREAMING_RESET, regeneratingParentId: null })
+    refreshRhizomeSelectNewest(rhizomeId, parentId, set)
+  }
+  const fail = (error: unknown) => set({
+    ...MULTI_STREAMING_RESET,
+    regeneratingParentId: null,
+    error: errorMessage(error),
+    generationError: {
+      parentNodeId: parentId,
+      provider: req.provider ?? 'anthropic',
+      model: req.model ?? null,
+      systemPrompt: req.system_prompt ?? null,
+      errorMessage: errorMessage(error),
+    },
+  })
+  const cb = streamCallbacks(set)
+
+  try {
+    if (stream && n > 1) {
+      await api.generateMultiStream(
+        rhizomeId, parentId, req, cb.multiDelta, cb.multiStop, done,
+        (error, idx) => (idx === undefined ? fail(error) : cb.multiError(error, idx)),
+        cb.multiThinking, ac.signal,
+      )
+    } else if (stream) {
+      await api.generateStream(
+        rhizomeId, parentId, { ...req, stream: true }, cb.delta, done, fail, cb.thinking, ac.signal,
+      )
+    } else {
+      await api.generate(rhizomeId, parentId, { ...req, n })
+      done()
+    }
+  } catch (e) {
+    fail(e)
+  }
+}
+
+/** Add a user turn under parentId (the active path's leaf, or a fork point), shown at once. */
+async function addUserTurn(
+  set: SetFn,
+  rhizomeId: string,
+  parentId: string | undefined,
+  content: string,
+  { follow }: { follow: boolean },
+): Promise<NodeResponse> {
+  const userNode = await api.createNode(rhizomeId, { content, role: 'user', parent_id: parentId || undefined })
+  set((state) => ({
+    currentRhizome: state.currentRhizome
+      ? { ...state.currentRhizome, nodes: [...state.currentRhizome.nodes, userNode] }
+      : null,
+    ...(follow && {
+      branchSelections: { ...state.branchSelections, [parentId ?? '']: userNode.node_id },
+    }),
+  }))
+  return userNode
 }
 
 async function fetchRhizomeData<T>(
@@ -414,8 +544,14 @@ export const useRhizomeStore = create<RhizomeStore>((set, get) => ({
       _abortController.abort()
     }
 
-    // Clear all streaming state
-    set({ ...MULTI_STREAMING_RESET, regeneratingParentId: null })
+    // Clear all streaming state (an aborted stream reports nothing, so a
+    // running replay or perturbation ends here too)
+    set({
+      ...MULTI_STREAMING_RESET,
+      regeneratingParentId: null,
+      replayState: null,
+      perturbationState: null,
+    })
 
     const rhizomeId = currentRhizome?.rhizome_id
     // streamingParentId is '' for a root generation, so check null explicitly
@@ -606,96 +742,25 @@ export const useRhizomeStore = create<RhizomeStore>((set, get) => ({
 
     const rhizomeId = currentRhizome.rhizome_id
     set({ error: null, generationError: null })
-
     try {
-      // Find the leaf node of the active path
       const activePath = getActivePath(currentRhizome.nodes, branchSelections)
-      const leafNode = activePath.length > 0 ? activePath[activePath.length - 1] : null
-      const parentId = leafNode?.node_id
-
-      // Create user node
-      const userNode = await api.createNode(rhizomeId, {
-        content,
-        role: 'user',
-        parent_id: parentId,
-      })
-
-      // Optimistically add user node to current rhizome
-      set((state) => ({
-        currentRhizome: state.currentRhizome
-          ? { ...state.currentRhizome, nodes: [...state.currentRhizome.nodes, userNode] }
-          : null,
-      }))
-
-      const ac = new AbortController()
-      set({ ...STREAMING_RESET, isGenerating: true, _abortController: ac, streamingParentId: userNode.node_id })
-
-      // Branch-local defaults: prefer last assistant's provider/model over rhizome defaults
+      const userNode = await addUserTurn(
+        set, rhizomeId, activePath[activePath.length - 1]?.node_id, content, { follow: false },
+      )
+      // Branch-local defaults: the branch's last model, else the rhizome's
       const lastAssistant = [...activePath].reverse().find((n) => n.role === 'assistant')
-      const resolvedProvider = lastAssistant?.provider ?? currentRhizome.default_provider
-      const resolvedModel = lastAssistant?.model ?? currentRhizome.default_model
-
-      // Backend handles merge resolution: rhizome defaults > base
-      // Only pass explicit overrides here (provider, model, system_prompt)
-      const generateReq: GenerateRequest = {
-        ...(resolvedProvider ? { provider: resolvedProvider } : {}),
-        ...(resolvedModel ? { model: resolvedModel } : {}),
-        ...(systemPromptOverride != null ? { system_prompt: systemPromptOverride } : {}),
-      }
-
-      const shouldStream = currentRhizome.metadata?.stream_responses !== false
-
-      if (shouldStream) {
-        await api.generateStream(
-          rhizomeId,
-          userNode.node_id,
-          generateReq,
-          (text) => {
-            set((state) => ({ streamingContent: state.streamingContent + text }))
-          },
-          () => {
-            set({ ...STREAMING_RESET })
-            refreshRhizome(rhizomeId, set)
-          },
-          (error) => {
-            set({
-              ...STREAMING_RESET,
-              error: error instanceof Error ? error.message : String(error),
-              generationError: {
-                parentNodeId: userNode.node_id,
-                provider: resolvedProvider ?? 'anthropic',
-                model: resolvedModel ?? null,
-                systemPrompt: systemPromptOverride ?? null,
-                errorMessage: error instanceof Error ? error.message : String(error),
-              },
-            })
-          },
-          (thinking) => {
-            set((state) => ({
-              streamingThinkingContent: state.streamingThinkingContent + thinking,
-            }))
-          },
-          ac.signal,
-        )
-      } else {
-        try {
-          await api.generate(rhizomeId, userNode.node_id, generateReq)
-          set({ ...STREAMING_RESET })
-          refreshRhizome(rhizomeId, set)
-        } catch (error) {
-          set({
-            ...STREAMING_RESET,
-            error: error instanceof Error ? error.message : String(error),
-            generationError: {
-              parentNodeId: userNode.node_id,
-              provider: resolvedProvider ?? 'anthropic',
-              model: resolvedModel ?? null,
-              systemPrompt: systemPromptOverride ?? null,
-              errorMessage: error instanceof Error ? error.message : String(error),
-            },
-          })
-        }
-      }
+      const provider = lastAssistant?.provider ?? currentRhizome.default_provider
+      const model = lastAssistant?.model ?? currentRhizome.default_model
+      await runGeneration(set, {
+        rhizomeId,
+        parentId: userNode.node_id,
+        req: {
+          ...(provider ? { provider } : {}),
+          ...(model ? { model } : {}),
+          ...(systemPromptOverride != null ? { system_prompt: systemPromptOverride } : {}),
+          stream: currentRhizome.metadata?.stream_responses !== false,
+        },
+      })
     } catch (e) {
       set({ ...STREAMING_RESET, error: String(e) })
     }
@@ -704,26 +769,13 @@ export const useRhizomeStore = create<RhizomeStore>((set, get) => ({
   sendMessageOnly: async (content: string) => {
     const { currentRhizome, branchSelections } = get()
     if (!currentRhizome) return
-
-    const rhizomeId = currentRhizome.rhizome_id
     set({ error: null })
-
     try {
       const activePath = getActivePath(currentRhizome.nodes, branchSelections)
-      const leafNode = activePath.length > 0 ? activePath[activePath.length - 1] : null
-      const parentId = leafNode?.node_id
-
-      const userNode = await api.createNode(rhizomeId, {
-        content,
-        role: 'user',
-        parent_id: parentId,
-      })
-
-      set((state) => ({
-        currentRhizome: state.currentRhizome
-          ? { ...state.currentRhizome, nodes: [...state.currentRhizome.nodes, userNode] }
-          : null,
-      }))
+      await addUserTurn(
+        set, currentRhizome.rhizome_id, activePath[activePath.length - 1]?.node_id, content,
+        { follow: false },
+      )
     } catch (e) {
       set({ error: String(e) })
     }
@@ -823,135 +875,10 @@ export const useRhizomeStore = create<RhizomeStore>((set, get) => ({
 
     const rhizomeId = currentRhizome.rhizome_id
     set({ error: null, generationError: null })
-
     try {
-      // Create user node as new child of parentId (sibling of existing children)
-      const userNode = await api.createNode(rhizomeId, {
-        content,
-        role: 'user',
-        parent_id: parentId || undefined,
-      })
-
-      // Update branchSelections to follow this new fork + add node optimistically
-      set((state) => ({
-        currentRhizome: state.currentRhizome
-          ? { ...state.currentRhizome, nodes: [...state.currentRhizome.nodes, userNode] }
-          : null,
-        branchSelections: {
-          ...state.branchSelections,
-          [parentId]: userNode.node_id,
-        },
-      }))
-
-      const n = overrides.n ?? 1
-      const shouldStream = overrides.stream !== false
-
-      const ac = new AbortController()
-
-      if (shouldStream && n > 1) {
-        set({ ...MULTI_STREAMING_RESET, isGenerating: true, streamingTotal: n, _abortController: ac, streamingParentId: userNode.node_id })
-        await api.generateMultiStream(
-          rhizomeId,
-          userNode.node_id,
-          overrides,
-          (text, idx) => {
-            set((state) => ({
-              streamingContents: {
-                ...state.streamingContents,
-                [idx]: (state.streamingContents[idx] ?? '') + text,
-              },
-            }))
-          },
-          (event) => {
-            if (event.node_id != null && event.completion_index != null) {
-              set((state) => ({
-                streamingNodeIds: {
-                  ...state.streamingNodeIds,
-                  [event.completion_index!]: event.node_id!,
-                },
-              }))
-            }
-          },
-          () => {
-            set({ ...MULTI_STREAMING_RESET })
-            refreshRhizome(rhizomeId, set)
-          },
-          (error) => {
-            set({
-              ...MULTI_STREAMING_RESET,
-              error: error instanceof Error ? error.message : String(error),
-              generationError: {
-                parentNodeId: userNode.node_id,
-                provider: overrides.provider ?? 'anthropic',
-                model: overrides.model ?? null,
-                systemPrompt: overrides.system_prompt ?? null,
-                errorMessage: error instanceof Error ? error.message : String(error),
-              },
-            })
-          },
-          (thinking, idx) => {
-            set((state) => ({
-              streamingThinkingContents: {
-                ...state.streamingThinkingContents,
-                [idx]: (state.streamingThinkingContents[idx] ?? '') + thinking,
-              },
-            }))
-          },
-          ac.signal,
-        )
-      } else if (shouldStream) {
-        set({ ...STREAMING_RESET, isGenerating: true, _abortController: ac, streamingParentId: userNode.node_id })
-        await api.generateStream(
-          rhizomeId,
-          userNode.node_id,
-          { ...overrides, stream: true },
-          (text) => {
-            set((state) => ({ streamingContent: state.streamingContent + text }))
-          },
-          () => {
-            set({ ...STREAMING_RESET })
-            refreshRhizome(rhizomeId, set)
-          },
-          (error) => {
-            set({
-              ...STREAMING_RESET,
-              error: error instanceof Error ? error.message : String(error),
-              generationError: {
-                parentNodeId: userNode.node_id,
-                provider: overrides.provider ?? 'anthropic',
-                model: overrides.model ?? null,
-                systemPrompt: overrides.system_prompt ?? null,
-                errorMessage: error instanceof Error ? error.message : String(error),
-              },
-            })
-          },
-          (thinking) => {
-            set((state) => ({
-              streamingThinkingContent: state.streamingThinkingContent + thinking,
-            }))
-          },
-          ac.signal,
-        )
-      } else {
-        set({ ...STREAMING_RESET, isGenerating: true })
-        try {
-          await api.generate(rhizomeId, userNode.node_id, { ...overrides, n })
-          set({ ...STREAMING_RESET })
-          refreshRhizome(rhizomeId, set)
-        } catch (error) {
-          set({
-            ...STREAMING_RESET,
-            error: error instanceof Error ? error.message : String(error),
-            generationError: {
-              parentNodeId: userNode.node_id,
-              provider: overrides.provider ?? 'anthropic',
-              model: overrides.model ?? null,
-              systemPrompt: overrides.system_prompt ?? null,
-              errorMessage: error instanceof Error ? error.message : String(error),
-            },
-          })
-        }
-      }
+      // A new user turn beside the existing ones, and the view follows it
+      const userNode = await addUserTurn(set, rhizomeId, parentId, content, { follow: true })
+      await runGeneration(set, { rhizomeId, parentId: userNode.node_id, req: overrides })
     } catch (e) {
       set({ ...STREAMING_RESET, error: String(e) })
     }
@@ -960,124 +887,13 @@ export const useRhizomeStore = create<RhizomeStore>((set, get) => ({
   regenerate: async (parentNodeId: string, overrides: GenerateRequest) => {
     const { currentRhizome } = get()
     if (!currentRhizome) return
-
-    const rhizomeId = currentRhizome.rhizome_id
-    const ac = new AbortController()
-    set({
-      error: null, generationError: null,
-      ...STREAMING_RESET, isGenerating: true,
-      _abortController: ac,
-      regeneratingParentId: parentNodeId,
-      streamingParentId: parentNodeId,
+    set({ error: null, generationError: null })
+    await runGeneration(set, {
+      rhizomeId: currentRhizome.rhizome_id,
+      parentId: parentNodeId,
+      req: overrides,
+      regenerating: true,
     })
-
-    const n = overrides.n ?? 1
-    const shouldStream = overrides.stream !== false
-    const regenError = (error: unknown) => ({
-      parentNodeId,
-      provider: overrides.provider ?? 'anthropic',
-      model: overrides.model ?? null,
-      systemPrompt: overrides.system_prompt ?? null,
-      errorMessage: error instanceof Error ? error.message : String(error),
-    })
-
-    try {
-      if (shouldStream && n > 1) {
-        set({
-          streamingContents: {},
-          streamingThinkingContents: {},
-          streamingNodeIds: {},
-          streamingTotal: n,
-          activeStreamIndex: 0,
-        })
-        await api.generateMultiStream(
-          rhizomeId,
-          parentNodeId,
-          overrides,
-          (text, idx) => {
-            set((state) => ({
-              streamingContents: {
-                ...state.streamingContents,
-                [idx]: (state.streamingContents[idx] ?? '') + text,
-              },
-            }))
-          },
-          (event) => {
-            if (event.node_id != null && event.completion_index != null) {
-              set((state) => ({
-                streamingNodeIds: {
-                  ...state.streamingNodeIds,
-                  [event.completion_index!]: event.node_id!,
-                },
-              }))
-            }
-          },
-          () => {
-            set({ ...MULTI_STREAMING_RESET, regeneratingParentId: null })
-            refreshRhizomeSelectNewest(rhizomeId, parentNodeId, set)
-          },
-          (error) => {
-            set({
-              ...MULTI_STREAMING_RESET,
-              regeneratingParentId: null,
-              error: error instanceof Error ? error.message : String(error),
-              generationError: regenError(error),
-            })
-          },
-          (thinking, idx) => {
-            set((state) => ({
-              streamingThinkingContents: {
-                ...state.streamingThinkingContents,
-                [idx]: (state.streamingThinkingContents[idx] ?? '') + thinking,
-              },
-            }))
-          },
-          ac.signal,
-        )
-      } else if (shouldStream) {
-        await api.generateStream(
-          rhizomeId,
-          parentNodeId,
-          { ...overrides, stream: true },
-          (text) => {
-            set((state) => ({ streamingContent: state.streamingContent + text }))
-          },
-          () => {
-            set({ ...STREAMING_RESET, regeneratingParentId: null })
-            refreshRhizomeSelectNewest(rhizomeId, parentNodeId, set)
-          },
-          (error) => {
-            set({
-              ...STREAMING_RESET,
-              regeneratingParentId: null,
-              error: error instanceof Error ? error.message : String(error),
-              generationError: regenError(error),
-            })
-          },
-          (thinking) => {
-            set((state) => ({
-              streamingThinkingContent: state.streamingThinkingContent + thinking,
-            }))
-          },
-          ac.signal,
-        )
-      } else {
-        try {
-          await api.generate(rhizomeId, parentNodeId, { ...overrides, n })
-          set({ ...STREAMING_RESET, regeneratingParentId: null })
-          refreshRhizomeSelectNewest(rhizomeId, parentNodeId, set)
-        } catch (error) {
-          set({
-            ...STREAMING_RESET,
-            regeneratingParentId: null,
-            error: error instanceof Error ? error.message : String(error),
-            generationError: regenError(error),
-          })
-        }
-      }
-    } catch (e) {
-      set({ ...STREAMING_RESET, regeneratingParentId: null, error: String(e) })
-    }
   },
 
   prefillAssistant: async (parentId: string, content: string) => {
@@ -1112,73 +928,13 @@ export const useRhizomeStore = create<RhizomeStore>((set, get) => ({
   prefillAndGenerate: async (parentId: string, prefillContent: string, overrides: GenerateRequest) => {
     const { currentRhizome } = get()
     if (!currentRhizome) return
-
-    const rhizomeId = currentRhizome.rhizome_id
     set({ error: null, generationError: null })
-
-    const shouldStream = overrides.stream !== false
-    const reqWithPrefill: GenerateRequest = { ...overrides, prefill_content: prefillContent }
-
-    const ac = new AbortController()
-
-    try {
-      if (shouldStream) {
-        // Initialize streaming content with the prefill text so it appears immediately
-        set({ ...STREAMING_RESET, isGenerating: true, streamingContent: prefillContent, _abortController: ac, streamingParentId: parentId })
-        await api.generateStream(
-          rhizomeId,
-          parentId,
-          { ...reqWithPrefill, stream: true },
-          (text) => {
-            set((state) => ({ streamingContent: state.streamingContent + text }))
-          },
-          () => {
-            set({ ...STREAMING_RESET })
-            refreshRhizomeSelectNewest(rhizomeId, parentId, set)
-          },
-          (error) => {
-            set({
-              ...STREAMING_RESET,
-              error: error instanceof Error ? error.message : String(error),
-              generationError: {
-                parentNodeId: parentId,
-                provider: overrides.provider ?? 'anthropic',
-                model: overrides.model ?? null,
-                systemPrompt: overrides.system_prompt ?? null,
-                errorMessage: error instanceof Error ? error.message : String(error),
-              },
-            })
-          },
-          (thinking) => {
-            set((state) => ({
-              streamingThinkingContent: state.streamingThinkingContent + thinking,
-            }))
-          },
-          ac.signal,
-        )
-      } else {
-        set({ ...STREAMING_RESET, isGenerating: true })
-        try {
-          await api.generate(rhizomeId, parentId, reqWithPrefill)
-          set({ ...STREAMING_RESET })
-          refreshRhizomeSelectNewest(rhizomeId, parentId, set)
-        } catch (error) {
-          set({
-            ...STREAMING_RESET,
-            error: error instanceof Error ? error.message : String(error),
-            generationError: {
-              parentNodeId: parentId,
-              provider: overrides.provider ?? 'anthropic',
-              model: overrides.model ?? null,
-              systemPrompt: overrides.system_prompt ?? null,
-              errorMessage: error instanceof Error ? error.message : String(error),
-            },
-          })
-        }
-      }
-    } catch (e) {
-      set({ ...STREAMING_RESET, error: String(e) })
-    }
+    await runGeneration(set, {
+      rhizomeId: currentRhizome.rhizome_id,
+      parentId,
+      req: { ...overrides, prefill_content: prefillContent },
+      initialContent: prefillContent,
+    })
   },
 
   addAnnotation: async (nodeId: string, tag: string, value?: unknown, notes?: string) => {
@@ -1670,6 +1426,7 @@ export const useRhizomeStore = create<RhizomeStore>((set, get) => ({
     const ac = new AbortController()
     set({
       error: null,
+      isGenerating: true,
       _abortController: ac,
       replayState: {
         active: true,
@@ -1716,6 +1473,7 @@ export const useRhizomeStore = create<RhizomeStore>((set, get) => ({
         (createdNodeIds) => {
           set({
             replayState: null,
+            isGenerating: false,
             _abortController: null,
           })
           // Faithful replay adds a sibling at each assistant turn. Siblings
@@ -1725,7 +1483,7 @@ export const useRhizomeStore = create<RhizomeStore>((set, get) => ({
           api.getRhizome(rhizomeId).then((rhizome) => {
             const lastId = createdNodeIds[createdNodeIds.length - 1]
             const last = rhizome.nodes.find((n) => n.node_id === lastId)
-            set((state) => ({
+            set((state) => (state.selectedRhizomeId !== rhizomeId ? {} : {
               currentRhizome: rhizome,
               branchSelections: last
                 ? { ...state.branchSelections, [last.parent_id ?? '']: last.node_id }
@@ -1736,6 +1494,7 @@ export const useRhizomeStore = create<RhizomeStore>((set, get) => ({
         (error) => {
           set({
             replayState: null,
+            isGenerating: false,
             _abortController: null,
             error: error.message,
           })
@@ -1746,6 +1505,7 @@ export const useRhizomeStore = create<RhizomeStore>((set, get) => ({
     } catch (e) {
       set({
         replayState: null,
+        isGenerating: false,
         _abortController: null,
         error: String(e),
       })
@@ -1767,49 +1527,25 @@ export const useRhizomeStore = create<RhizomeStore>((set, get) => ({
       regeneratingParentId: nodeId,
       streamingParentId: nodeId,
     })
-
+    const cb = streamCallbacks(set)
+    const fail = (error: unknown) =>
+      set({ ...MULTI_STREAMING_RESET, regeneratingParentId: null, error: errorMessage(error) })
     try {
       await api.generateCrossStream(
         rhizomeId,
         nodeId,
         { targets, system_prompt: systemPrompt, sampling_params: samplingParams },
-        (text, idx) => {
-          set((state) => ({
-            streamingContents: {
-              ...state.streamingContents,
-              [idx]: (state.streamingContents[idx] ?? '') + text,
-            },
-          }))
-        },
-        (event) => {
-          if (event.node_id != null && event.completion_index != null) {
-            set((state) => ({
-              streamingNodeIds: {
-                ...state.streamingNodeIds,
-                [event.completion_index!]: event.node_id!,
-              },
-            }))
-          }
-        },
+        cb.multiDelta,
+        cb.multiStop,
         () => {
           set({ ...MULTI_STREAMING_RESET, regeneratingParentId: null })
           refreshRhizomeSelectNewest(rhizomeId, nodeId, set)
         },
-        (error) => {
-          set({
-            ...MULTI_STREAMING_RESET,
-            regeneratingParentId: null,
-            error: error instanceof Error ? error.message : String(error),
-          })
-        },
+        (error, idx) => (idx === undefined ? fail(error) : cb.multiError(error, idx)),
         ac.signal,
       )
     } catch (e) {
-      set({
-        ...MULTI_STREAMING_RESET,
-        regeneratingParentId: null,
-        error: String(e),
-      })
+      fail(e)
     }
   },
 
