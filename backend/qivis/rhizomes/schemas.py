@@ -15,10 +15,15 @@ class CreateRhizomeRequest(BaseModel):
     default_model: str | None = None
     default_provider: str | None = None
     default_sampling_params: SamplingParams | None = None
+    metadata: dict | None = None
 
 
 class PatchRhizomeRequest(BaseModel):
-    """Fields to update on a rhizome. Only fields present in the request body are changed."""
+    """Fields to update on a rhizome. Only fields present in the request body are changed.
+
+    metadata is merged by top-level key: a value replaces that key, null removes
+    it, and keys not mentioned are left alone.
+    """
 
     title: str | None = None
     metadata: dict | None = None

@@ -92,6 +92,7 @@ class RhizomeService:
             default_model=request.default_model,
             default_provider=request.default_provider,
             default_sampling_params=request.default_sampling_params,
+            metadata={k: v for k, v in (request.metadata or {}).items() if v is not None},
         )
 
         await self._events.emit(rhizome_id, "RhizomeCreated", payload, timestamp=now)
@@ -103,7 +104,21 @@ class RhizomeService:
     async def update_rhizome(
         self, rhizome_id: str, request: PatchRhizomeRequest
     ) -> RhizomeDetailResponse:
-        """Update rhizome metadata. Emits one RhizomeMetadataUpdated per changed field."""
+        """Update rhizome fields. Emits one RhizomeMetadataUpdated per changed field.
+
+        metadata is merged by top-level key (see PatchRhizomeRequest), read and
+        written in one transaction so concurrent patches don't lose each other's keys.
+        """
+        async with self._db.transaction():
+            await self._apply_rhizome_patch(rhizome_id, request)
+
+        # Read back the full rhizome with nodes
+        updated_rhizome = await self._projector.get_rhizome(rhizome_id)
+        assert updated_rhizome is not None
+        nodes = await self._projector.get_nodes(rhizome_id)
+        return self._rhizome_detail_from_row(updated_rhizome, nodes)
+
+    async def _apply_rhizome_patch(self, rhizome_id: str, request: PatchRhizomeRequest) -> None:
         rhizome = await self._projector.get_rhizome(rhizome_id)
         if rhizome is None:
             raise RhizomeNotFoundError(rhizome_id)
@@ -128,6 +143,9 @@ class RhizomeService:
                 new_value = new_value.model_dump()
 
             old_value = field_to_current.get(field_name)
+            if field_name == "metadata":
+                new_value = {**old_value, **(new_value or {})}
+                new_value = {k: v for k, v in new_value.items() if v is not None}
             if new_value == old_value:
                 continue
 
@@ -142,12 +160,6 @@ class RhizomeService:
 
         if events:
             await self._events.record(events)
-
-        # Read back the full rhizome with nodes
-        updated_rhizome = await self._projector.get_rhizome(rhizome_id)
-        assert updated_rhizome is not None
-        nodes = await self._projector.get_nodes(rhizome_id)
-        return self._rhizome_detail_from_row(updated_rhizome, nodes)
 
     async def get_rhizome(self, rhizome_id: str) -> RhizomeDetailResponse | None:
         """Get a rhizome with all its nodes. Returns None if not found."""

@@ -1,5 +1,4 @@
 import { useCallback, useRef, useState } from 'react'
-import * as api from '../../api/client.ts'
 import { useClickOutside } from '../../hooks/useClickOutside.ts'
 import { useEscapeKey } from '../../hooks/useEscapeKey.ts'
 import { useRhizomeStore } from '../../store/rhizomeStore.ts'
@@ -41,11 +40,9 @@ export function RhizomeContextMenu({ tree, x, y, allTrees, onClose, onRename }: 
   const currentFolders = tree.folders ?? []
   const currentTags = tree.tags ?? []
 
-  // Read-merge-write: fetch full metadata, merge change, then patch
+  // The server merges metadata by key, so a patch names only what changes
   const mergeMetadata = async (patch: Record<string, unknown>) => {
-    const full = await api.getRhizome(tree.rhizome_id)
-    const merged = { ...full.metadata, ...patch }
-    await updateRhizome(tree.rhizome_id, { metadata: merged })
+    await updateRhizome(tree.rhizome_id, { metadata: patch })
   }
 
   const addFolder = async (folder: string) => {

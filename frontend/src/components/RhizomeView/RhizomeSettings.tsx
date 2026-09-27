@@ -223,12 +223,15 @@ export function RhizomeSettings() {
     }
 
     if (metadataChanged || legacyThinking) {
-      const newMeta = { ...currentRhizome.metadata, ...metaChanges } as Record<string, unknown>
-      for (const key of deleteKeys) delete newMeta[key]
-      // Legacy thinking fields now live in default_sampling_params
-      delete newMeta.extended_thinking
-      delete newMeta.thinking_budget
-      req.metadata = newMeta
+      // The server merges by key: send what changed, null for what goes
+      const patch: Record<string, unknown> = { ...metaChanges }
+      for (const key of deleteKeys) patch[key] = null
+      if (legacyThinking) {
+        // Legacy thinking fields now live in default_sampling_params
+        patch.extended_thinking = null
+        patch.thinking_budget = null
+      }
+      req.metadata = patch
     }
 
     await updateRhizome(currentRhizome.rhizome_id, req)

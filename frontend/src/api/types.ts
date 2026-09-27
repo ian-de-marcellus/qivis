@@ -250,6 +250,8 @@ export interface CreateRhizomeRequest {
   default_system_prompt?: string
   default_model?: string
   default_provider?: string
+  default_sampling_params?: SamplingParams
+  metadata?: Record<string, unknown>
 }
 
 export interface PatchRhizomeRequest {

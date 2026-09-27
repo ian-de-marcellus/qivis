@@ -292,17 +292,6 @@ def create_app(
         ]
         if len(existing) >= cfg.limits.max_conversations:
             raise HTTPException(status_code=429, detail="Conversation limit reached")
-        created = await qivis.post(
-            "/api/rhizomes",
-            json={
-                "title": f"Guest · {guest.name} · {datetime.now(UTC).strftime('%Y-%m-%d %H:%M')}",
-                "default_model": model.model,
-                "default_provider": model.provider,
-                "default_sampling_params": model.sampling_params or None,
-            },
-        )
-        created.raise_for_status()
-        rid = created.json()["rhizome_id"]
         metadata = {
             "generation_mode": model.generation_mode,
             "stream_responses": True,
@@ -317,8 +306,18 @@ def create_app(
         }
         if model.prompt_template:
             metadata["prompt_template"] = model.prompt_template
-        (await qivis.patch(f"/api/rhizomes/{rid}", json={"metadata": metadata})).raise_for_status()
-        return {"id": rid, "model": model.label}
+        created = await qivis.post(
+            "/api/rhizomes",
+            json={
+                "title": f"Guest · {guest.name} · {datetime.now(UTC).strftime('%Y-%m-%d %H:%M')}",
+                "default_model": model.model,
+                "default_provider": model.provider,
+                "default_sampling_params": model.sampling_params or None,
+                "metadata": metadata,
+            },
+        )
+        created.raise_for_status()
+        return {"id": created.json()["rhizome_id"], "model": model.label}
 
     @app.get("/api/conversations/{rid}")
     async def conversation(rid: str, request: Request, choose: str = ""):

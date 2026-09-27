@@ -68,21 +68,21 @@ class QivisBridge:
         return sorted(mine, key=lambda s: s["updated_at"], reverse=True)
 
     async def _create(self, model: dict) -> str:
-        rid = (await self.q.post("/api/rhizomes", json={
+        return (await self.q.post("/api/rhizomes", json={
             "title": f"{self.caller} ↔ {model['label']} · {datetime.now(UTC).strftime('%Y-%m-%d %H:%M')}",
             "default_provider": model["provider"],
             "default_model": model["model"],
+            "metadata": {
+                "generation_mode": model["mode"],
+                "prompt_template": "auto",
+                "stream_responses": True,
+                "connectome": {
+                    "caller": self.caller, "model_id": model["id"], "model_label": model["label"],
+                },
+                "tags": ["connectome", self.caller_tag, f"model:{model['id']}"],
+                "folders": [FOLDER],
+            },
         })).raise_for_status().json()["rhizome_id"]
-        metadata = {
-            "generation_mode": model["mode"],
-            "prompt_template": "auto",
-            "stream_responses": True,
-            "connectome": {"caller": self.caller, "model_id": model["id"], "model_label": model["label"]},
-            "tags": ["connectome", self.caller_tag, f"model:{model['id']}"],
-            "folders": [FOLDER],
-        }
-        (await self.q.patch(f"/api/rhizomes/{rid}", json={"metadata": metadata})).raise_for_status()
-        return rid
 
     async def _owned(self, rid: str) -> dict:
         r = await self.q.get(f"/api/rhizomes/{rid}")

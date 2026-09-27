@@ -10,7 +10,6 @@ import {
   type DragStartEvent,
   type DragEndEvent,
 } from '@dnd-kit/core'
-import * as api from '../../api/client.ts'
 import type { RhizomeSummary } from '../../api/types.ts'
 import { useRhizomeStore, useRhizomeData } from '../../store/rhizomeStore.ts'
 import { useModalBehavior } from '../../hooks/useModalBehavior.ts'
@@ -95,11 +94,9 @@ export function LibraryView({ onDismiss }: Props) {
   const keyboardSensor = useSensor(KeyboardSensor)
   const sensors = useSensors(pointerSensor, keyboardSensor)
 
-  // Read-merge-write metadata pattern
+  // The server merges metadata by key, so a patch names only what changes
   const mergeMetadata = useCallback(async (treeId: string, patch: Record<string, unknown>) => {
-    const full = await api.getRhizome(treeId)
-    const merged = { ...full.metadata, ...patch }
-    await updateRhizome(treeId, { metadata: merged })
+    await updateRhizome(treeId, { metadata: patch })
   }, [updateRhizome])
 
   // Multi-select handlers

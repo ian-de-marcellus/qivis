@@ -555,15 +555,13 @@ export const useRhizomeStore = create<RhizomeStore>((set, get) => ({
   }) => {
     set({ isLoading: true, error: null })
     try {
-      let rhizome = await api.createRhizome({
+      const rhizome = await api.createRhizome({
         title,
         default_system_prompt: opts?.systemPrompt,
         default_provider: opts?.defaultProvider,
         default_model: opts?.defaultModel,
+        metadata: opts?.metadata,
       })
-      if (opts?.metadata) {
-        rhizome = await api.updateRhizome(rhizome.rhizome_id, { metadata: opts.metadata })
-      }
       const rhizomes = await api.listRhizomes()
       set({
         rhizomes,
