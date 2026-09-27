@@ -19,6 +19,8 @@ export function RhizomeSettings() {
   const unarchiveRhizome = useRhizomeStore(s => s.unarchiveRhizome)
   const fetchRhizomes = useRhizomeStore(s => s.fetchRhizomes)
   const fetchInterventionTypes = useRhizomeStore(s => s.fetchInterventionTypes)
+  const showNodeIds = useRhizomeStore(s => s.showNodeIds)
+  const setShowNodeIds = (v: boolean) => useRhizomeStore.setState({ showNodeIds: v })
   const interventionTypes = useRhizomeStore(useShallow(s => s.interventionTypes))
 
   const [isOpen, setIsOpen] = useState(false)
@@ -542,6 +544,17 @@ export function RhizomeSettings() {
                 </span>
               </div>
             )}
+
+            <div className="rhizome-settings-field">
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={showNodeIds}
+                  onChange={(e) => setShowNodeIds(e.target.checked)}
+                />
+                Show node IDs
+              </label>
+            </div>
 
             <div className="rhizome-settings-field">
               <label>Debug: context limit override (tokens)</label>

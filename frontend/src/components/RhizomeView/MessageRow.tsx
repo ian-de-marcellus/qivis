@@ -101,6 +101,7 @@ export const MessageRow = memo(function MessageRow({
   const [showNotes, setShowNotes] = useState(false)
 
   const editHistoryCache = useRhizomeStore((s) => s.editHistoryCache)
+  const showNodeIds = useRhizomeStore((s) => s.showNodeIds)
 
   const roleLabel = node.role === 'researcher_note'
     ? 'Researcher Note'
@@ -378,6 +379,15 @@ export const MessageRow = memo(function MessageRow({
       {showAnnotations && <AnnotationPanel node={node} />}
       {showNotes && <NotePanel node={node} />}
       <div className="message-meta">
+        {showNodeIds && (
+          <span
+            className="node-id-debug"
+            onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(node.node_id) }}
+            title="Click to copy node ID"
+            style={{ cursor: 'pointer', opacity: 0.5, fontFamily: 'monospace', fontSize: '0.7rem' }}
+          >{node.node_id.slice(0, 8)}</span>
+        )}
+        {showNodeIds && ' \u00b7 '}
         {formatTimestamp(node.created_at)}
         {hasEditHistory && (
           <span className="edited-indicator"> &middot; edited</span>

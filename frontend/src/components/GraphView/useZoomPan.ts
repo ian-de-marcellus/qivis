@@ -69,7 +69,7 @@ export function useZoomPan(options?: UseZoomPanOptions) {
   const onPointerDown = useCallback((e: React.PointerEvent) => {
     if (e.button !== 0) return
     const target = e.target as HTMLElement
-    if (target.closest('.graph-node-hit')) return
+    if (target.closest('.graph-node-group, .graph-collapsed')) return
 
     isPanning.current = true
     panStart.current = { x: e.clientX, y: e.clientY }

@@ -83,6 +83,7 @@ interface RhizomeStore {
   comparisonNodeId: string | null
   comparisonPickingMode: boolean
   comparisonPickingSourceId: string | null
+  showNodeIds: boolean
   searchQuery: string
   searchResults: SearchResultItem[]
   searchLoading: boolean
@@ -386,6 +387,7 @@ export const useRhizomeStore = create<RhizomeStore>((set, get) => ({
   comparisonNodeId: null,
   comparisonPickingMode: false,
   comparisonPickingSourceId: null,
+  showNodeIds: false,
   searchQuery: '',
   searchResults: [],
   searchLoading: false,
