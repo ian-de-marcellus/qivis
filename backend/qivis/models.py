@@ -250,6 +250,10 @@ class DigressionGroupToggledPayload(BaseModel):
     included: bool
 
 
+class DigressionGroupDeletedPayload(BaseModel):
+    group_id: str
+
+
 class SummaryGeneratedPayload(BaseModel):
     summary_id: str
     anchor_node_id: str
@@ -340,6 +344,9 @@ EVENT_TYPES: dict[str, type[BaseModel]] = {
     "NodeContextIncluded": NodeContextIncludedPayload,
     "DigressionGroupCreated": DigressionGroupCreatedPayload,
     "DigressionGroupToggled": DigressionGroupToggledPayload,
+    "DigressionGroupDeleted": DigressionGroupDeletedPayload,
+    "NodeAnchored": NodeAnchoredPayload,
+    "NodeUnanchored": NodeUnanchoredPayload,
     "SummaryGenerated": SummaryGeneratedPayload,
     "SummaryRemoved": SummaryRemovedPayload,
     "GarbageCollected": GarbageCollectedPayload,

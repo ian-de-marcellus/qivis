@@ -16,6 +16,7 @@ from qivis.models import (
     BookmarkRemovedPayload,
     BookmarkSummaryGeneratedPayload,
     DigressionGroupCreatedPayload,
+    DigressionGroupDeletedPayload,
     DigressionGroupToggledPayload,
     EventEnvelope,
     NodeAnchoredPayload,
@@ -68,6 +69,7 @@ class StateProjector:
             "NodeContextIncluded": self._handle_node_context_included,
             "DigressionGroupCreated": self._handle_digression_group_created,
             "DigressionGroupToggled": self._handle_digression_group_toggled,
+            "DigressionGroupDeleted": self._handle_digression_group_deleted,
             "NodeAnchored": self._handle_node_anchored,
             "NodeUnanchored": self._handle_node_unanchored,
             "NoteAdded": self._handle_note_added,
@@ -352,6 +354,16 @@ class StateProjector:
         await self._db.execute(
             "UPDATE digression_groups SET included = ? WHERE group_id = ?",
             (1 if payload.included else 0, payload.group_id),
+        )
+
+    async def _handle_digression_group_deleted(self, event: EventEnvelope) -> None:
+        """Project a DigressionGroupDeleted event: drop the group and its membership."""
+        payload = DigressionGroupDeletedPayload.model_validate(event.payload)
+        await self._db.execute(
+            "DELETE FROM digression_group_nodes WHERE group_id = ?", (payload.group_id,),
+        )
+        await self._db.execute(
+            "DELETE FROM digression_groups WHERE group_id = ?", (payload.group_id,),
         )
 
     async def _handle_node_anchored(self, event: EventEnvelope) -> None:

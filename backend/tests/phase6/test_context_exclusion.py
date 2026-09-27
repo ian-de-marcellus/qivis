@@ -10,13 +10,14 @@ Five sections:
 
 import pytest
 
+from qivis.db.connection import Database
 from qivis.events.projector import StateProjector
 from qivis.events.store import EventStore
 from qivis.generation.context import ContextBuilder
 from tests.fixtures import (
     create_branching_rhizome,
-    create_test_rhizome,
     create_rhizome_with_messages,
+    create_test_rhizome,
     make_digression_group_created_envelope,
     make_digression_group_toggled_envelope,
     make_node_context_excluded_envelope,
@@ -24,7 +25,6 @@ from tests.fixtures import (
     make_node_created_envelope,
     make_rhizome_created_envelope,
 )
-
 
 # ---------------------------------------------------------------------------
 # Contract tests: event -> store -> projector -> verify state
@@ -408,6 +408,25 @@ class TestDigressionGroupAPI:
 
         groups = (await client.get(f"/api/rhizomes/{rhizome_id}/digression-groups")).json()
         assert len(groups) == 0
+
+    async def test_delete_group_survives_replaying_events(self, client, db):
+        """Deletion is an event, so projecting the log afresh doesn't resurrect the group."""
+        data = await create_rhizome_with_messages(client, n_messages=4)
+        rhizome_id = data["rhizome_id"]
+        group_id = (await client.post(
+            f"/api/rhizomes/{rhizome_id}/digression-groups",
+            json={"node_ids": data["node_ids"][:2], "label": "Temp"},
+        )).json()["group_id"]
+        await client.delete(f"/api/rhizomes/{rhizome_id}/digression-groups/{group_id}")
+
+        events = await EventStore(db).get_events(rhizome_id)
+        assert events[-1].event_type == "DigressionGroupDeleted"
+        fresh = await Database.connect(":memory:")
+        try:
+            await StateProjector(fresh).project(events)
+            assert await StateProjector(fresh).get_digression_groups(rhizome_id) == []
+        finally:
+            await fresh.close()
 
 
 # ---------------------------------------------------------------------------

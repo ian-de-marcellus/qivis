@@ -17,6 +17,7 @@ from qivis.models import (
     BookmarkRemovedPayload,
     BookmarkSummaryGeneratedPayload,
     DigressionGroupCreatedPayload,
+    DigressionGroupDeletedPayload,
     DigressionGroupToggledPayload,
     EventEnvelope,
     NodeAnchoredPayload,
@@ -28,12 +29,12 @@ from qivis.models import (
     NoteAddedPayload,
     NoteRemovedPayload,
     PerturbationReportRemovedPayload,
-    SummaryGeneratedPayload,
-    SummaryRemovedPayload,
     RhizomeArchivedPayload,
     RhizomeCreatedPayload,
     RhizomeMetadataUpdatedPayload,
     RhizomeUnarchivedPayload,
+    SummaryGeneratedPayload,
+    SummaryRemovedPayload,
 )
 from qivis.rhizomes.schemas import (
     AddAnnotationRequest,
@@ -43,8 +44,8 @@ from qivis.rhizomes.schemas import (
     CreateDigressionGroupRequest,
     CreateNodeRequest,
     CreateNoteRequest,
-    CreateSummaryRequest,
     CreateRhizomeRequest,
+    CreateSummaryRequest,
     DigressionGroupResponse,
     DivergenceMetrics,
     EditHistoryEntry,
@@ -55,14 +56,13 @@ from qivis.rhizomes.schemas import (
     NodeExclusionResponse,
     NodeResponse,
     NoteResponse,
-    PatchNodeContentRequest,
     PatchRhizomeRequest,
     PerturbationReportResponse,
     PerturbationStepResponse,
-    SummaryResponse,
-    TaxonomyResponse,
     RhizomeDetailResponse,
     RhizomeSummary,
+    SummaryResponse,
+    TaxonomyResponse,
 )
 from qivis.utils.json import parse_json_field, parse_json_or_none
 
@@ -1437,7 +1437,7 @@ class RhizomeService:
     async def delete_digression_group(
         self, rhizome_id: str, group_id: str,
     ) -> None:
-        """Delete a digression group. Direct projection deletion (no event)."""
+        """Delete a digression group."""
         row = await self._db.fetchone(
             "SELECT * FROM digression_groups WHERE group_id = ? AND rhizome_id = ?",
             (group_id, rhizome_id),
@@ -1445,14 +1445,16 @@ class RhizomeService:
         if row is None:
             raise DigressionGroupNotFoundError(group_id)
 
-        await self._db.execute(
-            "DELETE FROM digression_group_nodes WHERE group_id = ?",
-            (group_id,),
+        event = EventEnvelope(
+            event_id=str(uuid4()),
+            rhizome_id=rhizome_id,
+            timestamp=datetime.now(UTC),
+            device_id="local",
+            event_type="DigressionGroupDeleted",
+            payload=DigressionGroupDeletedPayload(group_id=group_id).model_dump(),
         )
-        await self._db.execute(
-            "DELETE FROM digression_groups WHERE group_id = ?",
-            (group_id,),
-        )
+        await self._store.append(event)
+        await self._projector.project([event])
 
     @staticmethod
     def _bookmark_from_row(row: dict) -> BookmarkResponse:

@@ -6,6 +6,8 @@ serialize/deserialize correctly, and the EVENT_TYPES registry is complete.
 
 from datetime import UTC, datetime
 
+from pydantic import BaseModel
+
 from qivis.models import (
     EVENT_TYPES,
     AlternativeToken,
@@ -30,13 +32,13 @@ from qivis.models import (
     NodeCreatedPayload,
     NodeUnarchivedPayload,
     Participant,
-    SamplingParams,
-    SummaryGeneratedPayload,
-    TokenLogprob,
     RhizomeArchivedPayload,
     RhizomeCreatedPayload,
     RhizomeMetadataUpdatedPayload,
     RhizomeUnarchivedPayload,
+    SamplingParams,
+    SummaryGeneratedPayload,
+    TokenLogprob,
 )
 
 # -- Canonical data structures --
@@ -209,22 +211,19 @@ class TestEventEnvelope:
 class TestEventTypesRegistry:
     def test_all_event_types_registered(self):
         """Every payload class defined in the module should be in EVENT_TYPES."""
-        expected_types = {
-            "RhizomeCreated", "RhizomeMetadataUpdated", "RhizomeArchived", "RhizomeUnarchived",
-            # Backward compat aliases for old events stored as Tree*
-            "TreeCreated", "TreeMetadataUpdated", "TreeArchived", "TreeUnarchived",
-            "GenerationStarted", "NodeCreated", "NodeContentEdited",
-            "NodeArchived", "NodeUnarchived",
-            "AnnotationAdded", "AnnotationRemoved",
-            "BookmarkCreated", "BookmarkRemoved", "BookmarkSummaryGenerated",
-            "NoteAdded", "NoteRemoved",
-            "NodeContextExcluded", "NodeContextIncluded",
-            "DigressionGroupCreated", "DigressionGroupToggled",
-            "SummaryGenerated", "SummaryRemoved",
-            "GarbageCollected", "GarbagePurged",
-            "PerturbationReportGenerated", "PerturbationReportRemoved",
+        import inspect
+
+        import qivis.models as models
+
+        payloads = {
+            cls for name, cls in vars(models).items()
+            if inspect.isclass(cls) and name.endswith("Payload") and issubclass(cls, BaseModel)
         }
-        assert set(EVENT_TYPES.keys()) == expected_types
+        assert payloads == set(EVENT_TYPES.values())
+        # Backward compat aliases for old events stored as Tree*
+        assert {"TreeCreated", "TreeMetadataUpdated", "TreeArchived", "TreeUnarchived"} <= set(
+            EVENT_TYPES
+        )
 
     def test_registry_maps_to_correct_classes(self):
         assert EVENT_TYPES["RhizomeCreated"] is RhizomeCreatedPayload
