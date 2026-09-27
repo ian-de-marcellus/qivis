@@ -379,7 +379,7 @@ class TestDualModeProvider:
         provider.generate = lambda req: capture_generate(provider, req)
 
         node = await gen_service.generate(
-            rhizome_id, node_id, provider, model="test-model"
+            rhizome_id, node_id, provider, model="test-model.gguf"  # the rhizome's own model
         )
 
         assert captured_request is not None

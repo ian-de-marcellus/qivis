@@ -71,8 +71,9 @@ async def setup(db: Database):
     set_catalog(previous)
 
 
-async def _rhizome(c, metadata: dict) -> tuple[str, str]:
-    rid = (await c.post("/api/rhizomes", json={"title": "t"})).json()["rhizome_id"]
+async def _rhizome(c, metadata: dict, default_model: str | None = None) -> tuple[str, str]:
+    body = {"title": "t", **({"default_model": default_model} if default_model else {})}
+    rid = (await c.post("/api/rhizomes", json=body)).json()["rhizome_id"]
     await c.patch(f"/api/rhizomes/{rid}", json={"metadata": metadata})
     nid = (await c.post(f"/api/rhizomes/{rid}/nodes", json={"content": "hi"})).json()["node_id"]
     return rid, nid
@@ -123,12 +124,21 @@ class TestTemplateResolution:
 
     async def test_unprofiled_model_falls_back_to_raw(self, setup):
         c, p = setup
-        rid, nid = await _rhizome(c, {"generation_mode": "completion"})
+        rid, nid = await _rhizome(c, {"generation_mode": "completion"}, default_model="gpt-plain")
         await _gen(c, rid, nid, "dual", "gpt-plain")
         assert p["dual"].calls[-1].prompt_text == "hi\n"
 
 
 class TestModeResolution:
+    async def test_rhizome_mode_is_for_its_own_model(self, setup):
+        """An unprofiled visitor to a completion rhizome is a chat model, not a raw transcript."""
+        c, p = setup
+        rid, nid = await _rhizome(c, {"generation_mode": "completion"}, default_model="base-z")
+        visitor = await _gen(c, rid, nid, "dual", "gpt-plain")
+        assert p["dual"].calls[-1].prompt_text is None and visitor["mode"] == "chat"
+        own = await _gen(c, rid, nid, "dual", "base-z")
+        assert p["dual"].calls[-1].prompt_text is not None and own["mode"] == "completion"
+
     async def test_chat_profile_beats_completion_rhizome(self, setup):
         """GPT in a Sun (completion) rhizome gets chat, because its profile says so."""
         c, p = setup

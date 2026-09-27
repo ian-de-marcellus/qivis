@@ -90,7 +90,10 @@ async def setup(db: Database):
 
 
 async def _rhizome_with_user_turn(client: AsyncClient, *, completion: bool) -> tuple[str, str]:
-    rid = (await client.post("/api/rhizomes", json={"title": "t"})).json()["rhizome_id"]
+    # The rhizome's own model is "base": a completion rhizome's mode applies to it
+    rid = (await client.post(
+        "/api/rhizomes", json={"title": "t", "default_model": "base"},
+    )).json()["rhizome_id"]
     if completion:
         await client.patch(f"/api/rhizomes/{rid}", json={"metadata": {
             "generation_mode": "completion", "prompt_template": "llama3",

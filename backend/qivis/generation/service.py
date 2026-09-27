@@ -368,7 +368,7 @@ class GenerationService:
         default_model = ctx.rhizome.get("default_model") or FALLBACK_MODEL
         models = [t.model or default_model for t in targets]
         modes = [
-            self._mode_for(t.provider, m, ctx.metadata, t.mode)
+            self._mode_for(t.provider, m, ctx.rhizome, ctx.metadata, t.mode)
             for t, m in zip(targets, models, strict=True)
         ]
         limits = [
@@ -455,13 +455,15 @@ class GenerationService:
 
     @staticmethod
     def _mode_for(
-        provider: LLMProvider, model: str, metadata: dict, override: str | None,
+        provider: LLMProvider, model: str, rhizome: dict, metadata: dict, override: str | None,
     ) -> str:
-        """The mode a generation runs in.
+        """The mode a generation runs in: a model's format comes from the model.
 
         Single-mode providers decide for themselves. For dual-mode providers:
-        an explicit override, else the model's own profile, else the rhizome's
-        generation_mode, else chat.
+        an explicit override, else the model's own profile, else -- for the
+        rhizome's own default model only -- the rhizome's generation_mode, else
+        chat. (Another model visiting a completion rhizome, say GPT on a Sun
+        branch, is a chat model unless told otherwise.)
         """
         if "completion" not in provider.supported_modes:
             return "chat"
@@ -472,7 +474,10 @@ class GenerationService:
         profile_mode = (get_catalog().profile(model) or {}).get("generation_mode")
         if profile_mode in ("chat", "completion"):
             return profile_mode
-        return "completion" if metadata.get("generation_mode") == "completion" else "chat"
+        is_rhizome_model = model == (rhizome.get("default_model") or FALLBACK_MODEL)
+        if is_rhizome_model and metadata.get("generation_mode") == "completion":
+            return "completion"
+        return "chat"
 
     @staticmethod
     def _render_completion(
