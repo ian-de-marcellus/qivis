@@ -5,6 +5,9 @@ import { tagColor } from '../../utils/tagColor.ts'
 import { type FolderNode, buildFolderTrie, countRhizomesInFolder } from '../../utils/folderTrie.ts'
 import { RhizomeContextMenu } from './RhizomeContextMenu.tsx'
 import { ImportWizard } from './ImportWizard.tsx'
+import { AdvancedGroup, AdvancedSection } from '../shared/AdvancedSection.tsx'
+import { ModelPicker } from '../shared/ModelPicker.tsx'
+import { findModel, type ModelChoice } from '../shared/modelChoice.ts'
 import './RhizomeList.css'
 
 type ViewMode = 'all' | 'folders'
@@ -27,7 +30,7 @@ function getStoredCollapsed(): Set<string> {
 }
 
 export function RhizomeList() {
-  const { rhizomes, selectedRhizomeId, providers, isLoading } = useRhizomeData()
+  const { rhizomes, selectedRhizomeId, providers, models, isLoading } = useRhizomeData()
   const selectRhizome = useRhizomeStore(s => s.selectRhizome)
   const createRhizome = useRhizomeStore(s => s.createRhizome)
   const updateRhizome = useRhizomeStore(s => s.updateRhizome)
@@ -35,13 +38,12 @@ export function RhizomeList() {
   const fetchProviders = useRhizomeStore(s => s.fetchProviders)
   const [isCreating, setIsCreating] = useState(false)
   const [newTitle, setNewTitle] = useState('')
-  const [newGenerationMode, setNewGenerationMode] = useState<'chat' | 'completion'>('chat')
   const [newSystemPrompt, setNewSystemPrompt] = useState('')
-  const [newPromptTemplate, setNewPromptTemplate] = useState('raw')
-  const [showSettings, setShowSettings] = useState(false)
-  const [newProvider, setNewProvider] = useState('')
-  const [newModel, setNewModel] = useState('')
-  const [newIncludeTimestamps, setNewIncludeTimestamps] = useState(true)
+  // The model carries its own mode and template; Advanced can override them
+  const [newModelChoice, setNewModelChoice] = useState<ModelChoice | null>(null)
+  const [newModeOverride, setNewModeOverride] = useState<'' | 'chat' | 'completion'>('')
+  const [newPromptTemplate, setNewPromptTemplate] = useState('auto')
+  const [newIncludeTimestamps, setNewIncludeTimestamps] = useState(false)
   const [newStreamResponses, setNewStreamResponses] = useState(true)
   const [showImport, setShowImport] = useState(false)
 
@@ -73,9 +75,6 @@ export function RhizomeList() {
   useEffect(() => {
     fetchRhizomes(showArchived)
   }, [showArchived, fetchRhizomes])
-
-  const selectedProvider = providers.find((p) => p.name === newProvider)
-  const suggestedModels = selectedProvider?.models ?? []
 
   // Filter rhizomes by active tag filters
   const filteredRhizomes = useMemo(() => {
@@ -109,28 +108,36 @@ export function RhizomeList() {
     sorted.filter(t => t.folders.length === 0),
   [sorted])
 
+  // Default to the first named model (e.g. Sun) until one is chosen
+  const modelChoice: ModelChoice = newModelChoice
+    ?? (models[0] ? { provider: models[0].provider, model: models[0].model } : { provider: '', model: '' })
+  const modelEntry = findModel(models, modelChoice)
+  const completionOnly = providers.find(p => p.name === modelChoice.provider)?.supported_modes.includes('chat') === false
+  const modelMode: 'chat' | 'completion' = completionOnly ? 'completion' : modelEntry?.mode ?? 'chat'
+  const newGenerationMode = newModeOverride || modelMode
+  const modelTemplate = modelEntry?.prompt_template ?? 'raw'
+
   const handleCreate = async () => {
     if (!newTitle.trim()) return
     await createRhizome(newTitle.trim(), {
       systemPrompt: newGenerationMode === 'chat' ? (newSystemPrompt.trim() || undefined) : undefined,
-      defaultProvider: newProvider || undefined,
-      defaultModel: newModel || undefined,
+      defaultProvider: modelChoice.provider || undefined,
+      defaultModel: modelChoice.model || undefined,
       metadata: {
         generation_mode: newGenerationMode,
+        // "auto": each generation uses the generating model's own template
         ...(newGenerationMode === 'completion' && { prompt_template: newPromptTemplate }),
-        include_timestamps: newGenerationMode === 'chat' && newIncludeTimestamps,
+        ...(newGenerationMode === 'chat' && { include_timestamps: newIncludeTimestamps }),
         stream_responses: newStreamResponses,
       },
     })
     setNewTitle('')
-    setNewGenerationMode('chat')
     setNewSystemPrompt('')
-    setNewPromptTemplate('raw')
-    setNewProvider('')
-    setNewModel('')
-    setNewIncludeTimestamps(true)
+    setNewModelChoice(null)
+    setNewModeOverride('')
+    setNewPromptTemplate('auto')
+    setNewIncludeTimestamps(false)
     setNewStreamResponses(true)
-    setShowSettings(false)
     setIsCreating(false)
   }
 
@@ -328,28 +335,22 @@ export function RhizomeList() {
         <div className="new-rhizome-form">
           <input
             type="text"
-            placeholder="Tree title..."
+            placeholder="Rhizome title..."
             value={newTitle}
             onChange={(e) => setNewTitle(e.target.value)}
             onKeyDown={handleKeyDown}
             autoFocus
           />
 
-          <div className="mode-selector">
-            <button
-              type="button"
-              className={`mode-selector-btn ${newGenerationMode === 'chat' ? 'active' : ''}`}
-              onClick={() => setNewGenerationMode('chat')}
-            >
-              Chat
-            </button>
-            <button
-              type="button"
-              className={`mode-selector-btn ${newGenerationMode === 'completion' ? 'active' : ''}`}
-              onClick={() => setNewGenerationMode('completion')}
-            >
-              Completion
-            </button>
+          <div className="create-setting-row">
+            <label htmlFor="create-model">Model</label>
+            <ModelPicker
+              id="create-model"
+              value={modelChoice}
+              onChange={setNewModelChoice}
+              models={models}
+              providers={providers}
+            />
           </div>
 
           {newGenerationMode === 'chat' && (
@@ -361,54 +362,18 @@ export function RhizomeList() {
             />
           )}
 
-          <button
-            type="button"
-            className="create-settings-toggle"
-            onClick={() => setShowSettings(!showSettings)}
-          >
-            <span className={`toggle-arrow ${showSettings ? 'expanded' : ''}`}>&#9654;</span>
-            <span>Defaults</span>
-          </button>
-
-          {showSettings && (
-            <div className="create-settings">
+          <AdvancedSection storageKey="create" summary="Mode · Template · Context">
+            <AdvancedGroup title="Format">
               <div className="create-setting-row">
-                <label>Provider</label>
-                {providers.length > 0 ? (
-                  <select
-                    value={newProvider}
-                    onChange={(e) => {
-                      setNewProvider(e.target.value)
-                      setNewModel('')
-                    }}
-                  >
-                    <option value="">Default</option>
-                    {providers.map((p) => (
-                      <option key={p.name} value={p.name}>
-                        {p.name}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <select disabled>
-                    <option>Loading...</option>
-                  </select>
-                )}
-              </div>
-              <div className="create-setting-row">
-                <label>Model</label>
-                <input
-                  type="text"
-                  value={newModel}
-                  onChange={(e) => setNewModel(e.target.value)}
-                  placeholder={suggestedModels[0] ?? 'default'}
-                  list="create-model-suggestions"
-                />
-                <datalist id="create-model-suggestions">
-                  {suggestedModels.map((m) => (
-                    <option key={m} value={m} />
-                  ))}
-                </datalist>
+                <label>Mode</label>
+                <select
+                  value={newModeOverride}
+                  onChange={(e) => setNewModeOverride(e.target.value as '' | 'chat' | 'completion')}
+                >
+                  <option value="">From model ({modelMode})</option>
+                  <option value="chat">Chat</option>
+                  <option value="completion">Completion</option>
+                </select>
               </div>
               {newGenerationMode === 'completion' && (
                 <div className="create-setting-row">
@@ -417,6 +382,7 @@ export function RhizomeList() {
                     value={newPromptTemplate}
                     onChange={(e) => setNewPromptTemplate(e.target.value)}
                   >
+                    <option value="auto">From model ({modelTemplate})</option>
                     <option value="raw">Raw (no template)</option>
                     <option value="alpaca">Alpaca</option>
                     <option value="chatml">ChatML</option>
@@ -424,6 +390,8 @@ export function RhizomeList() {
                   </select>
                 </div>
               )}
+            </AdvancedGroup>
+            <AdvancedGroup title="Context & display">
               {newGenerationMode === 'chat' && (
                 <div className="create-setting-toggle">
                   <label>
@@ -446,10 +414,10 @@ export function RhizomeList() {
                   Stream responses
                 </label>
               </div>
-            </div>
-          )}
+            </AdvancedGroup>
+          </AdvancedSection>
 
-          <button onClick={handleCreate} disabled={!newTitle.trim()}>
+          <button className="create-submit" onClick={handleCreate} disabled={!newTitle.trim()}>
             Create
           </button>
         </div>

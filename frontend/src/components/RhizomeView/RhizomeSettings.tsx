@@ -4,12 +4,15 @@ import { exportRhizome } from '../../api/client.ts'
 import { useRhizomeStore, useRhizomeData, useRightPane } from '../../store/rhizomeStore.ts'
 import { useShallow } from 'zustand/react/shallow'
 import { SamplingParamsPanel, type SamplingParamValues } from '../shared/SamplingParamsPanel.tsx'
+import { AdvancedGroup, AdvancedSection } from '../shared/AdvancedSection.tsx'
+import { ModelPicker } from '../shared/ModelPicker.tsx'
+import { findModel } from '../shared/modelChoice.ts'
 import { IconToggleButton } from '../shared/IconToggleButton.tsx'
 import { MergePanel } from './MergePanel.tsx'
 import './RhizomeSettings.css'
 
 export function RhizomeSettings() {
-  const { currentRhizome, providers } = useRhizomeData()
+  const { currentRhizome, providers, models } = useRhizomeData()
   const { rightPaneMode, canvasOpen } = useRightPane()
   const updateRhizome = useRhizomeStore(s => s.updateRhizome)
   const fetchProviders = useRhizomeStore(s => s.fetchProviders)
@@ -19,8 +22,6 @@ export function RhizomeSettings() {
   const unarchiveRhizome = useRhizomeStore(s => s.unarchiveRhizome)
   const fetchRhizomes = useRhizomeStore(s => s.fetchRhizomes)
   const fetchInterventionTypes = useRhizomeStore(s => s.fetchInterventionTypes)
-  const showNodeIds = useRhizomeStore(s => s.showNodeIds)
-  const setShowNodeIds = (v: boolean) => useRhizomeStore.setState({ showNodeIds: v })
   const interventionTypes = useRhizomeStore(useShallow(s => s.interventionTypes))
 
   const [isOpen, setIsOpen] = useState(false)
@@ -53,11 +54,13 @@ export function RhizomeSettings() {
   const [streamResponses, setStreamResponses] = useState(true)
   const [includeThinking, setIncludeThinking] = useState(false)
   const [generationMode, setGenerationMode] = useState('chat')
-  const [promptTemplate, setPromptTemplate] = useState('raw')
+  // "auto" (or unset): each generation uses the generating model's template
+  const [promptTemplate, setPromptTemplate] = useState('auto')
   const [debugContextLimit, setDebugContextLimit] = useState('')
 
   // Eviction strategy state
-  const [evictionMode, setEvictionMode] = useState<'smart' | 'truncate' | 'none'>('smart')
+  // "default": no eviction_strategy stored, and the backend truncates oldest first
+  const [evictionMode, setEvictionMode] = useState<'default' | 'smart' | 'truncate' | 'none'>('default')
   const [keepFirstTurns, setKeepFirstTurns] = useState('2')
   const [recentTurnsToKeep, setRecentTurnsToKeep] = useState('4')
   const [keepAnchored, setKeepAnchored] = useState(true)
@@ -96,12 +99,12 @@ export function RhizomeSettings() {
       setStreamResponses(meta?.stream_responses !== false)
       setIncludeThinking(!!meta?.include_thinking_in_context)
       setGenerationMode((meta?.generation_mode as string) ?? 'chat')
-      setPromptTemplate((meta?.prompt_template as string) ?? 'raw')
+      setPromptTemplate((meta?.prompt_template as string) ?? 'auto')
       setDebugContextLimit(meta?.debug_context_limit != null ? String(meta.debug_context_limit) : '')
 
       // Eviction strategy from metadata
       const es = meta?.eviction_strategy as Partial<EvictionStrategy> | undefined
-      setEvictionMode(es?.mode ?? 'smart')
+      setEvictionMode(es?.mode ?? 'default')
       setKeepFirstTurns(String(es?.keep_first_turns ?? 2))
       setRecentTurnsToKeep(String(es?.recent_turns_to_keep ?? 4))
       setKeepAnchored(es?.keep_anchored ?? true)
@@ -124,8 +127,8 @@ export function RhizomeSettings() {
   if (!currentRhizome) return null
 
   const selectedProvider = providers.find((p) => p.name === provider)
-  const suggestedModels = selectedProvider?.models ?? []
   const supportedParams = selectedProvider?.supported_params ?? []
+  const defaultEntry = findModel(models, { provider, model })
 
   // Build what the current sampling params "should be" from form
   const formSamplingParams: SamplingParams = {}
@@ -151,28 +154,54 @@ export function RhizomeSettings() {
   const currentMeta = currentRhizome.metadata ?? {}
   const currentEs = currentMeta.eviction_strategy as Partial<EvictionStrategy> | undefined
   const currentInterventions = (currentMeta.context_interventions as InterventionConfig[] | undefined) ?? []
-  const interventionsChanged = JSON.stringify(interventionConfigs) !== JSON.stringify(currentInterventions)
-  const metadataChanged =
-    includeTimestamps !== !!currentMeta.include_timestamps ||
-    streamResponses !== (currentMeta.stream_responses !== false) ||
-    includeThinking !== !!currentMeta.include_thinking_in_context ||
-    generationMode !== ((currentMeta.generation_mode as string) ?? 'chat') ||
-    promptTemplate !== ((currentMeta.prompt_template as string) ?? 'raw') ||
-    debugContextLimit !== (currentMeta.debug_context_limit != null ? String(currentMeta.debug_context_limit) : '') ||
-    evictionMode !== (currentEs?.mode ?? 'smart') ||
-    (evictionMode === 'smart' && (
-      keepFirstTurns !== String(currentEs?.keep_first_turns ?? 2) ||
-      recentTurnsToKeep !== String(currentEs?.recent_turns_to_keep ?? 4) ||
-      keepAnchored !== (currentEs?.keep_anchored ?? true) ||
-      summarizeEvicted !== (currentEs?.summarize_evicted ?? true) ||
-      warnThreshold !== String(currentEs?.warn_threshold ?? 0.85)
-    )) ||
-    interventionsChanged
+  const isChat = generationMode === 'chat'
 
-  const hasChanges =
-    title !== (currentRhizome.title ?? '') ||
+  const formEviction: Partial<EvictionStrategy> | undefined =
+    evictionMode === 'default' ? undefined
+      : evictionMode === 'smart' ? {
+        mode: 'smart',
+        keep_first_turns: parseInt(keepFirstTurns, 10) || 2,
+        recent_turns_to_keep: parseInt(recentTurnsToKeep, 10) || 4,
+        keep_anchored: keepAnchored,
+        summarize_evicted: summarizeEvicted,
+        warn_threshold: parseFloat(warnThreshold) || 0.85,
+      }
+      : { mode: evictionMode }
+  const debugLimit = debugContextLimit ? (parseInt(debugContextLimit, 10) || null) : null
+
+  // Metadata keys this panel would change: only keys whose value differs,
+  // and chat-only keys only in chat mode (completion rhizomes don't use them)
+  const metaChanges: Record<string, unknown> = {}
+  const deleteKeys: string[] = []
+  const setIfChanged = (key: string, value: unknown, current: unknown) => {
+    if (JSON.stringify(value) !== JSON.stringify(current)) metaChanges[key] = value
+  }
+  setIfChanged('generation_mode', generationMode, (currentMeta.generation_mode as string) ?? 'chat')
+  setIfChanged('stream_responses', streamResponses, currentMeta.stream_responses !== false)
+  setIfChanged('debug_context_limit', debugLimit, (currentMeta.debug_context_limit as number | null | undefined) ?? null)
+  if (!isChat) {
+    setIfChanged('prompt_template', promptTemplate, (currentMeta.prompt_template as string) ?? 'auto')
+  } else {
+    setIfChanged('include_timestamps', includeTimestamps, !!currentMeta.include_timestamps)
+    setIfChanged('include_thinking_in_context', includeThinking, !!currentMeta.include_thinking_in_context)
+    if (formEviction === undefined) {
+      if (currentEs !== undefined) deleteKeys.push('eviction_strategy')
+    } else {
+      setIfChanged('eviction_strategy', formEviction, currentEs)
+    }
+    if (JSON.stringify(interventionConfigs) !== JSON.stringify(currentInterventions)) {
+      if (interventionConfigs.length > 0) metaChanges.context_interventions = interventionConfigs
+      else if (currentMeta.context_interventions !== undefined) deleteKeys.push('context_interventions')
+    }
+  }
+  const legacyThinking = currentMeta.extended_thinking != null
+  const metadataChanged = Object.keys(metaChanges).length > 0 || deleteKeys.length > 0
+
+  const modelChanged =
     provider !== (currentRhizome.default_provider ?? '') ||
-    model !== (currentRhizome.default_model ?? '') ||
+    model !== (currentRhizome.default_model ?? '')
+  const hasChanges =
+    modelChanged ||
     systemPrompt !== (currentRhizome.default_system_prompt ?? '') ||
     samplingChanged ||
     metadataChanged
@@ -180,14 +209,10 @@ export function RhizomeSettings() {
   const handleSave = async () => {
     if (!hasChanges) return
     const req: PatchRhizomeRequest = {}
-    if (title !== (currentRhizome.title ?? '')) req.title = title || null
-    if (provider !== (currentRhizome.default_provider ?? ''))
+    if (modelChanged) {
       req.default_provider = provider || null
-    // When model is blank but a provider is selected, use the provider's
-    // first suggested model so the placeholder value becomes the actual default
-    const effectiveModel = model || (provider ? suggestedModels[0] : undefined)
-    if ((effectiveModel ?? '') !== (currentRhizome.default_model ?? ''))
-      req.default_model = effectiveModel || null
+      req.default_model = model || null
+    }
     if (systemPrompt !== (currentRhizome.default_system_prompt ?? ''))
       req.default_system_prompt = systemPrompt || null
 
@@ -197,44 +222,12 @@ export function RhizomeSettings() {
         : null
     }
 
-    // Build merged metadata from all buffered fields
-    if (metadataChanged || currentRhizome.metadata?.extended_thinking != null) {
-      const newMeta = { ...currentRhizome.metadata } as Record<string, unknown>
-      // Clear legacy thinking fields (now in default_sampling_params)
+    if (metadataChanged || legacyThinking) {
+      const newMeta = { ...currentRhizome.metadata, ...metaChanges } as Record<string, unknown>
+      for (const key of deleteKeys) delete newMeta[key]
+      // Legacy thinking fields now live in default_sampling_params
       delete newMeta.extended_thinking
       delete newMeta.thinking_budget
-
-      // Metadata toggles
-      newMeta.include_timestamps = includeTimestamps
-      newMeta.stream_responses = streamResponses
-      newMeta.include_thinking_in_context = includeThinking
-      newMeta.generation_mode = generationMode
-      newMeta.prompt_template = promptTemplate
-      newMeta.debug_context_limit = debugContextLimit
-        ? (parseInt(debugContextLimit, 10) || null)
-        : null
-
-      // Eviction strategy
-      if (evictionMode === 'smart') {
-        newMeta.eviction_strategy = {
-          mode: evictionMode,
-          keep_first_turns: parseInt(keepFirstTurns, 10) || 2,
-          recent_turns_to_keep: parseInt(recentTurnsToKeep, 10) || 4,
-          keep_anchored: keepAnchored,
-          summarize_evicted: summarizeEvicted,
-          warn_threshold: parseFloat(warnThreshold) || 0.85,
-        }
-      } else {
-        newMeta.eviction_strategy = { mode: evictionMode }
-      }
-
-      // Context interventions
-      if (interventionConfigs.length > 0) {
-        newMeta.context_interventions = interventionConfigs
-      } else {
-        delete newMeta.context_interventions
-      }
-
       req.metadata = newMeta
     }
 
@@ -399,66 +392,15 @@ export function RhizomeSettings() {
         <div className="rhizome-settings-panel">
           <div className="rhizome-settings-fields">
             <div className="rhizome-settings-field">
-              <label>Default provider</label>
-              {providers.length > 0 ? (
-                <select
-                  value={provider}
-                  onChange={(e) => {
-                    setProvider(e.target.value)
-                    setModel('')
-                  }}
-                >
-                  <option value="">None</option>
-                  {providers.map((p) => (
-                    <option key={p.name} value={p.name}>
-                      {p.name}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <select disabled>
-                  <option>Loading...</option>
-                </select>
-              )}
-            </div>
-
-            <div className="rhizome-settings-field">
-              <label>Default model</label>
-              <input
-                type="text"
-                value={model}
-                onChange={(e) => setModel(e.target.value)}
-                placeholder={suggestedModels[0] ?? 'default'}
-                list="rhizome-settings-model-suggestions"
+              <label htmlFor="rhizome-default-model">Default model</label>
+              <ModelPicker
+                id="rhizome-default-model"
+                value={{ provider, model }}
+                onChange={(v) => { setProvider(v.provider); setModel(v.model) }}
+                models={models}
+                providers={providers}
+                emptyLabel="No default (choose per message)"
               />
-              <datalist id="rhizome-settings-model-suggestions">
-                {suggestedModels.map((m) => (
-                  <option key={m} value={m} />
-                ))}
-              </datalist>
-            </div>
-
-            <div className="rhizome-settings-field">
-              <label>Generation mode</label>
-              <div className="mode-selector">
-                <button
-                  type="button"
-                  className={`mode-selector-btn ${generationMode === 'chat' ? 'active' : ''}`}
-                  onClick={() => setGenerationMode('chat')}
-                >
-                  Chat
-                </button>
-                <button
-                  type="button"
-                  className={`mode-selector-btn ${generationMode === 'completion' ? 'active' : ''}`}
-                  onClick={() => setGenerationMode('completion')}
-                >
-                  Completion
-                </button>
-              </div>
-              <span className="rhizome-settings-note">
-                Chat sends structured messages. Completion renders a text prompt from a template.
-              </span>
             </div>
 
             {generationMode === 'chat' && (
@@ -473,199 +415,188 @@ export function RhizomeSettings() {
               </div>
             )}
 
-            {generationMode === 'completion' && (
-              <div className="rhizome-settings-field">
-                <label>Prompt template</label>
-                <select
-                  value={promptTemplate}
-                  onChange={(e) => setPromptTemplate(e.target.value)}
-                >
-                  <option value="raw">Raw (no template)</option>
-                  <option value="alpaca">Alpaca</option>
-                  <option value="chatml">ChatML</option>
-                  <option value="llama3">Llama 3</option>
-                </select>
-                <span className="rhizome-settings-note">
-                  Raw sends plain text — best for base models on remote APIs.
-                  Llama 3 uses special tokens that only work with local servers.
-                </span>
-              </div>
-            )}
-
-            <div className="rhizome-settings-divider" />
-
-            <div className="rhizome-settings-section-label">Sampling defaults</div>
-
             <SamplingParamsPanel
+              section="preset"
               values={samplingValues}
               onChange={handleSamplingChange}
               supportedParams={supportedParams}
               providerName={provider}
             />
 
-            <div className="rhizome-settings-divider" />
-
-            {generationMode === 'chat' && (
-              <div className="rhizome-settings-toggle">
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={includeTimestamps}
-                    onChange={(e) => setIncludeTimestamps(e.target.checked)}
-                  />
-                  Include timestamps in context
-                </label>
-              </div>
-            )}
-
-            <div className="rhizome-settings-toggle">
-              <label>
-                <input
-                  type="checkbox"
-                  checked={streamResponses}
-                  onChange={(e) => setStreamResponses(e.target.checked)}
-                />
-                Stream responses
-              </label>
-            </div>
-
-            {generationMode === 'chat' && (
-              <div className="rhizome-settings-toggle">
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={includeThinking}
-                    onChange={(e) => setIncludeThinking(e.target.checked)}
-                  />
-                  Include thinking in context
-                </label>
-                <span className="rhizome-settings-note">
-                  Feed reasoning traces back into subsequent context. Uses significant tokens.
-                </span>
-              </div>
-            )}
-
-            <div className="rhizome-settings-field">
-              <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  checked={showNodeIds}
-                  onChange={(e) => setShowNodeIds(e.target.checked)}
-                />
-                Show node IDs
-              </label>
-            </div>
-
-            <div className="rhizome-settings-field">
-              <label>Debug: context limit override (tokens)</label>
-              <input
-                type="number"
-                min="0"
-                step="100"
-                value={debugContextLimit}
-                onChange={(e) => setDebugContextLimit(e.target.value)}
-                placeholder="Use real model limit"
-              />
-              {debugContextLimit && parseInt(debugContextLimit, 10) > 0 && (
-                <span className="rhizome-settings-note" style={{ color: 'var(--ctx-yellow)' }}>
-                  Context limited to {parseInt(debugContextLimit, 10).toLocaleString()} tokens for testing
-                </span>
-              )}
-            </div>
-
-            {generationMode === 'chat' && (
-              <>
-                <div className="rhizome-settings-divider" />
-
-                <div className="rhizome-settings-section-label">Context eviction</div>
-
+            <AdvancedSection
+              storageKey="rhizome-settings"
+              summary="Format · Sampling · Context · Interventions · Debug"
+            >
+              <AdvancedGroup title="Format">
                 <div className="rhizome-settings-field">
-                  <label>Eviction mode</label>
-                  <select
-                    value={evictionMode}
-                    onChange={(e) => setEvictionMode(e.target.value as 'smart' | 'truncate' | 'none')}
-                  >
-                    <option value="smart">Smart (protect first/last/anchored)</option>
-                    <option value="truncate">Truncate (oldest first)</option>
-                    <option value="none">None (send everything)</option>
-                  </select>
+                  <label>Generation mode</label>
+                  <div className="mode-selector">
+                    <button
+                      type="button"
+                      className={`mode-selector-btn ${generationMode === 'chat' ? 'active' : ''}`}
+                      onClick={() => setGenerationMode('chat')}
+                    >
+                      Chat
+                    </button>
+                    <button
+                      type="button"
+                      className={`mode-selector-btn ${generationMode === 'completion' ? 'active' : ''}`}
+                      onClick={() => setGenerationMode('completion')}
+                    >
+                      Completion
+                    </button>
+                  </div>
+                  <span className="rhizome-settings-note">
+                    Chat sends structured messages; completion renders a text prompt from a template.
+                    {defaultEntry && defaultEntry.mode !== generationMode
+                      && ` ${defaultEntry.label} is normally a ${defaultEntry.mode} model.`}
+                  </span>
                 </div>
 
-                {evictionMode === 'smart' && (
-                  <>
-                    <div className="rhizome-settings-row-pair">
-                      <div className="rhizome-settings-field">
-                        <label>Keep first turns</label>
-                        <input
-                          type="number"
-                          min="0"
-                          step="1"
-                          value={keepFirstTurns}
-                          onChange={(e) => setKeepFirstTurns(e.target.value)}
-                        />
-                      </div>
-                      <div className="rhizome-settings-field">
-                        <label>Keep recent turns</label>
-                        <input
-                          type="number"
-                          min="0"
-                          step="1"
-                          value={recentTurnsToKeep}
-                          onChange={(e) => setRecentTurnsToKeep(e.target.value)}
-                        />
-                      </div>
-                    </div>
-
-                    <div className="rhizome-settings-field">
-                      <label>Warning threshold</label>
-                      <input
-                        type="number"
-                        min="0"
-                        max="1"
-                        step="0.05"
-                        value={warnThreshold}
-                        onChange={(e) => setWarnThreshold(e.target.value)}
-                      />
-                      <span className="rhizome-settings-note">
-                        Warn when context reaches this fraction of the limit
-                      </span>
-                    </div>
-
-                    <div className="rhizome-settings-toggle">
-                      <label>
-                        <input
-                          type="checkbox"
-                          checked={keepAnchored}
-                          onChange={(e) => setKeepAnchored(e.target.checked)}
-                        />
-                        Protect anchored messages
-                      </label>
-                    </div>
-
-                    <div className="rhizome-settings-toggle">
-                      <label>
-                        <input
-                          type="checkbox"
-                          checked={summarizeEvicted}
-                          onChange={(e) => setSummarizeEvicted(e.target.checked)}
-                        />
-                        Summarize evicted messages
-                      </label>
-                      <span className="rhizome-settings-note">
-                        Generate a recap of evicted content using a small model
-                      </span>
-                    </div>
-                  </>
+                {generationMode === 'completion' && (
+                  <div className="rhizome-settings-field">
+                    <label>Prompt template</label>
+                    <select
+                      value={promptTemplate}
+                      onChange={(e) => setPromptTemplate(e.target.value)}
+                    >
+                      <option value="auto">From each model ({defaultEntry?.prompt_template ?? 'raw'} for {defaultEntry?.label ?? 'the default model'})</option>
+                      <option value="raw">Raw (no template)</option>
+                      <option value="alpaca">Alpaca</option>
+                      <option value="chatml">ChatML</option>
+                      <option value="llama3">Llama 3</option>
+                    </select>
+                    <span className="rhizome-settings-note">
+                      Raw sends plain text with no turn markers: right for base models, wrong for chat-tuned ones
+                      (they may start writing your lines).
+                    </span>
+                  </div>
                 )}
-              </>
-            )}
+              </AdvancedGroup>
+
+              <AdvancedGroup title="Sampling details">
+                <SamplingParamsPanel
+                  section="details"
+                  values={samplingValues}
+                  onChange={handleSamplingChange}
+                  supportedParams={supportedParams}
+                  providerName={provider}
+                />
+              </AdvancedGroup>
+
+              {generationMode === 'chat' && (
+                <AdvancedGroup title="Context">
+                  <div className="rhizome-settings-toggle">
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={includeTimestamps}
+                        onChange={(e) => setIncludeTimestamps(e.target.checked)}
+                      />
+                      Include timestamps in context
+                    </label>
+                  </div>
+
+                  <div className="rhizome-settings-toggle">
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={includeThinking}
+                        onChange={(e) => setIncludeThinking(e.target.checked)}
+                      />
+                      Include thinking in context
+                    </label>
+                    <span className="rhizome-settings-note">
+                      Feed reasoning traces back into subsequent context. Uses significant tokens.
+                    </span>
+                  </div>
+
+                  <div className="rhizome-settings-field">
+                    <label>When the context is full</label>
+                    <select
+                      value={evictionMode}
+                      onChange={(e) => setEvictionMode(e.target.value as 'default' | 'smart' | 'truncate' | 'none')}
+                    >
+                      <option value="default">Default: drop oldest first</option>
+                      <option value="smart">Smart (protect first/last/anchored)</option>
+                      <option value="truncate">Truncate (oldest first)</option>
+                      <option value="none">None (send everything)</option>
+                    </select>
+                  </div>
+
+                  {evictionMode === 'smart' && (
+                    <>
+                      <div className="rhizome-settings-row-pair">
+                        <div className="rhizome-settings-field">
+                          <label>Keep first turns</label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="1"
+                            value={keepFirstTurns}
+                            onChange={(e) => setKeepFirstTurns(e.target.value)}
+                          />
+                        </div>
+                        <div className="rhizome-settings-field">
+                          <label>Keep recent turns</label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="1"
+                            value={recentTurnsToKeep}
+                            onChange={(e) => setRecentTurnsToKeep(e.target.value)}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="rhizome-settings-field">
+                        <label>Warning threshold</label>
+                        <input
+                          type="number"
+                          min="0"
+                          max="1"
+                          step="0.05"
+                          value={warnThreshold}
+                          onChange={(e) => setWarnThreshold(e.target.value)}
+                        />
+                        <span className="rhizome-settings-note">
+                          Warn when context reaches this fraction of the limit
+                        </span>
+                      </div>
+
+                      <div className="rhizome-settings-toggle">
+                        <label>
+                          <input
+                            type="checkbox"
+                            checked={keepAnchored}
+                            onChange={(e) => setKeepAnchored(e.target.checked)}
+                          />
+                          Protect anchored messages
+                        </label>
+                      </div>
+
+                      <div className="rhizome-settings-toggle">
+                        <label>
+                          <input
+                            type="checkbox"
+                            checked={summarizeEvicted}
+                            onChange={(e) => setSummarizeEvicted(e.target.checked)}
+                          />
+                          Summarize evicted messages
+                        </label>
+                        <span className="rhizome-settings-note">
+                          Generate a recap of evicted content using a small model (Claude Haiku; small API cost)
+                        </span>
+                      </div>
+                    </>
+                  )}
+                </AdvancedGroup>
+              )}
 
             {generationMode === 'chat' && interventionTypes.length > 0 && (
-              <>
-                <div className="rhizome-settings-divider" />
-
+              <AdvancedGroup title="Interventions">
                 <div className="intervention-section-header">
-                  <div className="rhizome-settings-section-label">Context interventions</div>
+                  <div className="rhizome-settings-section-label">Composable context transforms</div>
                   <button
                     type="button"
                     className="intervention-info-btn"
@@ -741,8 +672,42 @@ export function RhizomeSettings() {
                     </div>
                   )
                 })}
-              </>
+              </AdvancedGroup>
             )}
+
+
+              <AdvancedGroup title="Display">
+                <div className="rhizome-settings-toggle">
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={streamResponses}
+                      onChange={(e) => setStreamResponses(e.target.checked)}
+                    />
+                    Stream responses
+                  </label>
+                </div>
+              </AdvancedGroup>
+
+              <AdvancedGroup title="Debug">
+                <div className="rhizome-settings-field">
+                  <label>Context limit override (tokens)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="100"
+                    value={debugContextLimit}
+                    onChange={(e) => setDebugContextLimit(e.target.value)}
+                    placeholder="Use real model limit"
+                  />
+                  {debugContextLimit && parseInt(debugContextLimit, 10) > 0 && (
+                    <span className="rhizome-settings-note" style={{ color: 'var(--ctx-yellow)' }}>
+                      Context limited to {parseInt(debugContextLimit, 10).toLocaleString()} tokens for testing
+                    </span>
+                  )}
+                </div>
+              </AdvancedGroup>
+            </AdvancedSection>
 
             <div className="rhizome-settings-divider" />
 

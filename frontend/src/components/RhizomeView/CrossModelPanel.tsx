@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import type { CrossModelTarget, ProviderInfo } from '../../api/types.ts'
-import { useRhizomeStore } from '../../store/rhizomeStore.ts'
+import { useRhizomeData, useRhizomeStore } from '../../store/rhizomeStore.ts'
+import { ModelPicker } from '../shared/ModelPicker.tsx'
+import { findModel, type ModelChoice } from '../shared/modelChoice.ts'
+import { type GenerationModeChoice, effectiveMode } from './generationMode.ts'
 import { ModeSelect } from './ModeSelect.tsx'
 import './ForkPanel.css'
 
@@ -15,64 +18,52 @@ interface CrossModelPanelProps {
   }
 }
 
+interface Row extends ModelChoice {
+  mode: GenerationModeChoice
+}
+
 export function CrossModelPanel({
   nodeId,
   onCancel,
   isGenerating,
   providers,
+  defaults,
 }: CrossModelPanelProps) {
   const generateCrossModel = useRhizomeStore(s => s.generateCrossModel)
+  const { models } = useRhizomeData()
 
-  // Start with one empty target row
-  const [targets, setTargets] = useState<CrossModelTarget[]>(() => {
-    const firstProvider = providers[0]?.name ?? ''
-    const firstModel = providers[0]?.models?.[0] ?? ''
-    return [{ provider: firstProvider, model: firstModel }]
-  })
+  // Start from the branch's model; add more to compare against it
+  const [rows, setRows] = useState<Row[]>(() => [{
+    provider: providers.find((p) => p.name === defaults.provider)?.name ?? providers[0]?.name ?? '',
+    model: defaults.model ?? '',
+    mode: '',
+  }])
 
   const panelRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     panelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
   }, [])
 
-  const addTarget = () => {
-    if (targets.length >= 10) return
-    // Pick a provider not yet used, or fall back to first
-    const usedProviders = new Set(targets.map(t => t.provider))
-    const nextProvider = providers.find(p => !usedProviders.has(p.name))
-      ?? providers[0]
-    setTargets([...targets, {
-      provider: nextProvider?.name ?? '',
-      model: nextProvider?.models?.[0] ?? '',
-    }])
+  const addRow = () => {
+    if (rows.length >= 10) return
+    const used = new Set(rows.map(r => `${r.provider}:${r.model}`))
+    const next = models.find(m => !used.has(m.id))
+    setRows([...rows, { provider: next?.provider ?? '', model: next?.model ?? '', mode: '' }])
   }
 
-  const removeTarget = (index: number) => {
-    if (targets.length <= 1) return
-    setTargets(targets.filter((_, i) => i !== index))
-  }
+  const update = (i: number, patch: Partial<Row>) =>
+    setRows(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)))
 
-  const updateTarget = (index: number, field: keyof CrossModelTarget, value: string) => {
-    setTargets(targets.map((t, i) => {
-      if (i !== index) return t
-      if (field === 'provider') {
-        // Reset model when provider changes
-        const providerInfo = providers.find(p => p.name === value)
-        return { provider: value, model: providerInfo?.models?.[0] ?? '' }
-      }
-      if (field === 'mode') {
-        return value ? { ...t, mode: value as 'chat' | 'completion' } : { provider: t.provider, model: t.model }
-      }
-      return { ...t, [field]: value }
-    }))
-  }
-
-  const canSubmit = targets.length > 0
-    && targets.every(t => t.provider && t.model)
-    && !isGenerating
+  const canSubmit = rows.length > 0 && rows.every(r => r.provider && r.model) && !isGenerating
 
   const handleSubmit = () => {
     if (!canSubmit) return
+    const targets: CrossModelTarget[] = rows.map((r) => {
+      const provider = providers.find(p => p.name === r.provider)
+      // Each target runs in its own model's mode (e.g. GPT → chat inside a Sun rhizome)
+      const mode = effectiveMode(provider, r.mode || findModel(models, r)?.mode || '')
+      return { provider: r.provider, model: r.model, ...(mode && { mode }) }
+    })
     generateCrossModel(nodeId, targets)
     onCancel()
   }
@@ -86,74 +77,44 @@ export function CrossModelPanel({
 
       <div className="fork-panel-body">
         <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>
-          Generate from this node with multiple models simultaneously
+          Generate from this node with several models at once; each uses its own format
         </div>
 
-        {targets.map((target, index) => {
-          const providerInfo = providers.find(p => p.name === target.provider)
-          const suggestedModels = providerInfo?.models ?? []
-          return (
-            <div key={index} style={{
-              display: 'flex', gap: '0.4rem', alignItems: 'center',
-              marginBottom: '0.4rem',
-            }}>
-              <select
-                value={target.provider}
-                onChange={(e) => updateTarget(index, 'provider', e.target.value)}
-                style={{ flex: '0 0 auto', minWidth: '100px' }}
+        {rows.map((row, i) => (
+          <div key={i} className="cross-model-row">
+            <ModelPicker
+              value={row}
+              onChange={(v) => update(i, { ...v, mode: '' })}
+              models={models}
+              providers={providers}
+            />
+            <ModeSelect
+              provider={providers.find(p => p.name === row.provider)}
+              value={row.mode}
+              onChange={(mode) => update(i, { mode })}
+              row={false}
+              modelMode={findModel(models, row)?.mode}
+            />
+            {rows.length > 1 && (
+              <button
+                className="fork-panel-close"
+                onClick={() => setRows(rows.filter((_, j) => j !== i))}
+                aria-label="Remove model"
               >
-                {providers.map((p) => (
-                  <option key={p.name} value={p.name}>{p.name}</option>
-                ))}
-              </select>
-              <input
-                type="text"
-                value={target.model}
-                onChange={(e) => updateTarget(index, 'model', e.target.value)}
-                placeholder={suggestedModels[0] ?? 'model'}
-                list={`cross-model-${index}`}
-                style={{ flex: 1, minWidth: 0 }}
-              />
-              <datalist id={`cross-model-${index}`}>
-                {suggestedModels.map((m) => (
-                  <option key={m} value={m} />
-                ))}
-              </datalist>
-              <ModeSelect
-                provider={providerInfo}
-                value={target.mode ?? ''}
-                onChange={(v) => updateTarget(index, 'mode', v)}
-                row={false}
-              />
-              {targets.length > 1 && (
-                <button
-                  className="fork-panel-close"
-                  onClick={() => removeTarget(index)}
-                  style={{ padding: '0 0.3rem', fontSize: '0.75rem' }}
-                >
-                  x
-                </button>
-              )}
-            </div>
-          )
-        })}
+                x
+              </button>
+            )}
+          </div>
+        ))}
 
-        {targets.length < 10 && (
-          <button
-            className="fork-settings-toggle"
-            onClick={addTarget}
-            style={{ marginBottom: '0.5rem' }}
-          >
+        {rows.length < 10 && (
+          <button className="fork-settings-toggle" onClick={addRow} style={{ marginBottom: '0.5rem' }}>
             + Add model
           </button>
         )}
 
-        <button
-          className="fork-submit-btn"
-          onClick={handleSubmit}
-          disabled={!canSubmit}
-        >
-          {isGenerating ? 'Generating...' : `Generate (${targets.length} model${targets.length > 1 ? 's' : ''})`}
+        <button className="fork-submit-btn" onClick={handleSubmit} disabled={!canSubmit}>
+          {isGenerating ? 'Generating...' : `Generate (${rows.length} model${rows.length > 1 ? 's' : ''})`}
         </button>
       </div>
     </div>

@@ -1,5 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import type { GenerateRequest, ProviderInfo, SamplingParams } from '../../api/types.ts'
+import { useRhizomeData, useRhizomeStore } from '../../store/rhizomeStore.ts'
+import { AdvancedGroup, AdvancedSection } from '../shared/AdvancedSection.tsx'
+import { ModelPicker } from '../shared/ModelPicker.tsx'
+import { findModel, type ModelChoice } from '../shared/modelChoice.ts'
 import { SamplingParamsPanel, type SamplingParamValues } from '../shared/SamplingParamsPanel.tsx'
 import { type GenerationModeChoice, effectiveMode } from './generationMode.ts'
 import { ModeSelect } from './ModeSelect.tsx'
@@ -25,6 +29,19 @@ interface ForkPanelProps {
   samplingDefaults: SamplingParams | null
 }
 
+function toSamplingParams(v: SamplingParamValues): SamplingParams {
+  const sp: SamplingParams = {}
+  if (v.temperature) sp.temperature = parseFloat(v.temperature)
+  if (v.topP) sp.top_p = parseFloat(v.topP)
+  if (v.topK) sp.top_k = parseInt(v.topK, 10)
+  if (v.maxTokens) sp.max_tokens = parseInt(v.maxTokens, 10)
+  if (v.frequencyPenalty) sp.frequency_penalty = parseFloat(v.frequencyPenalty)
+  if (v.presencePenalty) sp.presence_penalty = parseFloat(v.presencePenalty)
+  sp.extended_thinking = v.useThinking
+  if (v.useThinking) sp.thinking_budget = parseInt(v.thinkingBudget, 10) || 10000
+  return sp
+}
+
 export function ForkPanel({
   mode,
   onForkSubmit,
@@ -38,26 +55,31 @@ export function ForkPanel({
   streamDefault,
   samplingDefaults,
 }: ForkPanelProps) {
+  const { currentRhizome, models } = useRhizomeData()
+  // One source of truth for the system prompt: the main input's override, else the rhizome default
+  const systemPromptOverride = useRhizomeStore(s => s.systemPromptOverride)
   const [content, setContent] = useState('')
-  const [showSettings, setShowSettings] = useState(mode === 'regenerate' || mode === 'generate')
 
-  // Default to rhizome's provider if it's available, otherwise first provider
-  const defaultProvider =
-    providers.find((p) => p.name === defaults.provider)?.name ??
-    providers[0]?.name ??
-    ''
-  const [provider, setProvider] = useState(defaultProvider)
-  const [model, setModel] = useState(defaults.model ?? '')
-  // Follow the branch, like provider and model: regenerating after a chat-mode
-  // GPT turn in a completion-mode rhizome should stay chat
+  // Start from the branch's model (or the rhizome default, or the first available provider)
+  const [choice, setChoice] = useState<ModelChoice>(() => ({
+    provider: providers.find((p) => p.name === defaults.provider)?.name ?? providers[0]?.name ?? '',
+    model: defaults.model ?? '',
+  }))
+  // Follow the branch, like the model: regenerating after a chat-mode GPT turn
+  // in a completion-mode rhizome should stay chat
   const [generationMode, setGenerationMode] = useState<GenerationModeChoice>(defaults.mode ?? '')
+  const [systemPrompt, setSystemPrompt] = useState(systemPromptOverride ?? defaults.systemPrompt ?? '')
 
-  const selectedProvider = providers.find((p) => p.name === provider)
-  const suggestedModels = selectedProvider?.models ?? []
+  const selectedProvider = providers.find((p) => p.name === choice.provider)
   const supportedParams = selectedProvider?.supported_params ?? []
-  const [systemPrompt, setSystemPrompt] = useState(defaults.systemPrompt ?? '')
+  const entry = findModel(models, choice)
+  const completionOnly = selectedProvider ? !selectedProvider.supported_modes.includes('chat') : false
+  const rhizomeMode = currentRhizome?.metadata?.generation_mode === 'completion' ? 'completion' : 'chat'
+  const modelMode = completionOnly ? 'completion' : entry?.mode ?? rhizomeMode
+  const effective = generationMode || modelMode
+  // An explicit mode for dual-mode providers: the user's choice, else the model's own
+  const modeToSend = effectiveMode(selectedProvider, generationMode || (entry ? entry.mode : ''))
 
-  // Sampling state — initialize from rhizome defaults
   const sp = samplingDefaults ?? {}
   const [samplingValues, setSamplingValues] = useState<SamplingParamValues>({
     temperature: sp.temperature != null ? String(sp.temperature) : '',
@@ -75,44 +97,78 @@ export function ForkPanel({
 
   const [count, setCount] = useState('1')
   const [stream, setStream] = useState(streamDefault)
-  const [showPrefillSettings, setShowPrefillSettings] = useState(false)
 
   const panelRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     panelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
   }, [])
 
-  const canSubmit =
-    mode === 'regenerate' || mode === 'generate'
-      ? !isGenerating
-      : content.trim().length > 0 && !isGenerating
+  const overrides = (withCount: boolean): GenerateRequest => {
+    const samplingParams = toSamplingParams(samplingValues)
+    const parsedCount = parseInt(count, 10)
+    return {
+      provider: choice.provider || undefined,
+      model: choice.model || undefined,
+      system_prompt: effective === 'chat' ? (systemPrompt || undefined) : undefined,
+      sampling_params: Object.keys(samplingParams).length > 0 ? samplingParams : undefined,
+      ...(withCount && parsedCount > 1 && { n: parsedCount }),
+      stream,
+      mode: modeToSend,
+    }
+  }
+
+  const advanced = (
+    <AdvancedSection storageKey="fork" summary="Mode · System prompt · Sampling · Stream">
+      <AdvancedGroup title="Format">
+        <ModeSelect
+          provider={selectedProvider}
+          value={generationMode}
+          onChange={setGenerationMode}
+          modelMode={entry?.mode}
+        />
+        {effective === 'chat' && (
+          <div className="fork-setting-row">
+            <label>System prompt</label>
+            <textarea
+              value={systemPrompt}
+              onChange={(e) => setSystemPrompt(e.target.value)}
+              rows={2}
+              placeholder="System prompt for this generation..."
+            />
+          </div>
+        )}
+      </AdvancedGroup>
+      <AdvancedGroup title="Sampling">
+        <SamplingParamsPanel
+          values={samplingValues}
+          onChange={handleSamplingChange}
+          supportedParams={supportedParams}
+          providerName={choice.provider}
+        />
+      </AdvancedGroup>
+      <AdvancedGroup title="Display">
+        <div className="fork-setting-row fork-setting-toggle">
+          <label>
+            <input type="checkbox" checked={stream} onChange={(e) => setStream(e.target.checked)} />
+            Stream
+          </label>
+        </div>
+      </AdvancedGroup>
+    </AdvancedSection>
+  )
+
+  const modelRow = (
+    <div className="fork-setting-row">
+      <label>Model</label>
+      <ModelPicker value={choice} onChange={setChoice} models={models} providers={providers} />
+    </div>
+  )
 
   // Prefill mode: Save (manual node) or Continue (generate with prefill)
   if (mode === 'prefill') {
     const handlePrefillContinue = () => {
       if (!content.trim() || !onPrefillContinue) return
-
-      const samplingParams: SamplingParams = {}
-      if (samplingValues.temperature) samplingParams.temperature = parseFloat(samplingValues.temperature)
-      if (samplingValues.topP) samplingParams.top_p = parseFloat(samplingValues.topP)
-      if (samplingValues.topK) samplingParams.top_k = parseInt(samplingValues.topK, 10)
-      if (samplingValues.maxTokens) samplingParams.max_tokens = parseInt(samplingValues.maxTokens, 10)
-      if (samplingValues.frequencyPenalty) samplingParams.frequency_penalty = parseFloat(samplingValues.frequencyPenalty)
-      if (samplingValues.presencePenalty) samplingParams.presence_penalty = parseFloat(samplingValues.presencePenalty)
-      samplingParams.extended_thinking = samplingValues.useThinking
-      if (samplingValues.useThinking) {
-        samplingParams.thinking_budget = parseInt(samplingValues.thinkingBudget, 10) || 10000
-      }
-
-      const overrides: GenerateRequest = {
-        provider: provider || undefined,
-        model: model || undefined,
-        system_prompt: systemPrompt || undefined,
-        sampling_params: Object.keys(samplingParams).length > 0 ? samplingParams : undefined,
-        stream,
-        mode: effectiveMode(selectedProvider, generationMode),
-      }
-      onPrefillContinue(content.trim(), overrides)
+      onPrefillContinue(content.trim(), overrides(false))
     }
 
     const handlePrefillKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -144,83 +200,9 @@ export function ForkPanel({
           />
 
           {onPrefillContinue && (
-            <button
-              className="fork-settings-toggle"
-              onClick={() => setShowPrefillSettings(!showPrefillSettings)}
-            >
-              <span className={`toggle-arrow ${showPrefillSettings ? 'expanded' : ''}`}>
-                &#9654;
-              </span>
-              Settings
-            </button>
-          )}
-
-          {onPrefillContinue && showPrefillSettings && (
             <div className="fork-settings">
-              <div className="fork-setting-row">
-                <label>Provider</label>
-                {providers.length > 0 ? (
-                  <select
-                    value={provider}
-                    onChange={(e) => {
-                      setProvider(e.target.value)
-                      setModel('')
-                    }}
-                  >
-                    {providers.map((p) => (
-                      <option key={p.name} value={p.name}>
-                        {p.name}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <select disabled>
-                    <option>No providers available</option>
-                  </select>
-                )}
-              </div>
-              <div className="fork-setting-row">
-                <label>Model</label>
-                <input
-                  type="text"
-                  value={model}
-                  onChange={(e) => setModel(e.target.value)}
-                  placeholder={suggestedModels[0] ?? 'default'}
-                  list="prefill-model-suggestions"
-                />
-                <datalist id="prefill-model-suggestions">
-                  {suggestedModels.map((m) => (
-                    <option key={m} value={m} />
-                  ))}
-                </datalist>
-              </div>
-              <ModeSelect
-                provider={selectedProvider}
-                value={generationMode}
-                onChange={setGenerationMode}
-              />
-
-              <div className="fork-settings-divider" />
-
-              <SamplingParamsPanel
-                values={samplingValues}
-                onChange={handleSamplingChange}
-                supportedParams={supportedParams}
-                providerName={provider}
-              />
-
-              <div className="fork-settings-divider" />
-
-              <div className="fork-setting-row fork-setting-toggle">
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={stream}
-                    onChange={(e) => setStream(e.target.checked)}
-                  />
-                  Stream
-                </label>
-              </div>
+              {modelRow}
+              {advanced}
             </div>
           )}
 
@@ -249,39 +231,17 @@ export function ForkPanel({
     )
   }
 
+  const canSubmit =
+    mode === 'regenerate' || mode === 'generate'
+      ? !isGenerating
+      : content.trim().length > 0 && !isGenerating
+
   const handleSubmit = () => {
     if (!canSubmit) return
-
-    const parsedCount = parseInt(count, 10)
-    const n = parsedCount > 1 ? parsedCount : undefined
-
-    // Build sampling_params from all fields — only include explicitly set values
-    const samplingParams: SamplingParams = {}
-    if (samplingValues.temperature) samplingParams.temperature = parseFloat(samplingValues.temperature)
-    if (samplingValues.topP) samplingParams.top_p = parseFloat(samplingValues.topP)
-    if (samplingValues.topK) samplingParams.top_k = parseInt(samplingValues.topK, 10)
-    if (samplingValues.maxTokens) samplingParams.max_tokens = parseInt(samplingValues.maxTokens, 10)
-    if (samplingValues.frequencyPenalty) samplingParams.frequency_penalty = parseFloat(samplingValues.frequencyPenalty)
-    if (samplingValues.presencePenalty) samplingParams.presence_penalty = parseFloat(samplingValues.presencePenalty)
-    samplingParams.extended_thinking = samplingValues.useThinking
-    if (samplingValues.useThinking) {
-      samplingParams.thinking_budget = parseInt(samplingValues.thinkingBudget, 10) || 10000
-    }
-
-    const overrides: GenerateRequest = {
-      provider: provider || undefined,
-      model: model || undefined,
-      system_prompt: systemPrompt || undefined,
-      sampling_params: Object.keys(samplingParams).length > 0 ? samplingParams : undefined,
-      n,
-      stream,
-      mode: effectiveMode(selectedProvider, generationMode),
-    }
-
     if (mode === 'regenerate' || mode === 'generate') {
-      onRegenerateSubmit(overrides)
+      onRegenerateSubmit(overrides(true))
     } else {
-      onForkSubmit(content.trim(), overrides)
+      onForkSubmit(content.trim(), overrides(true))
     }
   }
 
@@ -323,104 +283,21 @@ export function ForkPanel({
           />
         )}
 
-        <button
-          className="fork-settings-toggle"
-          onClick={() => setShowSettings(!showSettings)}
-        >
-          <span className={`toggle-arrow ${showSettings ? 'expanded' : ''}`}>
-            &#9654;
-          </span>
-          Settings
-        </button>
-
-        {showSettings && (
-          <div className="fork-settings">
-            <div className="fork-setting-row">
-              <label>Provider</label>
-              {providers.length > 0 ? (
-                <select
-                  value={provider}
-                  onChange={(e) => {
-                    setProvider(e.target.value)
-                    setModel('')
-                  }}
-                >
-                  {providers.map((p) => (
-                    <option key={p.name} value={p.name}>
-                      {p.name}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <select disabled>
-                  <option>No providers available</option>
-                </select>
-              )}
-            </div>
-            <div className="fork-setting-row">
-              <label>Model</label>
-              <input
-                type="text"
-                value={model}
-                onChange={(e) => setModel(e.target.value)}
-                placeholder={suggestedModels[0] ?? 'default'}
-                list="fork-model-suggestions"
-              />
-              <datalist id="fork-model-suggestions">
-                {suggestedModels.map((m) => (
-                  <option key={m} value={m} />
-                ))}
-              </datalist>
-            </div>
-            <ModeSelect
-              provider={selectedProvider}
-              value={generationMode}
-              onChange={setGenerationMode}
+        <div className="fork-settings">
+          {modelRow}
+          <div className="fork-setting-row">
+            <label>Count</label>
+            <input
+              type="number"
+              min="1"
+              max="10"
+              value={count}
+              onChange={(e) => setCount(e.target.value)}
+              placeholder="1"
             />
-            <div className="fork-setting-row">
-              <label>System prompt</label>
-              <textarea
-                value={systemPrompt}
-                onChange={(e) => setSystemPrompt(e.target.value)}
-                rows={2}
-                placeholder="Override system prompt..."
-              />
-            </div>
-
-            <div className="fork-settings-divider" />
-
-            <SamplingParamsPanel
-              values={samplingValues}
-              onChange={handleSamplingChange}
-              supportedParams={supportedParams}
-              providerName={provider}
-            />
-
-            <div className="fork-settings-divider" />
-
-            <div className="fork-setting-row">
-              <label>Count</label>
-              <input
-                type="number"
-                min="1"
-                max="10"
-                value={count}
-                onChange={(e) => setCount(e.target.value)}
-                placeholder="1"
-              />
-            </div>
-            <div className="fork-setting-row fork-setting-toggle">
-              <label>
-                <input
-                  type="checkbox"
-                  checked={stream}
-                  onChange={(e) => setStream(e.target.checked)}
-                />
-                Stream
-              </label>
-            </div>
           </div>
-        )}
+          {advanced}
+        </div>
 
         <button
           className="fork-submit-btn"

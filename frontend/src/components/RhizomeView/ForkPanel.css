@@ -273,3 +273,14 @@
   border-color: var(--border-strong);
   opacity: 1;
 }
+
+.cross-model-row {
+  display: flex;
+  gap: 0.4rem;
+  align-items: flex-start;
+  margin-bottom: 0.5rem;
+}
+
+.cross-model-row .model-picker {
+  flex: 1;
+}

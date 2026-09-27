@@ -19,6 +19,7 @@ import type {
   PatchRhizomeRequest,
   PerturbationConfig,
   PerturbationReportResponse,
+  ModelEntry,
   ProviderInfo,
   SamplingParams,
   SearchResultItem,
@@ -42,6 +43,7 @@ interface RhizomeStore {
   selectedRhizomeId: string | null
   currentRhizome: RhizomeDetail | null
   providers: ProviderInfo[]
+  models: ModelEntry[]
   interventionTypes: InterventionTypeInfo[]
   isLoading: boolean
   isGenerating: boolean
@@ -346,6 +348,7 @@ export const useRhizomeStore = create<RhizomeStore>((set, get) => ({
   selectedRhizomeId: null,
   currentRhizome: null,
   providers: [],
+  models: [],
   interventionTypes: [],
   isLoading: false,
   isGenerating: false,
@@ -387,7 +390,8 @@ export const useRhizomeStore = create<RhizomeStore>((set, get) => ({
   comparisonNodeId: null,
   comparisonPickingMode: false,
   comparisonPickingSourceId: null,
-  showNodeIds: false,
+  // App-level display preference, remembered across reloads
+  showNodeIds: (() => { try { return localStorage.getItem('qivis-show-node-ids') === '1' } catch { return false } })(),
   searchQuery: '',
   searchResults: [],
   searchLoading: false,
@@ -470,8 +474,8 @@ export const useRhizomeStore = create<RhizomeStore>((set, get) => ({
     // Only fetch once — skip if already populated
     if (get().providers.length > 0) return
     try {
-      const providers = await api.getProviders()
-      set({ providers })
+      const [providers, models] = await Promise.all([api.getProviders(), api.getModels()])
+      set({ providers, models })
     } catch (e) {
       set({ error: String(e) })
     }
@@ -1930,6 +1934,7 @@ export const useRhizomeData = () => useRhizomeStore(useShallow(s => ({
   selectedRhizomeId: s.selectedRhizomeId,
   currentRhizome: s.currentRhizome,
   providers: s.providers,
+  models: s.models,
   isLoading: s.isLoading,
   error: s.error,
 })))

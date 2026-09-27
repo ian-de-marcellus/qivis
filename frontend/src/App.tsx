@@ -13,6 +13,7 @@ import { MessageInput } from './components/RhizomeView/MessageInput.tsx'
 import { SystemPromptInput } from './components/RhizomeView/SystemPromptInput.tsx'
 import { RhizomeSettings } from './components/RhizomeView/RhizomeSettings.tsx'
 import { getActivePath, useRhizomeStore, useRhizomeData, useNavigation, useRightPane } from './store/rhizomeStore.ts'
+import { AppSettings } from './components/shared/AppSettings.tsx'
 import './App.css'
 
 type ThemeMode = 'system' | 'light' | 'dark'
@@ -124,6 +125,7 @@ function App() {
           >
             {THEME_LABELS[theme]}
           </button>
+          <AppSettings />
           <button
             className="sidebar-toggle"
             onClick={() => setSidebarCollapsed(!sidebarCollapsed)}

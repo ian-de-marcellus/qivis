@@ -1,4 +1,4 @@
-import { SAMPLING_PRESETS, detectPreset, type PresetName } from '../RhizomeView/samplingPresets.ts'
+import { PRESET_FIELDS, SAMPLING_PRESETS, detectPreset, type PresetName } from '../RhizomeView/samplingPresets.ts'
 import './SamplingParamsPanel.css'
 
 export interface SamplingParamValues {
@@ -17,6 +17,8 @@ interface SamplingParamsPanelProps {
   onChange: (field: keyof SamplingParamValues, value: string | boolean) => void
   supportedParams: string[]
   providerName?: string
+  /** "preset" for basics, "details" for an Advanced section, "all" (default) for both. */
+  section?: 'preset' | 'details' | 'all'
 }
 
 export function SamplingParamsPanel({
@@ -24,6 +26,7 @@ export function SamplingParamsPanel({
   onChange,
   supportedParams,
   providerName,
+  section = 'all',
 }: SamplingParamsPanelProps) {
   const isSupported = (param: string) =>
     supportedParams.length === 0 || supportedParams.includes(param)
@@ -31,22 +34,18 @@ export function SamplingParamsPanel({
   const unsupportedTitle = (param: string) =>
     isSupported(param) ? undefined : `Not supported by ${providerName}`
 
-  const currentPreset = detectPreset(values.temperature, values.topP)
+  const currentPreset = detectPreset(values)
 
   const handlePresetChange = (presetName: PresetName) => {
     if (presetName === 'custom') return
     const preset = SAMPLING_PRESETS[presetName]
     if (!preset) return
-    onChange('temperature', preset.temperature != null ? String(preset.temperature) : '')
-    onChange('topP', preset.top_p != null ? String(preset.top_p) : '')
-    if (preset.top_k != null) onChange('topK', String(preset.top_k))
-    if (preset.max_tokens != null) onChange('maxTokens', String(preset.max_tokens))
-    if (preset.frequency_penalty != null) onChange('frequencyPenalty', String(preset.frequency_penalty))
-    if (preset.presence_penalty != null) onChange('presencePenalty', String(preset.presence_penalty))
+    for (const [field, key] of PRESET_FIELDS) {
+      onChange(field, preset[key] != null ? String(preset[key]) : '')
+    }
   }
 
-  return (
-    <>
+  const presetRow = (
       <div className="sampling-params-field">
         <label>Preset</label>
         <select
@@ -59,6 +58,12 @@ export function SamplingParamsPanel({
           <option value="custom">Custom</option>
         </select>
       </div>
+  )
+  if (section === 'preset') return presetRow
+
+  return (
+    <>
+      {section === 'all' && presetRow}
 
       <div className="sampling-params-pair">
         <div className={`sampling-params-field${isSupported('temperature') ? '' : ' unsupported-param'}`}>

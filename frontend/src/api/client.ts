@@ -2,6 +2,7 @@
 
 import type {
   AddAnnotationRequest,
+  ModelEntry,
   AnnotationResponse,
   BookmarkResponse,
   CreateBookmarkRequest,
@@ -59,6 +60,10 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 
 export function getProviders(): Promise<ProviderInfo[]> {
   return request('/providers')
+}
+
+export function getModels(): Promise<ModelEntry[]> {
+  return request('/models')
 }
 
 export function getInterventionTypes(): Promise<InterventionTypeInfo[]> {

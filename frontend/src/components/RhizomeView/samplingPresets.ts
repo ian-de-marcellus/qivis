@@ -10,7 +10,9 @@ export interface PresetValues {
   presence_penalty?: number
 }
 
+/** "default" leaves everything unset, so the model's own defaults apply. */
 export const SAMPLING_PRESETS: Record<string, PresetValues> = {
+  default: { label: 'Model default' },
   deterministic: { label: 'Deterministic', temperature: 0, top_p: 1 },
   balanced: { label: 'Balanced', temperature: 0.7 },
   creative: { label: 'Creative', temperature: 1.0, top_p: 0.95 },
@@ -18,22 +20,28 @@ export const SAMPLING_PRESETS: Record<string, PresetValues> = {
 
 export type PresetName = keyof typeof SAMPLING_PRESETS | 'custom'
 
+/** The fields a preset sets (all of them: a preset leaves nothing stale behind). */
+export const PRESET_FIELDS = [
+  ['temperature', 'temperature'],
+  ['topP', 'top_p'],
+  ['topK', 'top_k'],
+  ['frequencyPenalty', 'frequency_penalty'],
+  ['presencePenalty', 'presence_penalty'],
+] as const
+
+type FieldValues = Record<(typeof PRESET_FIELDS)[number][0], string>
+
 /**
  * Detect which preset matches the current sampling state, if any.
- * Returns 'custom' if no preset matches.
+ * Returns 'custom' if no preset matches. (Max tokens isn't part of a preset.)
  */
-export function detectPreset(temperature: string, topP: string): PresetName {
-  const temp = temperature ? parseFloat(temperature) : undefined
-  const tp = topP ? parseFloat(topP) : undefined
-
+export function detectPreset(values: FieldValues): PresetName {
   for (const [name, preset] of Object.entries(SAMPLING_PRESETS)) {
-    const tempMatch = preset.temperature === undefined
-      ? temp === undefined
-      : temp === preset.temperature
-    const tpMatch = preset.top_p === undefined
-      ? tp === undefined
-      : tp === preset.top_p
-    if (tempMatch && tpMatch) return name as PresetName
+    const matches = PRESET_FIELDS.every(([field, key]) => {
+      const v = values[field] ? parseFloat(values[field]) : undefined
+      return v === preset[key]
+    })
+    if (matches) return name as PresetName
   }
   return 'custom'
 }

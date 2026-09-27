@@ -128,6 +128,17 @@ export interface ProviderInfo {
   supported_modes: string[]
 }
 
+/** A named model for the picker, with the format it brings (GET /api/models). */
+export interface ModelEntry {
+  id: string                 // "provider:model"
+  label: string
+  provider: string
+  model: string
+  mode: 'chat' | 'completion'
+  prompt_template: string | null
+  source: 'profile' | 'discovered'
+}
+
 export interface EditHistoryEntry {
   event_id: string
   sequence_num: number

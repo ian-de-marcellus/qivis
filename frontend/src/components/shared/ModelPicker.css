@@ -1,0 +1,39 @@
+.model-picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  min-width: 0;
+}
+
+.model-picker select,
+.model-picker input {
+  padding: var(--space-xs) var(--space-sm);
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.model-picker select:focus,
+.model-picker input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.model-picker-other {
+  display: flex;
+  gap: var(--space-xs);
+}
+
+.model-picker-other select { flex: 0 0 auto; }
+.model-picker-other input { flex: 1; }
+
+.model-picker-detail {
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}

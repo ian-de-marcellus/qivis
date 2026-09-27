@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ProviderInfo, SamplingParams } from '../../api/types.ts'
-import { useRhizomeStore } from '../../store/rhizomeStore.ts'
+import { useRhizomeData, useRhizomeStore } from '../../store/rhizomeStore.ts'
+import { AdvancedGroup, AdvancedSection } from '../shared/AdvancedSection.tsx'
+import { ModelPicker } from '../shared/ModelPicker.tsx'
+import { findModel, type ModelChoice } from '../shared/modelChoice.ts'
 import { type GenerationModeChoice, effectiveMode } from './generationMode.ts'
 import { ModeSelect } from './ModeSelect.tsx'
 import './ForkPanel.css'
@@ -28,20 +31,19 @@ export function ReplayPanel({
   const replayState = useRhizomeStore(s => s.replayState)
   const stopGeneration = useRhizomeStore(s => s.stopGeneration)
 
-  const defaultProvider =
-    providers.find((p) => p.name === defaults.provider)?.name ??
-    providers[0]?.name ??
-    ''
-  const [provider, setProvider] = useState(defaultProvider)
-  const [model, setModel] = useState(defaults.model ?? '')
+  const { models } = useRhizomeData()
+  const [choice, setChoice] = useState<ModelChoice>(() => ({
+    provider: providers.find((p) => p.name === defaults.provider)?.name ?? providers[0]?.name ?? '',
+    model: defaults.model ?? '',
+  }))
+  const { provider, model } = choice
   // Context-faithful only: trajectory replay is parked (the user turns stop
   // making sense once the new model's replies diverge from the original's).
   const [generationMode, setGenerationMode] = useState<GenerationModeChoice>('')
   const [systemPrompt, setSystemPrompt] = useState(defaults.systemPrompt ?? '')
-  const [showSettings, setShowSettings] = useState(false)
 
   const selectedProvider = providers.find((p) => p.name === provider)
-  const suggestedModels = selectedProvider?.models ?? []
+  const entry = findModel(models, choice)
 
   const panelRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -71,7 +73,8 @@ export function ReplayPanel({
       'context_faithful',
       systemPrompt || undefined,
       samplingParams,
-      effectiveMode(selectedProvider, generationMode),
+      // The user's choice, else the replaying model's own mode
+      effectiveMode(selectedProvider, generationMode || (entry ? entry.mode : '')),
     )
   }
 
@@ -135,57 +138,20 @@ export function ReplayPanel({
             </div>
 
             <div className="fork-setting-row">
-              <label>Provider</label>
-              {providers.length > 0 ? (
-                <select
-                  value={provider}
-                  onChange={(e) => {
-                    setProvider(e.target.value)
-                    setModel('')
-                  }}
-                >
-                  {providers.map((p) => (
-                    <option key={p.name} value={p.name}>{p.name}</option>
-                  ))}
-                </select>
-              ) : (
-                <select disabled><option>No providers available</option></select>
-              )}
-            </div>
-            <div className="fork-setting-row">
               <label>Model</label>
-              <input
-                type="text"
-                value={model}
-                onChange={(e) => setModel(e.target.value)}
-                placeholder={suggestedModels[0] ?? 'default'}
-                list="replay-model-suggestions"
-              />
-              <datalist id="replay-model-suggestions">
-                {suggestedModels.map((m) => (
-                  <option key={m} value={m} />
-                ))}
-              </datalist>
+              <ModelPicker value={choice} onChange={setChoice} models={models} providers={providers} />
             </div>
-            <ModeSelect
-              provider={selectedProvider}
-              value={generationMode}
-              onChange={setGenerationMode}
-            />
 
-            <button
-              className="fork-settings-toggle"
-              onClick={() => setShowSettings(!showSettings)}
-            >
-              <span className={`toggle-arrow ${showSettings ? 'expanded' : ''}`}>
-                &#9654;
-              </span>
-              System prompt override
-            </button>
-
-            {showSettings && (
-              <div className="fork-settings">
+            <AdvancedSection storageKey="replay" summary="Mode · System prompt">
+              <AdvancedGroup title="Format">
+                <ModeSelect
+                  provider={selectedProvider}
+                  value={generationMode}
+                  onChange={setGenerationMode}
+                  modelMode={entry?.mode}
+                />
                 <div className="fork-setting-row">
+                  <label>System prompt override</label>
                   <textarea
                     value={systemPrompt}
                     onChange={(e) => setSystemPrompt(e.target.value)}
@@ -193,8 +159,8 @@ export function ReplayPanel({
                     placeholder="Override system prompt..."
                   />
                 </div>
-              </div>
-            )}
+              </AdvancedGroup>
+            </AdvancedSection>
 
             <button
               className="fork-submit-btn"

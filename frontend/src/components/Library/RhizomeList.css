@@ -236,7 +236,7 @@
   border-left-color: var(--accent);
 }
 
-.new-rhizome-form button {
+.new-rhizome-form .create-submit {
   padding: var(--space-sm);
   font-family: var(--font-ui);
   font-size: var(--text-sm);
@@ -251,11 +251,11 @@
   transition: opacity 0.15s;
 }
 
-.new-rhizome-form button:hover:not(:disabled) {
+.new-rhizome-form .create-submit:hover:not(:disabled) {
   opacity: 0.9;
 }
 
-.new-rhizome-form button:disabled {
+.new-rhizome-form .create-submit:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
