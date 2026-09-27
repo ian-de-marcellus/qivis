@@ -51,8 +51,7 @@ export function LibraryView({ onDismiss }: Props) {
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null)
   const [ghostFolders, setGhostFolders] = useState<string[]>(getStoredGhostFolders)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
-  const draggedTreeIdsRef = useRef<string[]>([])
-  const [, setDragVersion] = useState(0) // trigger re-render for overlay
+  const [draggedTreeIds, setDraggedTreeIds] = useState<string[]>([])
   const [contextMenu, setContextMenu] = useState<{ treeId: string; x: number; y: number } | null>(null)
   const [folderContextMenu, setFolderContextMenu] = useState<{ path: string; x: number; y: number } | null>(null)
   const [folderInputPrefill, setFolderInputPrefill] = useState<string | null>(null)
@@ -234,19 +233,17 @@ export function LibraryView({ onDismiss }: Props) {
   const handleDragStart = useCallback((event: DragStartEvent) => {
     const treeId = String(event.active.id).replace('tree:', '')
     if (selectedIds.has(treeId)) {
-      draggedTreeIdsRef.current = [...selectedIds]
+      setDraggedTreeIds([...selectedIds])
     } else {
-      draggedTreeIdsRef.current = [treeId]
+      setDraggedTreeIds([treeId])
       setSelectedIds(new Set())
     }
-    setDragVersion(v => v + 1)
   }, [selectedIds])
 
   const handleDragEnd = useCallback(async (event: DragEndEvent) => {
     const { over } = event
-    const treeIds = [...draggedTreeIdsRef.current]
-    draggedTreeIdsRef.current = []
-    setDragVersion(v => v + 1)
+    const treeIds = [...draggedTreeIds]
+    setDraggedTreeIds([])
 
     if (!over || treeIds.length === 0) return
     const dropTarget = String(over.id).replace('folder:', '')
@@ -264,10 +261,10 @@ export function LibraryView({ onDismiss }: Props) {
     }
 
     clearSelection()
-  }, [treeMap, mergeMetadata, clearSelection])
+  }, [draggedTreeIds, treeMap, mergeMetadata, clearSelection])
 
   // Trees for the drag overlay
-  const draggedTrees = draggedTreeIdsRef.current
+  const draggedTrees = draggedTreeIds
     .map(id => treeMap.get(id))
     .filter((t): t is RhizomeSummary => t != null)
 

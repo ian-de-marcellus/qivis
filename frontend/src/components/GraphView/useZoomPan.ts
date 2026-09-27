@@ -6,7 +6,7 @@
  * preventDefault() actually works and the browser doesn't also zoom the page.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 
 interface ZoomPanTransform {
   scale: number
@@ -31,8 +31,11 @@ export function useZoomPan(options?: UseZoomPanOptions) {
 
   const isPanning = useRef(false)
   const panStart = useRef({ x: 0, y: 0 })
+  // Latest transform for event handlers, updated after each render
   const transformRef = useRef(transform)
-  transformRef.current = transform
+  useLayoutEffect(() => {
+    transformRef.current = transform
+  })
 
   // Ref for the element that receives wheel events
   const wheelRef = useRef<SVGSVGElement | null>(null)

@@ -200,7 +200,7 @@ export function GraphView() {
 
   const { transform, wheelRef, handlers, fitToContent, isPanning } = useZoomPan()
 
-  const nodes = currentRhizome?.nodes ?? []
+  const nodes = useMemo(() => currentRhizome?.nodes ?? [], [currentRhizome])
 
   // Collapse long linear chains for a more compact graph
   const { displayNodes, collapsedMap } = useMemo(

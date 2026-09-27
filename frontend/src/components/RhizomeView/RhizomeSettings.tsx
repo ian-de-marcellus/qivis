@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { EvictionStrategy, InterventionConfig, PatchRhizomeRequest, SamplingParams } from '../../api/types.ts'
 import { exportRhizome } from '../../api/client.ts'
 import { useRhizomeStore, useRhizomeData, useRightPane } from '../../store/rhizomeStore.ts'
@@ -71,8 +71,12 @@ export function RhizomeSettings() {
   const [interventionConfigs, setInterventionConfigs] = useState<InterventionConfig[]>([])
   const [interventionInfoOpen, setInterventionInfoOpen] = useState(false)
 
-  // Sync form state when rhizome changes or panel opens
-  useEffect(() => {
+  // Reset the form from the rhizome whenever the panel opens or the rhizome
+  // changes (React's "adjust state when a prop changes": compare during render)
+  const formKey = `${currentRhizome?.rhizome_id ?? ''}:${isOpen}`
+  const [syncedFormKey, setSyncedFormKey] = useState<string | null>(null)
+  if (formKey !== syncedFormKey) {
+    setSyncedFormKey(formKey)
     if (currentRhizome) {
       setTitle(currentRhizome.title ?? '')
       setProvider(currentRhizome.default_provider ?? '')
@@ -114,7 +118,7 @@ export function RhizomeSettings() {
       // Context interventions
       setInterventionConfigs((meta?.context_interventions as InterventionConfig[]) ?? [])
     }
-  }, [currentRhizome?.rhizome_id, isOpen])
+  }
 
   // Fetch providers and intervention types when panel opens
   useEffect(() => {
@@ -259,14 +263,14 @@ export function RhizomeSettings() {
   const graphOpen = rightPaneMode === 'graph'
   const isArchived = currentRhizome.archived === 1
 
-  const handleToggleArchive = useCallback(async () => {
+  const handleToggleArchive = async () => {
     if (isArchived) {
       await unarchiveRhizome(currentRhizome.rhizome_id)
     } else {
       await archiveRhizome(currentRhizome.rhizome_id)
     }
     await fetchRhizomes(true)
-  }, [isArchived, currentRhizome.rhizome_id, archiveRhizome, unarchiveRhizome, fetchRhizomes])
+  }
 
   return (
     <div className="rhizome-settings">

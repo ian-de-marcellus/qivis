@@ -32,10 +32,15 @@ export function FolderTreePanel({
   const [folderInput, setFolderInput] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
 
-  // Handle prefill from parent (e.g., "New Subfolder" action)
+  // Prefill from the parent (e.g. "New Subfolder"): take it into the input
+  // during render, then hand it back and focus once it's on screen
+  const [takenPrefill, setTakenPrefill] = useState<string | null>(null)
+  if (prefillInput !== null && prefillInput !== takenPrefill) {
+    setTakenPrefill(prefillInput)
+    setFolderInput(prefillInput)
+  }
   useEffect(() => {
     if (prefillInput !== null) {
-      setFolderInput(prefillInput)
       onClearPrefill()
       inputRef.current?.focus()
     }

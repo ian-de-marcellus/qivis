@@ -10,10 +10,12 @@ export function ThinkingSection({ thinkingContent, isStreaming = false }: Thinki
   const [expanded, setExpanded] = useState(isStreaming)
   const contentRef = useRef<HTMLDivElement>(null)
 
-  // Auto-expand when streaming starts
-  useEffect(() => {
+  // Auto-expand when streaming starts (adjusted during render, not in an effect)
+  const [wasStreaming, setWasStreaming] = useState(isStreaming)
+  if (isStreaming !== wasStreaming) {
+    setWasStreaming(isStreaming)
     if (isStreaming) setExpanded(true)
-  }, [isStreaming])
+  }
 
   // Auto-scroll to bottom during streaming
   useEffect(() => {
