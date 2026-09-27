@@ -75,3 +75,16 @@ export function screenY(view: View, y: number, crossY: number): number {
 export function tokenLabel(token: string): string {
   return token.replace(/\n/g, '↵').replace(/^ /, '·').replace(/ /g, '·')
 }
+
+/** Pointer-paced travel: left of the line backs up, a band just right of it
+ *  holds (read and decide), and further right goes faster, gently at first. */
+export function zones(crossX: number, W: number) {
+  return { holdL: crossX - 16, holdR: crossX + (W - crossX) * 0.18 }
+}
+
+export function throttle(x: number, crossX: number, W: number): number {
+  const { holdL, holdR } = zones(crossX, W)
+  if (x < holdL) return -Math.min(1, (holdL - x) / Math.max(40, holdL))
+  if (x <= holdR) return 0
+  return Math.min(1, (x - holdR) / (W - holdR)) ** 1.6
+}

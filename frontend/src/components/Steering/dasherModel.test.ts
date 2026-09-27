@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { advance, boxAt, enter, exit, layout, screenY, tokenLabel } from './dasherModel.ts'
+import { advance, boxAt, enter, exit, layout, screenY, throttle, tokenLabel } from './dasherModel.ts'
 
 const cands = [
   { id: 2, token: ' b', bytes: null, prob: 0.25 },
@@ -40,5 +40,16 @@ describe('dasher geometry', () => {
   it('makes whitespace visible on labels', () => {
     expect(tokenLabel(' the')).toBe('·the')
     expect(tokenLabel('\n')).toBe('↵')
+  })
+})
+
+describe('pointer pace', () => {
+  const W = 1000, cross = 200 // hold band: 184 .. 344
+  it('holds just right of the line, backs up left of it, speeds up to the right', () => {
+    expect(throttle(250, cross, W)).toBe(0)
+    expect(throttle(100, cross, W)).toBeLessThan(0)
+    expect(throttle(1000, cross, W)).toBeCloseTo(1)
+    // gentle at first: halfway through the forward range is well under half speed
+    expect(throttle((344 + 1000) / 2, cross, W)).toBeLessThan(0.4)
   })
 })

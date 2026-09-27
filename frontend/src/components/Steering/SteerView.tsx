@@ -15,7 +15,9 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import * as api from '../../api/client.ts'
 import type { SteeringSession, TokenCandidate } from '../../api/types.ts'
 import { useRhizomeStore } from '../../store/rhizomeStore.ts'
-import { advance, type Box, boxAt, enter, exit, layout, screenY, tokenLabel, type View } from './dasherModel.ts'
+import {
+  advance, type Box, boxAt, enter, exit, layout, screenY, throttle, tokenLabel, type View, zones,
+} from './dasherModel.ts'
 import './SteerView.css'
 
 const K = 20
@@ -307,9 +309,8 @@ export function SteerView({
       if (L.view.c >= listed) L.view = { ...L.view, c: listed - 1e-6 }
       const focus = boxAt(boxes, L.view.c)
       if (!L.paused && !L.ended && dist && focus && L.pointer.inside) {
-        // Travel: steady, a column per 1/speed seconds at full reach
-        const reach = Math.max(-1, Math.min(1, (L.pointer.x - crossX) / (W - crossX)))
-        const dir = L.cruise ? (L.pointer.x < crossX ? -1 : 1) : reach
+        // Travel: steady, a column per 1/speed seconds at full throttle
+        const dir = L.cruise ? (L.pointer.x < crossX ? -1 : 1) : throttle(L.pointer.x, crossX, W)
         L.progress += dir * L.speed * 0.8 * dt
 
         // Steer toward the pointer; near the line, settle onto the option there
@@ -336,6 +337,7 @@ export function SteerView({
       L.colX = crossX + gap * (1 - Math.max(0, Math.min(1, L.progress)))
 
       draw(ctx, W, H, crossX, crossY, focus?.id)
+      if (!L.cruise) drawGauge(ctx, W, crossX)
       frame = requestAnimationFrame(loop)
     }
 
@@ -390,6 +392,36 @@ export function SteerView({
         g.beginPath()
         g.arc(L.pointer.x, L.pointer.y, 3, 0, Math.PI * 2)
         g.fill()
+      }
+    }
+
+    // Where the pointer sets the pace: back · hold · forward, and where it is now
+    const drawGauge = (g: CanvasRenderingContext2D, W: number, crossX: number) => {
+      const css = getComputedStyle(canvas)
+      const color = (name: string) => css.getPropertyValue(name).trim() || '#888'
+      const { holdL, holdR } = zones(crossX, W)
+      const y = 4
+      g.globalAlpha = 0.9
+      g.fillStyle = color('--border')
+      g.fillRect(0, y, holdL, 3)
+      g.fillStyle = color('--bg-hover')
+      g.fillRect(holdL, y, holdR - holdL, 3)
+      const grad = g.createLinearGradient(holdR, 0, W, 0)
+      grad.addColorStop(0, color('--bg-hover'))
+      grad.addColorStop(1, color('--accent'))
+      g.fillStyle = grad
+      g.fillRect(holdR, y, W - holdR, 3)
+      g.globalAlpha = 1
+      g.fillStyle = color('--text-tertiary')
+      g.font = `10px ${color('--font-ui')}`
+      g.textBaseline = 'top'
+      g.fillText('hold', holdL + 4, y + 6)
+      g.fillText('faster →', W - 52, y + 6)
+      if (holdL > 40) g.fillText('← back', 4, y + 6)
+      g.textBaseline = 'alphabetic'
+      if (L.pointer.inside) {
+        g.fillStyle = color('--text-accent')
+        g.fillRect(L.pointer.x - 1, y - 2, 2, 7)
       }
     }
 
@@ -514,7 +546,7 @@ export function SteerView({
             </button>
             <button onClick={undo} disabled={tokens.length === 0}>Undo</button>
             <button onClick={() => setCruise((c) => !c)} className={cruise ? 'active' : ''}>
-              {cruise ? 'Cruise' : 'Pointer speed'}
+              {cruise ? 'Cruise: on' : 'Cruise: off'}
             </button>
             <button
               onClick={() => setPastEnd((v) => !v)}
@@ -532,8 +564,9 @@ export function SteerView({
           </label>
 
           <p className="steer-help">
-            Space: go/pause · point up/down to steer, further right to go faster, left of the
-            line to back up · Backspace: undo · 1–9 (paused): take a ranked token · Esc: close
+            Space: go/pause · point up/down to steer · just right of the line holds, further
+            right goes faster, left of the line backs up (see the bar at the top) · Backspace:
+            undo · 1–9 (paused): take a ranked token · Esc: close
           </p>
 
           {error && <div className="steer-error">{error}</div>}
