@@ -1,5 +1,6 @@
 """LlamaCppProvider — native llama.cpp /completion API via httpx."""
 
+import asyncio
 import json
 import logging
 import re
@@ -121,6 +122,7 @@ class LlamaCppProvider(LLMProvider):
         # Special-token byte forms are probed on first generation, not at
         # discovery, so starting Qivis never wakes an on-demand model server
         self._probed_stops = False
+        self._probe_lock = asyncio.Lock()
 
     @property
     def name(self) -> str:
@@ -322,8 +324,10 @@ class LlamaCppProvider(LLMProvider):
     ) -> AsyncIterator[StreamChunk]:
         """Stream a completion; report any logit_bias applied beyond the reserved range."""
         if not self._probed_stops:
-            self._probed_stops = True
-            await self._probe_special_token_stops()
+            # Concurrent streams (n>1, cross-model) wait for the one probe
+            async with self._probe_lock:
+                if not self._probed_stops:
+                    await self._probe_special_token_stops()
         served = await self._served_model() if self._model_defaults else None
         applied = self._effective_logit_bias(request, served)
         body = self._build_request_body(request, applied)
@@ -518,6 +522,7 @@ class LlamaCppProvider(LLMProvider):
         result differs from the expected text, we add the byte form as an
         extra stop sequence so we catch both representations.
         """
+        found: list[str] = []
         for token_id, expected_text in _SPECIAL_TOKEN_IDS.items():
             try:
                 resp = await self._client.post(
@@ -525,17 +530,19 @@ class LlamaCppProvider(LLMProvider):
                     json={"tokens": [token_id]},
                 )
                 if resp.status_code != 200:
-                    continue
+                    return  # server not ready or no /detokenize: try again next time
                 byte_form = resp.json().get("content", "")
                 if byte_form and byte_form != expected_text:
-                    self._extra_stops.append(byte_form)
+                    found.append(byte_form)
                     logger.info(
                         "Special token %d decodes as %r (expected %r) — "
                         "added as extra stop sequence",
                         token_id, byte_form, expected_text,
                     )
             except Exception:
-                pass
+                return
+        self._extra_stops = found
+        self._probed_stops = True
 
         if self._extra_stops:
             logger.info(

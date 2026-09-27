@@ -23,7 +23,6 @@ import argparse
 import asyncio
 import logging
 import time
-from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -97,6 +96,8 @@ class Supervisor:
                 stdout=log,
                 stderr=log,
             )
+            if not isinstance(log, int):
+                log.close()  # the child has its own copy
             deadline = time.monotonic() + self.startup_timeout
             while time.monotonic() < deadline:
                 if self.proc.returncode is not None:
@@ -145,6 +146,25 @@ class Supervisor:
         while True:
             await asyncio.sleep(interval)
             await self.maybe_sleep()
+
+
+class _ReleasingStream(StreamingResponse):
+    """A streamed response that runs `release` once it's over, however it ends.
+
+    A client that disconnects early can leave the body iterator unfinished (or
+    never started), so cleanup can't live in the iterator: a leaked in-flight
+    count would keep the model awake forever.
+    """
+
+    def __init__(self, content, release, **kwargs):
+        super().__init__(content, **kwargs)
+        self._release = release
+
+    async def __call__(self, scope, receive, send) -> None:
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            await self._release()
 
 
 def create_app(sup: Supervisor, idle_check_interval: float = 30.0) -> FastAPI:
@@ -204,17 +224,15 @@ def create_app(sup: Supervisor, idle_check_interval: float = 30.0) -> FastAPI:
                 status_code=503,
             )
 
-        async def body() -> AsyncIterator[bytes]:
-            try:
-                async for chunk in resp.aiter_raw():
-                    yield chunk
-            finally:
-                await resp.aclose()
-                sup.in_flight -= 1
-                sup.last_activity = time.monotonic()
+        async def release() -> None:
+            sup.in_flight -= 1
+            sup.last_activity = time.monotonic()
+            await resp.aclose()
 
         out_headers = {k: v for k, v in resp.headers.items() if k.lower() not in HOP_HEADERS}
-        return StreamingResponse(body(), status_code=resp.status_code, headers=out_headers)
+        return _ReleasingStream(
+            resp.aiter_raw(), release, status_code=resp.status_code, headers=out_headers,
+        )
 
     return app
 

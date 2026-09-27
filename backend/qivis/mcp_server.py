@@ -147,8 +147,9 @@ class QivisBridge:
                 except ValueError:
                     why = r.text
                 raise RuntimeError(
-                    f"Not answered: {model['label']} couldn't reply ({why}). Your message was not "
-                    "added to the conversation; you can send it again."
+                    f"Not answered: {model['label']} couldn't reply ({why}). Your message isn't "
+                    "part of the conversation (Qivis keeps it on record as an unanswered "
+                    "attempt); you can send it again."
                 )
             return {"model": model["label"], "reply": r.json()["content"], "conversation_id": rid}
 

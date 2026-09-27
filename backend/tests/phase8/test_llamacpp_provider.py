@@ -1,5 +1,6 @@
 """Contract tests for LlamaCppProvider with mocked httpx client."""
 
+import asyncio
 import json
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
@@ -431,6 +432,57 @@ class TestLlamaCppExtraStops:
 
         # No extra stops needed — text forms match
         assert provider._extra_stops == []
+
+
+    async def test_concurrent_streams_share_one_probe(self):
+        """n>1 / cross-model streams start together; all of them get the extra stops."""
+        client = AsyncMock()
+        client.get = AsyncMock(return_value=_make_mock_response({"model_alias": "test.gguf"}))
+        probes = 0
+
+        async def mock_post(url, **kwargs):
+            nonlocal probes
+            if "/detokenize" in url:
+                probes += 1
+                await asyncio.sleep(0)  # let the other stream catch up mid-probe
+                return _make_mock_response({"content": "garbled"})
+            return _make_mock_response(_make_completion_response())
+
+        client.post = AsyncMock(side_effect=mock_post)
+        bodies = []
+
+        def stream(*a, **kw):
+            bodies.append(kw["json"])
+            return MockStreamResponse(['data: {"content": "", "stop": true}'])
+
+        client.stream = MagicMock(side_effect=stream)
+        provider = LlamaCppProvider(http_client=client)
+        await asyncio.gather(provider.generate(_make_request()), provider.generate(_make_request()))
+        assert probes == 3  # one probe: three special tokens
+        assert all("garbled" in b["stop"] for b in bodies)
+
+    async def test_failed_probe_is_retried(self):
+        """A server that isn't ready yet gets probed again on the next generation."""
+        client = AsyncMock()
+        client.get = AsyncMock(return_value=_make_mock_response({"model_alias": "test.gguf"}))
+        ready = False
+
+        async def mock_post(url, **kwargs):
+            if "/detokenize" in url:
+                if not ready:
+                    raise ConnectionError("loading")
+                return _make_mock_response({"content": "garbled"})
+            return _make_mock_response(_make_completion_response())
+
+        client.post = AsyncMock(side_effect=mock_post)
+        client.stream = MagicMock(side_effect=lambda *a, **kw: MockStreamResponse(
+            ['data: {"content": "", "stop": true}']))
+        provider = LlamaCppProvider(http_client=client)
+        await provider.generate(_make_request())
+        assert provider._extra_stops == []
+        ready = True
+        await provider.generate(_make_request())
+        assert provider._extra_stops == ["garbled"] * 3
 
 
 class TestLlamaCppDiscoverModels:

@@ -97,3 +97,32 @@ async def test_unavailable_model_is_a_clean_503():
         r = await c.post("/completion", json={"prompt": "hi"})
     assert r.status_code == 503 and "unavailable" in r.json()["error"]["message"]
     assert sup.in_flight == 0
+
+
+async def test_client_gone_before_the_body_still_releases(sup_client):
+    """A disconnect before any body is read must not leave the model awake forever."""
+    sup, c = sup_client
+    app = create_app(sup)
+    scope = {
+        "type": "http", "asgi": {"version": "3.0", "spec_version": "2.4"},
+        "http_version": "1.1", "method": "POST", "scheme": "http", "path": "/completion",
+        "raw_path": b"/completion", "query_string": b"", "root_path": "",
+        "headers": [(b"content-type", b"application/json")], "server": ("sup", 80),
+        "client": ("127.0.0.1", 1),
+    }
+    sent_body = False
+
+    async def receive():
+        nonlocal sent_body
+        if not sent_body:
+            sent_body = True
+            return {"type": "http.request", "body": b'{"prompt": "hi"}', "more_body": False}
+        return {"type": "http.disconnect"}
+
+    async def send(message):
+        if message["type"] == "http.response.body":
+            raise OSError("client went away")
+
+    with pytest.raises(Exception):
+        await app(scope, receive, send)
+    assert sup.in_flight == 0
