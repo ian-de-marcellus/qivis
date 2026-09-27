@@ -281,20 +281,6 @@ export function RhizomeList() {
         <h2>Rhizomes</h2>
         <div className="rhizome-list-header-actions">
           <button
-            className={`view-mode-btn ${viewMode === 'all' ? 'active' : ''}`}
-            onClick={() => setViewMode('all')}
-            title="Flat list"
-          >
-            &#9776;
-          </button>
-          <button
-            className={`view-mode-btn ${viewMode === 'folders' ? 'active' : ''}`}
-            onClick={() => setViewMode('folders')}
-            title="Folder view"
-          >
-            &#128193;
-          </button>
-          <button
             className="import-rhizome-btn"
             onClick={() => setShowImport(true)}
             disabled={isLoading}
@@ -309,6 +295,24 @@ export function RhizomeList() {
             {isCreating ? 'Cancel' : '+ New'}
           </button>
         </div>
+      </div>
+
+      <div className="rhizome-view-toggle" role="group" aria-label="View">
+        <button
+          className={viewMode === 'all' ? 'active' : ''}
+          onClick={() => setViewMode('all')}
+          title="Flat list"
+        >
+          List
+        </button>
+        <span aria-hidden="true">·</span>
+        <button
+          className={viewMode === 'folders' ? 'active' : ''}
+          onClick={() => setViewMode('folders')}
+          title="Folder view"
+        >
+          Folders
+        </button>
       </div>
 
       {/* Tag filter bar */}
