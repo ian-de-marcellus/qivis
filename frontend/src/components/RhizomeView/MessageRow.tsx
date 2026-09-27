@@ -302,7 +302,7 @@ export const MessageRow = memo(function MessageRow({
               </div>
               <div className="message-content">
                 {showLogprobs && logprobs ? (
-                  <LogprobOverlay logprobs={logprobs} />
+                  <LogprobOverlay logprobs={logprobs} content={node.content} />
                 ) : showLogprobs ? (
                   <span className="raw-text">{node.content.slice(node.prefill_content!.length)}</span>
                 ) : (
@@ -317,7 +317,7 @@ export const MessageRow = memo(function MessageRow({
               {/* Original content — always primary, always the truth */}
               <div className="message-content">
                 {showLogprobs && logprobs ? (
-                  <LogprobOverlay logprobs={logprobs} />
+                  <LogprobOverlay logprobs={logprobs} content={node.content} />
                 ) : showLogprobs ? (
                   <span className="raw-text">{node.content}</span>
                 ) : (

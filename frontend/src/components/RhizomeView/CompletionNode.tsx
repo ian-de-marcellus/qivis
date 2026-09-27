@@ -187,7 +187,7 @@ export const CompletionNode = memo(function CompletionNode({
       {/* Content: heatmap primary, raw text secondary */}
       <div className="message-content">
         {showLogprobs && logprobs ? (
-          <LogprobOverlay logprobs={logprobs} />
+          <LogprobOverlay logprobs={logprobs} content={node.content} />
         ) : (
           <span className="raw-text">{node.content}</span>
         )}

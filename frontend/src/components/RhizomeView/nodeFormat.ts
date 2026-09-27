@@ -36,3 +36,19 @@ export function formatTimestamp(isoString: string): string {
     minute: '2-digit',
   })
 }
+
+/**
+ * How many of a reply's tokens make up its saved text. The rest were chosen
+ * too (in a steered reply: the handover to the next speaker, or an end-of-
+ * turn token) but trimmed from the text; they show as one end-of-turn mark.
+ */
+export function textTokenCount(tokens: { token: string }[], content: string): number {
+  const target = content.trimStart().length
+  if (target === 0) return tokens.length
+  let text = ''
+  for (let i = 0; i < tokens.length; i++) {
+    text += tokens[i].token
+    if (text.trimStart().length >= target) return i + 1
+  }
+  return tokens.length
+}
