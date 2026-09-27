@@ -17,13 +17,16 @@ Qivis is an open-source research instrument for exploring AI personality, emotio
 - Tree-native: conversation tree is the fundamental unit, not linear chat
 
 ## Development Workflow
-- Test-first: contract tests → integration tests → implement → cleanup → full regression
+- Verify against the real system (live models, real data, the UI in a browser), then write tests; tests are a safety net, not a ritual
 - Tests encode promises from the architecture doc (.Claude/qivis-architecture.md)
-- Never modify tests to make them pass without flagging and confirming
-- One subphase at a time from the build plan (.Claude/qivis-build-plan.md)
+- Never modify tests to make them pass without flagging it
+- The record doesn't lie: Qivis must never misrepresent what a model saw or said (context, provenance, what's the model's vs the researcher's)
+- Build plan (.Claude/qivis-build-plan.md) is a map, not a mandate; build features around questions Ian actually has
+- Test changes without touching Ian's data: run a scratch backend from another directory (the DB path is relative)
+- Early-2026 workflow docs and notes are in .Claude/archive/
 
 ## Project Structure
-- `.Claude/` — architecture docs, build plan, dev workflow, scratchpad/notes
+- `.Claude/` — architecture docs, build plan, archive/
 - `backend/` — Python/FastAPI backend (package: `qivis`)
 - `frontend/` — React/TypeScript frontend
 - `tests/` — organized by phase (phase0/, phase1/, etc.)
