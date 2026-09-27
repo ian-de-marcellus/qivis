@@ -43,7 +43,7 @@ from qivis.models import (
 from qivis.providers.base import GenerationRequest, GenerationResult, LLMProvider, StreamChunk
 from qivis.providers.registry import get_provider
 from qivis.rhizomes.schemas import NodeResponse
-from qivis.rhizomes.service import RhizomeService
+from qivis.rhizomes.service import NodeNotFoundError, RhizomeNotFoundError, RhizomeService
 from qivis.utils.json import parse_json_field
 
 logger = logging.getLogger(__name__)
@@ -759,13 +759,7 @@ class GenerationService:
         return await self._rhizome_service.node_response(p.rhizome_id, node_id)
 
 
-class RhizomeNotFoundForGenerationError(Exception):
-    def __init__(self, rhizome_id: str) -> None:
-        self.rhizome_id = rhizome_id
-        super().__init__(f"Rhizome not found: {rhizome_id}")
-
-
-class NodeNotFoundForGenerationError(Exception):
-    def __init__(self, node_id: str) -> None:
-        self.node_id = node_id
-        super().__init__(f"Node not found: {node_id}")
+# The generation service reports missing rhizomes and nodes as the rhizome
+# service does (older names kept for callers)
+RhizomeNotFoundForGenerationError = RhizomeNotFoundError
+NodeNotFoundForGenerationError = NodeNotFoundError

@@ -6,7 +6,6 @@ from qivis.importer.merge import (
     MergePreviewResponse,
     MergeResult,
     MergeService,
-    RhizomeNotFoundError,
 )
 from qivis.importer.parsers.detection import ImportFormatError
 
@@ -28,8 +27,6 @@ async def preview_merge(
     content = await file.read()
     try:
         return await service.preview_merge(rhizome_id, content, file.filename or "unknown")
-    except RhizomeNotFoundError:
-        raise HTTPException(status_code=404, detail=f"Rhizome not found: {rhizome_id}")
     except ImportFormatError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
@@ -50,7 +47,5 @@ async def execute_merge(
             file.filename or "unknown",
             conversation_index=conversation_index,
         )
-    except RhizomeNotFoundError:
-        raise HTTPException(status_code=404, detail=f"Rhizome not found: {rhizome_id}")
     except ImportFormatError as e:
         raise HTTPException(status_code=422, detail=str(e))

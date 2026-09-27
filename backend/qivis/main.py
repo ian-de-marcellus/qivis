@@ -12,18 +12,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from qivis.db.connection import Database
+from qivis.errors import QivisError
 from qivis.events.projector import StateProjector
 from qivis.events.store import EventStore
 from qivis.export.router import get_export_service
 from qivis.export.router import router as export_router
 from qivis.export.service import ExportService
 from qivis.generation.perturbation import PerturbationService
-from qivis.generation.replay import InvalidReplayPathError, ReplayService
-from qivis.generation.service import (
-    GenerationService,
-    NodeNotFoundForGenerationError,
-    RhizomeNotFoundForGenerationError,
-)
+from qivis.generation.replay import ReplayService
+from qivis.generation.service import GenerationService
 from qivis.importer.merge import MergeService
 from qivis.importer.merge_router import get_merge_service
 from qivis.importer.merge_router import router as merge_router
@@ -165,15 +162,10 @@ app.add_middleware(
 
 
 
-@app.exception_handler(RhizomeNotFoundForGenerationError)
-@app.exception_handler(NodeNotFoundForGenerationError)
-async def not_found(request: Request, exc: Exception) -> JSONResponse:
-    return JSONResponse({"detail": str(exc)}, status_code=404)
-
-
-@app.exception_handler(InvalidReplayPathError)
-async def bad_request(request: Request, exc: Exception) -> JSONResponse:
-    return JSONResponse({"detail": str(exc)}, status_code=400)
+@app.exception_handler(QivisError)
+async def qivis_error(request: Request, exc: QivisError) -> JSONResponse:
+    """Not found / invalid request / not configured, raised by any service."""
+    return JSONResponse({"detail": str(exc)}, status_code=exc.status_code)
 
 
 app.include_router(rhizomes_router)

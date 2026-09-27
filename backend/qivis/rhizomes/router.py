@@ -8,12 +8,11 @@ from contextlib import contextmanager
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 
+from qivis.errors import QivisError
 from qivis.generation.perturbation import PerturbationService
-from qivis.generation.replay import InvalidReplayPathError, ReplayService
+from qivis.generation.replay import ReplayService
 from qivis.generation.service import (
     GenerationService,
-    NodeNotFoundForGenerationError,
-    RhizomeNotFoundForGenerationError,
 )
 from qivis.providers.base import LLMProvider, StreamChunk
 from qivis.providers.registry import ProviderNotFoundError, get_provider
@@ -50,28 +49,14 @@ from qivis.rhizomes.schemas import (
     ToggleDigressionGroupRequest,
 )
 from qivis.rhizomes.service import (
-    AnnotationNotFoundError,
-    BookmarkNotFoundError,
-    DigressionGroupNotFoundError,
-    InvalidParentError,
-    NodeNotFoundError,
-    NonContiguousGroupError,
-    NoteNotFoundError,
-    RhizomeNotFoundError,
     RhizomeService,
-    SummaryClientNotConfiguredError,
-    SummaryNotFoundError,
 )
 
 logger = logging.getLogger(__name__)
 
 # Errors that mean the request was wrong, not that a model failed. The app maps
-# them to 404/400 (main.py); streams report them as an error event.
-CLIENT_ERRORS: tuple[type[Exception], ...] = (
-    RhizomeNotFoundForGenerationError,
-    NodeNotFoundForGenerationError,
-    InvalidReplayPathError,
-)
+# them to their status (main.py); streams report them as an error event.
+CLIENT_ERRORS: tuple[type[Exception], ...] = (QivisError,)
 
 router = APIRouter(prefix="/api/rhizomes", tags=["rhizomes"])
 
@@ -129,10 +114,7 @@ async def update_rhizome(
     request: PatchRhizomeRequest,
     service: RhizomeService = Depends(get_rhizome_service),
 ) -> RhizomeDetailResponse:
-    try:
-        return await service.update_rhizome(rhizome_id, request)
-    except RhizomeNotFoundError:
-        raise HTTPException(status_code=404, detail=f"Rhizome not found: {rhizome_id}")
+    return await service.update_rhizome(rhizome_id, request)
 
 
 @router.post("/{rhizome_id}/archive")
@@ -140,10 +122,7 @@ async def archive_rhizome(
     rhizome_id: str,
     service: RhizomeService = Depends(get_rhizome_service),
 ) -> RhizomeDetailResponse:
-    try:
-        return await service.archive_rhizome(rhizome_id)
-    except RhizomeNotFoundError:
-        raise HTTPException(status_code=404, detail=f"Rhizome not found: {rhizome_id}")
+    return await service.archive_rhizome(rhizome_id)
 
 
 @router.post("/{rhizome_id}/unarchive")
@@ -151,10 +130,7 @@ async def unarchive_rhizome(
     rhizome_id: str,
     service: RhizomeService = Depends(get_rhizome_service),
 ) -> RhizomeDetailResponse:
-    try:
-        return await service.unarchive_rhizome(rhizome_id)
-    except RhizomeNotFoundError:
-        raise HTTPException(status_code=404, detail=f"Rhizome not found: {rhizome_id}")
+    return await service.unarchive_rhizome(rhizome_id)
 
 
 @router.post("/{rhizome_id}/nodes", status_code=status.HTTP_201_CREATED)
@@ -163,12 +139,7 @@ async def create_node(
     request: CreateNodeRequest,
     service: RhizomeService = Depends(get_rhizome_service),
 ) -> NodeResponse:
-    try:
-        return await service.create_node(rhizome_id, request)
-    except RhizomeNotFoundError:
-        raise HTTPException(status_code=404, detail=f"Rhizome not found: {rhizome_id}")
-    except InvalidParentError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    return await service.create_node(rhizome_id, request)
 
 
 @router.patch("/{rhizome_id}/nodes/{node_id}/content")
@@ -178,12 +149,7 @@ async def edit_node_content(
     request: PatchNodeContentRequest,
     service: RhizomeService = Depends(get_rhizome_service),
 ) -> NodeResponse:
-    try:
-        return await service.edit_node_content(rhizome_id, node_id, request.edited_content)
-    except RhizomeNotFoundError:
-        raise HTTPException(status_code=404, detail=f"Rhizome not found: {rhizome_id}")
-    except NodeNotFoundError:
-        raise HTTPException(status_code=404, detail=f"Node not found: {node_id}")
+    return await service.edit_node_content(rhizome_id, node_id, request.edited_content)
 
 
 @router.get("/{rhizome_id}/nodes/{node_id}/edit-history")
@@ -192,12 +158,7 @@ async def get_edit_history(
     node_id: str,
     service: RhizomeService = Depends(get_rhizome_service),
 ) -> EditHistoryResponse:
-    try:
-        return await service.get_edit_history(rhizome_id, node_id)
-    except RhizomeNotFoundError:
-        raise HTTPException(status_code=404, detail=f"Rhizome not found: {rhizome_id}")
-    except NodeNotFoundError:
-        raise HTTPException(status_code=404, detail=f"Node not found: {node_id}")
+    return await service.get_edit_history(rhizome_id, node_id)
 
 
 @router.get("/{rhizome_id}/interventions")
@@ -205,10 +166,7 @@ async def get_interventions(
     rhizome_id: str,
     service: RhizomeService = Depends(get_rhizome_service),
 ) -> InterventionTimelineResponse:
-    try:
-        return await service.get_intervention_timeline(rhizome_id)
-    except RhizomeNotFoundError:
-        raise HTTPException(status_code=404, detail=f"Rhizome not found: {rhizome_id}")
+    return await service.get_intervention_timeline(rhizome_id)
 
 
 @router.post(
@@ -221,12 +179,7 @@ async def add_annotation(
     request: AddAnnotationRequest,
     service: RhizomeService = Depends(get_rhizome_service),
 ) -> AnnotationResponse:
-    try:
-        return await service.add_annotation(rhizome_id, node_id, request)
-    except RhizomeNotFoundError:
-        raise HTTPException(status_code=404, detail=f"Rhizome not found: {rhizome_id}")
-    except NodeNotFoundError:
-        raise HTTPException(status_code=404, detail=f"Node not found: {node_id}")
+    return await service.add_annotation(rhizome_id, node_id, request)
 
 
 @router.get("/{rhizome_id}/nodes/{node_id}/annotations")
@@ -247,12 +200,7 @@ async def remove_annotation(
     annotation_id: str,
     service: RhizomeService = Depends(get_rhizome_service),
 ) -> None:
-    try:
-        await service.remove_annotation(rhizome_id, annotation_id)
-    except AnnotationNotFoundError:
-        raise HTTPException(
-            status_code=404, detail=f"Annotation not found: {annotation_id}"
-        )
+    await service.remove_annotation(rhizome_id, annotation_id)
 
 
 @router.get("/{rhizome_id}/taxonomy")
@@ -260,10 +208,7 @@ async def get_rhizome_taxonomy(
     rhizome_id: str,
     service: RhizomeService = Depends(get_rhizome_service),
 ) -> TaxonomyResponse:
-    try:
-        return await service.get_rhizome_taxonomy(rhizome_id)
-    except RhizomeNotFoundError:
-        raise HTTPException(status_code=404, detail=f"Rhizome not found: {rhizome_id}")
+    return await service.get_rhizome_taxonomy(rhizome_id)
 
 
 @router.post(
@@ -276,12 +221,7 @@ async def add_note(
     request: CreateNoteRequest,
     service: RhizomeService = Depends(get_rhizome_service),
 ) -> NoteResponse:
-    try:
-        return await service.add_note(rhizome_id, node_id, request)
-    except RhizomeNotFoundError:
-        raise HTTPException(status_code=404, detail=f"Rhizome not found: {rhizome_id}")
-    except NodeNotFoundError:
-        raise HTTPException(status_code=404, detail=f"Node not found: {node_id}")
+    return await service.add_note(rhizome_id, node_id, request)
 
 
 @router.get("/{rhizome_id}/nodes/{node_id}/notes")
@@ -311,12 +251,7 @@ async def remove_note(
     note_id: str,
     service: RhizomeService = Depends(get_rhizome_service),
 ) -> None:
-    try:
-        await service.remove_note(rhizome_id, note_id)
-    except NoteNotFoundError:
-        raise HTTPException(
-            status_code=404, detail=f"Note not found: {note_id}"
-        )
+    await service.remove_note(rhizome_id, note_id)
 
 
 @router.get("/{rhizome_id}/annotations")
@@ -337,12 +272,7 @@ async def add_bookmark(
     request: CreateBookmarkRequest,
     service: RhizomeService = Depends(get_rhizome_service),
 ) -> BookmarkResponse:
-    try:
-        return await service.add_bookmark(rhizome_id, node_id, request)
-    except RhizomeNotFoundError:
-        raise HTTPException(status_code=404, detail=f"Rhizome not found: {rhizome_id}")
-    except NodeNotFoundError:
-        raise HTTPException(status_code=404, detail=f"Node not found: {node_id}")
+    return await service.add_bookmark(rhizome_id, node_id, request)
 
 
 @router.get("/{rhizome_id}/bookmarks")
@@ -363,12 +293,7 @@ async def remove_bookmark(
     bookmark_id: str,
     service: RhizomeService = Depends(get_rhizome_service),
 ) -> None:
-    try:
-        await service.remove_bookmark(rhizome_id, bookmark_id)
-    except BookmarkNotFoundError:
-        raise HTTPException(
-            status_code=404, detail=f"Bookmark not found: {bookmark_id}"
-        )
+    await service.remove_bookmark(rhizome_id, bookmark_id)
 
 
 @router.post("/{rhizome_id}/bookmarks/{bookmark_id}/summarize")
@@ -377,18 +302,7 @@ async def summarize_bookmark(
     bookmark_id: str,
     service: RhizomeService = Depends(get_rhizome_service),
 ) -> BookmarkResponse:
-    try:
-        return await service.generate_bookmark_summary(rhizome_id, bookmark_id)
-    except RhizomeNotFoundError:
-        raise HTTPException(status_code=404, detail=f"Rhizome not found: {rhizome_id}")
-    except BookmarkNotFoundError:
-        raise HTTPException(
-            status_code=404, detail=f"Bookmark not found: {bookmark_id}"
-        )
-    except SummaryClientNotConfiguredError:
-        raise HTTPException(
-            status_code=503, detail="Summary API key not configured"
-        )
+    return await service.generate_bookmark_summary(rhizome_id, bookmark_id)
 
 
 # -- Manual summarization --
@@ -401,16 +315,7 @@ async def generate_summary(
     request: CreateSummaryRequest,
     service: RhizomeService = Depends(get_rhizome_service),
 ) -> SummaryResponse:
-    try:
-        return await service.generate_summary(rhizome_id, node_id, request)
-    except RhizomeNotFoundError:
-        raise HTTPException(status_code=404, detail=f"Rhizome not found: {rhizome_id}")
-    except NodeNotFoundError:
-        raise HTTPException(status_code=404, detail=f"Node not found: {node_id}")
-    except SummaryClientNotConfiguredError:
-        raise HTTPException(
-            status_code=503, detail="Summary API key not configured"
-        )
+    return await service.generate_summary(rhizome_id, node_id, request)
 
 
 @router.get("/{rhizome_id}/summaries")
@@ -430,12 +335,7 @@ async def remove_summary(
     summary_id: str,
     service: RhizomeService = Depends(get_rhizome_service),
 ) -> None:
-    try:
-        await service.remove_summary(rhizome_id, summary_id)
-    except SummaryNotFoundError:
-        raise HTTPException(
-            status_code=404, detail=f"Summary not found: {summary_id}"
-        )
+    await service.remove_summary(rhizome_id, summary_id)
 
 
 @router.post("/{rhizome_id}/nodes/{node_id}/exclude")
@@ -445,12 +345,7 @@ async def exclude_node(
     request: ExcludeNodeRequest,
     service: RhizomeService = Depends(get_rhizome_service),
 ) -> NodeExclusionResponse:
-    try:
-        return await service.exclude_node(rhizome_id, node_id, request)
-    except RhizomeNotFoundError:
-        raise HTTPException(status_code=404, detail=f"Rhizome not found: {rhizome_id}")
-    except NodeNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+    return await service.exclude_node(rhizome_id, node_id, request)
 
 
 @router.post(
@@ -483,14 +378,7 @@ async def create_digression_group(
     request: CreateDigressionGroupRequest,
     service: RhizomeService = Depends(get_rhizome_service),
 ) -> DigressionGroupResponse:
-    try:
-        return await service.create_digression_group(rhizome_id, request)
-    except RhizomeNotFoundError:
-        raise HTTPException(status_code=404, detail=f"Rhizome not found: {rhizome_id}")
-    except NodeNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except NonContiguousGroupError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    return await service.create_digression_group(rhizome_id, request)
 
 
 @router.get("/{rhizome_id}/digression-groups")
@@ -508,12 +396,7 @@ async def toggle_digression_group(
     request: ToggleDigressionGroupRequest,
     service: RhizomeService = Depends(get_rhizome_service),
 ) -> DigressionGroupResponse:
-    try:
-        return await service.toggle_digression_group(rhizome_id, group_id, request.included)
-    except DigressionGroupNotFoundError:
-        raise HTTPException(
-            status_code=404, detail=f"Digression group not found: {group_id}"
-        )
+    return await service.toggle_digression_group(rhizome_id, group_id, request.included)
 
 
 @router.delete(
@@ -525,12 +408,7 @@ async def delete_digression_group(
     group_id: str,
     service: RhizomeService = Depends(get_rhizome_service),
 ) -> None:
-    try:
-        await service.delete_digression_group(rhizome_id, group_id)
-    except DigressionGroupNotFoundError:
-        raise HTTPException(
-            status_code=404, detail=f"Digression group not found: {group_id}"
-        )
+    await service.delete_digression_group(rhizome_id, group_id)
 
 
 @router.post("/{rhizome_id}/bulk-anchor")
@@ -539,11 +417,8 @@ async def bulk_anchor(
     request: BulkAnchorRequest,
     service: RhizomeService = Depends(get_rhizome_service),
 ) -> dict:
-    try:
-        changed = await service.bulk_anchor(rhizome_id, request.node_ids, request.anchor)
-        return {"changed": changed, "anchor": request.anchor}
-    except RhizomeNotFoundError:
-        raise HTTPException(status_code=404, detail=f"Rhizome not found: {rhizome_id}")
+    changed = await service.bulk_anchor(rhizome_id, request.node_ids, request.anchor)
+    return {"changed": changed, "anchor": request.anchor}
 
 
 @router.post("/{rhizome_id}/nodes/{node_id}/anchor")
@@ -552,13 +427,8 @@ async def toggle_anchor(
     node_id: str,
     service: RhizomeService = Depends(get_rhizome_service),
 ) -> dict:
-    try:
-        is_anchored = await service.anchor_node(rhizome_id, node_id)
-        return {"is_anchored": is_anchored}
-    except RhizomeNotFoundError:
-        raise HTTPException(status_code=404, detail=f"Rhizome not found: {rhizome_id}")
-    except NodeNotFoundError:
-        raise HTTPException(status_code=404, detail=f"Node not found: {node_id}")
+    is_anchored = await service.anchor_node(rhizome_id, node_id)
+    return {"is_anchored": is_anchored}
 
 
 @router.post(

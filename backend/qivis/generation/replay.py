@@ -13,6 +13,7 @@ sense for scripted conversations. It's in git history.)
 
 from collections.abc import AsyncIterator
 
+from qivis.errors import InvalidRequestError
 from qivis.events.projector import StateProjector
 from qivis.events.store import EventStore
 from qivis.generation.service import GenerationService, RhizomeNotFoundForGenerationError
@@ -22,7 +23,7 @@ from qivis.rhizomes.schemas import NodeResponse
 from qivis.rhizomes.service import RhizomeService
 
 
-class InvalidReplayPathError(Exception):
+class InvalidReplayPathError(InvalidRequestError):
     """Raised when the provided path is empty or disconnected."""
 
 

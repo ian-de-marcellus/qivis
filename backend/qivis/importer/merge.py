@@ -15,6 +15,7 @@ from qivis.importer.models import ImportedNode, ImportedTree
 from qivis.importer.parsers.detection import ImportFormatError
 from qivis.importer.service import ImportService
 from qivis.models import NodeCreatedPayload
+from qivis.rhizomes.service import RhizomeNotFoundError
 
 # ---------------------------------------------------------------------------
 # Schemas
@@ -325,12 +326,6 @@ class MergeService:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-
-class RhizomeNotFoundError(Exception):
-    def __init__(self, rhizome_id: str) -> None:
-        self.rhizome_id = rhizome_id
-        super().__init__(f"Rhizome not found: {rhizome_id}")
 
 
 def detect_format_safe(data: dict | list) -> str:

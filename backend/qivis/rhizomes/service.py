@@ -8,6 +8,7 @@ from uuid import uuid4
 import yaml
 
 from qivis.db.connection import Database
+from qivis.errors import InvalidRequestError, NotConfiguredError, NotFoundError
 from qivis.events.log import EventLog
 from qivis.events.projector import StateProjector
 from qivis.events.store import EventStore
@@ -1413,66 +1414,66 @@ class RhizomeService:
         )
 
 
-class RhizomeNotFoundError(Exception):
+class RhizomeNotFoundError(NotFoundError):
     def __init__(self, rhizome_id: str) -> None:
         self.rhizome_id = rhizome_id
         super().__init__(f"Rhizome not found: {rhizome_id}")
 
 
-class NodeNotFoundError(Exception):
+class NodeNotFoundError(NotFoundError):
     def __init__(self, node_id: str) -> None:
         self.node_id = node_id
         super().__init__(f"Node not found: {node_id}")
 
 
-class AnnotationNotFoundError(Exception):
+class AnnotationNotFoundError(NotFoundError):
     def __init__(self, annotation_id: str) -> None:
         self.annotation_id = annotation_id
         super().__init__(f"Annotation not found: {annotation_id}")
 
 
-class NoteNotFoundError(Exception):
+class NoteNotFoundError(NotFoundError):
     def __init__(self, note_id: str) -> None:
         self.note_id = note_id
         super().__init__(f"Note not found: {note_id}")
 
 
-class BookmarkNotFoundError(Exception):
+class BookmarkNotFoundError(NotFoundError):
     def __init__(self, bookmark_id: str) -> None:
         self.bookmark_id = bookmark_id
         super().__init__(f"Bookmark not found: {bookmark_id}")
 
 
-class SummaryClientNotConfiguredError(Exception):
+class SummaryClientNotConfiguredError(NotConfiguredError):
     def __init__(self) -> None:
         super().__init__("Summary API key not configured")
 
 
-class InvalidParentError(Exception):
+class InvalidParentError(InvalidRequestError):
     def __init__(self, parent_id: str) -> None:
         self.parent_id = parent_id
         super().__init__(f"Invalid parent node: {parent_id}")
 
 
-class DigressionGroupNotFoundError(Exception):
+class DigressionGroupNotFoundError(NotFoundError):
     def __init__(self, group_id: str) -> None:
         self.group_id = group_id
         super().__init__(f"Digression group not found: {group_id}")
 
 
-class SummaryNotFoundError(Exception):
+class SummaryNotFoundError(NotFoundError):
     def __init__(self, summary_id: str) -> None:
         self.summary_id = summary_id
         super().__init__(f"Summary not found: {summary_id}")
 
 
-class PerturbationReportNotFoundError(Exception):
+class PerturbationReportNotFoundError(NotFoundError):
     def __init__(self, report_id: str) -> None:
         self.report_id = report_id
         super().__init__(f"Perturbation report not found: {report_id}")
 
 
-class NonContiguousGroupError(Exception):
+class NonContiguousGroupError(InvalidRequestError):
     def __init__(self, node_ids: list[str]) -> None:
         self.node_ids = node_ids
         super().__init__(f"Nodes are not contiguous: {node_ids}")
