@@ -21,7 +21,7 @@ import { WriteResponsePanel } from './WriteResponsePanel.tsx'
 type View = ReturnType<typeof useConversationView>
 
 /** The fork/regenerate panel, configured for this rhizome and branch. */
-function ForkPanelFor({ view, mode }: { view: View; mode: NonNullable<View['fork']['forkTarget']>['mode'] }) {
+export function ForkPanelFor({ view, mode }: { view: View; mode: NonNullable<View['fork']['forkTarget']>['mode'] }) {
   const { currentRhizome, providers } = useRhizomeData()
   const { isGenerating } = useStreamingState()
   const { fork } = view

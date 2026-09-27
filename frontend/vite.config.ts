@@ -7,7 +7,8 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        target: 'http://localhost:8000',
+        // A scratch backend for testing without touching real data: QIVIS_API=http://localhost:8001
+        target: process.env.QIVIS_API ?? 'http://localhost:8000',
         changeOrigin: true,
       },
     },

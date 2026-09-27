@@ -9,6 +9,7 @@ import { getRhizomeDefaults } from './components/RhizomeView/contextDiffs.ts'
 import { DigressionSidePanel } from './components/RhizomeView/DigressionPanel.tsx'
 import { ChatView } from './components/RhizomeView/ChatView.tsx'
 import { CompletionView } from './components/RhizomeView/CompletionView.tsx'
+import { DocumentView } from './components/RhizomeView/DocumentView.tsx'
 import { MessageInput } from './components/RhizomeView/MessageInput.tsx'
 import { SystemPromptInput } from './components/RhizomeView/SystemPromptInput.tsx'
 import { RhizomeSettings } from './components/RhizomeView/RhizomeSettings.tsx'
@@ -44,6 +45,8 @@ function applyTheme(mode: ThemeMode) {
 function App() {
   const { currentRhizome, error } = useRhizomeData()
   const isCompletion = currentRhizome?.metadata?.generation_mode === 'completion'
+  // The document template is one continuous text, not turns
+  const isDocument = isCompletion && currentRhizome?.metadata?.prompt_template === 'document'
   const { branchSelections } = useNavigation()
   const { rightPaneMode, canvasOpen, libraryOpen } = useRightPane()
   const searchQuery = useRhizomeStore(s => s.searchQuery)
@@ -153,8 +156,8 @@ function App() {
             <div className="linear-pane">
               <RhizomeSettings />
               {!isCompletion && <SystemPromptInput />}
-              {isCompletion ? <CompletionView /> : <ChatView />}
-              <MessageInput />
+              {isDocument ? <DocumentView /> : isCompletion ? <CompletionView /> : <ChatView />}
+              {!isDocument && <MessageInput />}
             </div>
             {rightPaneMode != null && (
               <>

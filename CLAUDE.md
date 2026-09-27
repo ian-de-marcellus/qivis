@@ -22,7 +22,7 @@ Qivis is an open-source research instrument for exploring AI personality, emotio
 - Never modify tests to make them pass without flagging it
 - The record doesn't lie: Qivis must never misrepresent what a model saw or said (context, provenance, what's the model's vs the researcher's)
 - Build plan (.Claude/qivis-build-plan.md) is a map, not a mandate; build features around questions Ian actually has
-- Test changes without touching Ian's data: run a scratch backend from another directory (the DB path is relative)
+- Test changes without touching Ian's data: run a scratch backend from another directory (the DB path is relative), e.g. on port 8001, and a scratch frontend with `QIVIS_API=http://localhost:8001 pnpm exec vite --port 5174`
 - Early-2026 workflow docs and notes are in .Claude/archive/
 
 ## Project Structure

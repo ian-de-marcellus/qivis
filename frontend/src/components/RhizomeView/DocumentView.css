@@ -1,0 +1,246 @@
+/* Document view: one continuous text, with a dock for the selected passage and the composer */
+.document-view {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.document-view .messages {
+  gap: var(--space-lg);
+}
+
+.document-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+.document-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.doc-swatch {
+  display: inline-block;
+  width: 0.7em;
+  height: 0.7em;
+  border-radius: 2px;
+  margin-left: var(--space-sm);
+}
+
+.doc-swatch:first-child {
+  margin-left: 0;
+}
+
+.doc-swatch-researcher {
+  background: var(--text-accent);
+}
+
+.doc-swatch-model {
+  background: var(--text-primary);
+}
+
+.document-toggle {
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  padding: 2px var(--space-sm);
+  background: none;
+  color: var(--text-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.document-toggle.active {
+  color: var(--text-accent);
+  border-color: var(--text-accent);
+}
+
+/* The text itself: exact whitespace, prose typography */
+.document-text {
+  font-family: var(--font-body);
+  font-size: var(--text-lg);
+  line-height: var(--leading-relaxed);
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.document-placeholder {
+  color: var(--text-tertiary);
+  font-style: italic;
+}
+
+.doc-span {
+  border-radius: 2px;
+  cursor: pointer;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  transition: background-color 0.12s;
+}
+
+.doc-span:hover {
+  background: var(--bg-hover);
+}
+
+.doc-researcher {
+  color: var(--text-accent);
+}
+
+.doc-opening {
+  cursor: default;
+}
+
+.doc-selected,
+.doc-selected:hover {
+  background: var(--bg-selected);
+  outline: 1px solid var(--border-strong);
+}
+
+.doc-excluded {
+  opacity: 0.45;
+  text-decoration: line-through dotted;
+}
+
+.doc-streaming {
+  cursor: default;
+}
+
+.doc-streaming:hover {
+  background: none;
+}
+
+.doc-caret {
+  display: inline-block;
+  width: 2px;
+  height: 1.1em;
+  margin-left: 1px;
+  vertical-align: text-bottom;
+  background: var(--accent);
+  animation: doc-blink 1s steps(1) infinite;
+}
+
+@keyframes doc-blink {
+  50% { opacity: 0; }
+}
+
+/* A branch point: a quiet count that doesn't read as part of the text */
+.doc-branch-mark {
+  font-family: var(--font-ui);
+  font-size: 0.6em;
+  vertical-align: super;
+  line-height: 0;
+  padding: 0 2px;
+  margin-right: 1px;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.doc-branch-mark:hover {
+  color: var(--text-accent);
+}
+
+/* The dock: selected passage tools above the composer */
+.document-dock {
+  flex-shrink: 0;
+  background: var(--bg-primary);
+}
+
+.document-passage-bar {
+  border-top: 1px solid var(--border-subtle);
+  padding: var(--space-sm) var(--space-md);
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+}
+
+.passage-bar-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm);
+  max-width: var(--content-width);
+  margin: 0 auto;
+}
+
+.passage-bar-actions {
+  margin-top: var(--space-xs);
+}
+
+.passage-who {
+  color: var(--text-secondary);
+  max-width: 16rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.passage-certainty {
+  color: var(--text-tertiary);
+}
+
+.passage-bar-spacer {
+  flex: 1;
+}
+
+.passage-bar-row button {
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  padding: 2px var(--space-sm);
+  background: none;
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.passage-bar-row button:hover:not(:disabled) {
+  color: var(--text-accent);
+  border-color: var(--text-accent);
+}
+
+.passage-bar-row button.active {
+  color: var(--text-accent);
+  border-color: var(--text-accent);
+}
+
+.passage-bar-row button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.passage-bar-row .passage-close {
+  border: none;
+  font-size: var(--text-base);
+  color: var(--text-tertiary);
+}
+
+.passage-details {
+  max-width: var(--content-width);
+  margin: var(--space-sm) auto 0;
+}
+
+.passage-meta {
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+  margin-bottom: var(--space-xs);
+}
+
+.document-composer textarea {
+  font-size: var(--text-lg);
+}
+
+.document-composer-hint {
+  max-width: var(--content-width);
+  margin: var(--space-xs) auto 0;
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
