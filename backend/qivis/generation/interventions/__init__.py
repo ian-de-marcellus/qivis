@@ -19,7 +19,6 @@ from typing import Any, ClassVar
 
 from pydantic import BaseModel
 
-
 # ---------------------------------------------------------------------------
 # Data structures
 # ---------------------------------------------------------------------------
@@ -181,9 +180,9 @@ default_registry = InterventionRegistry()
 
 def _register_builtins() -> None:
     """Register all built-in intervention types."""
-    from qivis.generation.interventions.system_prompt_reposition import SystemPromptReposition
-    from qivis.generation.interventions.reminder_injection import ReminderInjection
     from qivis.generation.interventions.message_wrapper import MessageWrapper
+    from qivis.generation.interventions.reminder_injection import ReminderInjection
+    from qivis.generation.interventions.system_prompt_reposition import SystemPromptReposition
 
     default_registry.register(SystemPromptReposition)
     default_registry.register(ReminderInjection)

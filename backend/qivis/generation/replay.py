@@ -2,16 +2,15 @@
 
 import json
 from collections.abc import AsyncIterator
-from datetime import UTC, datetime
 from typing import Literal
 from uuid import uuid4
 
+from qivis.events.log import EventLog
 from qivis.events.projector import StateProjector
 from qivis.events.store import EventStore
 from qivis.generation.context import ContextBuilder
 from qivis.generation.service import GenerationService, merge_sampling_params
 from qivis.models import (
-    EventEnvelope,
     NodeCreatedPayload,
     SamplingParams,
 )
@@ -51,6 +50,7 @@ class ReplayService:
         self._gen_svc = generation_service
         self._store = store
         self._projector = projector
+        self._events = EventLog(store, projector)
         self._context_builder = ContextBuilder()
 
     async def replay_path(
@@ -420,16 +420,7 @@ class ReplayService:
             mode="chat",
             generation_id=replay_id,
         )
-        event = EventEnvelope(
-            event_id=str(uuid4()),
-            rhizome_id=rhizome_id,
-            timestamp=datetime.now(UTC),
-            device_id="replay",
-            event_type="NodeCreated",
-            payload=payload.model_dump(),
-        )
-        await self._store.append(event)
-        await self._projector.project([event])
+        await self._events.emit(rhizome_id, "NodeCreated", payload, device_id="replay")
 
         nodes = await self._projector.get_nodes(rhizome_id)
         sibling_info = RhizomeService._compute_sibling_info(nodes)
@@ -466,16 +457,7 @@ class ReplayService:
             logprobs=result.logprobs,
             thinking_content=result.thinking_content,
         )
-        event = EventEnvelope(
-            event_id=str(uuid4()),
-            rhizome_id=rhizome_id,
-            timestamp=datetime.now(UTC),
-            device_id="replay",
-            event_type="NodeCreated",
-            payload=payload.model_dump(),
-        )
-        await self._store.append(event)
-        await self._projector.project([event])
+        await self._events.emit(rhizome_id, "NodeCreated", payload, device_id="replay")
 
         nodes = await self._projector.get_nodes(rhizome_id)
         sibling_info = RhizomeService._compute_sibling_info(nodes)

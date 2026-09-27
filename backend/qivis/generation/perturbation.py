@@ -7,6 +7,7 @@ from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from uuid import uuid4
 
+from qivis.events.log import EventLog
 from qivis.events.projector import StateProjector
 from qivis.events.store import EventStore
 from qivis.generation.context import resolve_context_limit
@@ -18,7 +19,6 @@ from qivis.generation.divergence import (
 )
 from qivis.generation.service import GenerationService
 from qivis.models import (
-    EventEnvelope,
     NodeCreatedPayload,
     PerturbationReportGeneratedPayload,
     SamplingParams,
@@ -49,6 +49,7 @@ class PerturbationService:
         self._gen_svc = gen_service
         self._store = store
         self._projector = projector
+        self._events = EventLog(store, projector)
 
     async def run_experiment(
         self,
@@ -634,16 +635,7 @@ class PerturbationService:
             logprobs=result.logprobs,
             thinking_content=result.thinking_content,
         )
-        event = EventEnvelope(
-            event_id=str(uuid4()),
-            rhizome_id=rhizome_id,
-            timestamp=datetime.now(UTC),
-            device_id="perturbation",
-            event_type="NodeCreated",
-            payload=payload.model_dump(),
-        )
-        await self._store.append(event)
-        await self._projector.project([event])
+        await self._events.emit(rhizome_id, "NodeCreated", payload, device_id="perturbation")
 
         nodes = await self._projector.get_nodes(rhizome_id)
         sibling_info = RhizomeService._compute_sibling_info(nodes)
@@ -696,16 +688,12 @@ class PerturbationService:
             steps=[s.model_dump() for s in report.steps],
             divergence=[d.model_dump() for d in report.divergence],
         )
-        event = EventEnvelope(
-            event_id=str(uuid4()),
-            rhizome_id=rhizome_id,
-            timestamp=datetime.now(UTC),
+        await self._events.emit(
+            rhizome_id,
+            "PerturbationReportGenerated",
+            payload,
             device_id="perturbation",
-            event_type="PerturbationReportGenerated",
-            payload=payload.model_dump(),
         )
-        await self._store.append(event)
-        await self._projector.project([event])
 
     # -- Label generation --
 

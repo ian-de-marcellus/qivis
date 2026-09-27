@@ -8,6 +8,7 @@ from uuid import uuid4
 import yaml
 
 from qivis.db.connection import Database
+from qivis.events.log import EventLog
 from qivis.events.projector import StateProjector
 from qivis.events.store import EventStore
 from qivis.models import (
@@ -75,6 +76,7 @@ class RhizomeService:
     def __init__(self, db: Database, summary_client: object | None = None) -> None:
         self._store = EventStore(db)
         self._projector = StateProjector(db)
+        self._events = EventLog(self._store, self._projector)
         self._db = db
         self._summary_client = summary_client
 
@@ -91,17 +93,7 @@ class RhizomeService:
             default_sampling_params=request.default_sampling_params,
         )
 
-        event = EventEnvelope(
-            event_id=str(uuid4()),
-            rhizome_id=rhizome_id,
-            timestamp=now,
-            device_id="local",
-            event_type="RhizomeCreated",
-            payload=payload.model_dump(),
-        )
-
-        await self._store.append(event)
-        await self._projector.project([event])
+        await self._events.emit(rhizome_id, "RhizomeCreated", payload, timestamp=now)
 
         rhizome = await self._projector.get_rhizome(rhizome_id)
         assert rhizome is not None
@@ -143,20 +135,12 @@ class RhizomeService:
                 old_value=old_value,
                 new_value=new_value,
             )
-            event = EventEnvelope(
-                event_id=str(uuid4()),
-                rhizome_id=rhizome_id,
-                timestamp=now,
-                device_id="local",
-                event_type="RhizomeMetadataUpdated",
-                payload=payload.model_dump(),
-            )
-            events.append(event)
+            events.append(EventLog.envelope(
+                rhizome_id, "RhizomeMetadataUpdated", payload, timestamp=now,
+            ))
 
-        for event in events:
-            await self._store.append(event)
         if events:
-            await self._projector.project(events)
+            await self._events.record(events)
 
         # Read back the full rhizome with nodes
         updated_rhizome = await self._projector.get_rhizome(rhizome_id)
@@ -258,17 +242,7 @@ class RhizomeService:
 
         now = datetime.now(UTC)
         payload = RhizomeArchivedPayload(reason=reason)
-        event = EventEnvelope(
-            event_id=str(uuid4()),
-            rhizome_id=rhizome_id,
-            timestamp=now,
-            device_id="local",
-            event_type="RhizomeArchived",
-            payload=payload.model_dump(),
-        )
-
-        await self._store.append(event)
-        await self._projector.project([event])
+        await self._events.emit(rhizome_id, "RhizomeArchived", payload, timestamp=now)
 
         updated = await self._projector.get_rhizome(rhizome_id)
         assert updated is not None
@@ -283,17 +257,7 @@ class RhizomeService:
 
         now = datetime.now(UTC)
         payload = RhizomeUnarchivedPayload()
-        event = EventEnvelope(
-            event_id=str(uuid4()),
-            rhizome_id=rhizome_id,
-            timestamp=now,
-            device_id="local",
-            event_type="RhizomeUnarchived",
-            payload=payload.model_dump(),
-        )
-
-        await self._store.append(event)
-        await self._projector.project([event])
+        await self._events.emit(rhizome_id, "RhizomeUnarchived", payload, timestamp=now)
 
         updated = await self._projector.get_rhizome(rhizome_id)
         assert updated is not None
@@ -326,17 +290,7 @@ class RhizomeService:
             participant_name=request.participant_name,
         )
 
-        event = EventEnvelope(
-            event_id=str(uuid4()),
-            rhizome_id=rhizome_id,
-            timestamp=now,
-            device_id="local",
-            event_type="NodeCreated",
-            payload=payload.model_dump(),
-        )
-
-        await self._store.append(event)
-        await self._projector.project([event])
+        await self._events.emit(rhizome_id, "NodeCreated", payload, timestamp=now)
 
         # Read back the projected node with sibling info
         nodes = await self._projector.get_nodes(rhizome_id)
@@ -374,17 +328,7 @@ class RhizomeService:
             original_content=node_row["content"],
             new_content=edited_content,
         )
-        event = EventEnvelope(
-            event_id=str(uuid4()),
-            rhizome_id=rhizome_id,
-            timestamp=now,
-            device_id="local",
-            event_type="NodeContentEdited",
-            payload=payload.model_dump(),
-        )
-
-        await self._store.append(event)
-        await self._projector.project([event])
+        await self._events.emit(rhizome_id, "NodeContentEdited", payload, timestamp=now)
 
         # Read back with sibling info
         nodes = await self._projector.get_nodes(rhizome_id)
@@ -497,17 +441,7 @@ class RhizomeService:
             value=request.value,
             notes=request.notes,
         )
-        event = EventEnvelope(
-            event_id=str(uuid4()),
-            rhizome_id=rhizome_id,
-            timestamp=now,
-            device_id="local",
-            event_type="AnnotationAdded",
-            payload=payload.model_dump(),
-        )
-
-        await self._store.append(event)
-        await self._projector.project([event])
+        await self._events.emit(rhizome_id, "AnnotationAdded", payload, timestamp=now)
 
         row = await self._db.fetchone(
             "SELECT * FROM annotations WHERE annotation_id = ?",
@@ -532,17 +466,7 @@ class RhizomeService:
             annotation_id=annotation_id,
             reason=reason,
         )
-        event = EventEnvelope(
-            event_id=str(uuid4()),
-            rhizome_id=rhizome_id,
-            timestamp=now,
-            device_id="local",
-            event_type="AnnotationRemoved",
-            payload=payload.model_dump(),
-        )
-
-        await self._store.append(event)
-        await self._projector.project([event])
+        await self._events.emit(rhizome_id, "AnnotationRemoved", payload, timestamp=now)
 
     async def get_node_annotations(
         self, rhizome_id: str, node_id: str,
@@ -598,17 +522,7 @@ class RhizomeService:
             node_id=node_id,
             content=request.content,
         )
-        event = EventEnvelope(
-            event_id=str(uuid4()),
-            rhizome_id=rhizome_id,
-            timestamp=now,
-            device_id="local",
-            event_type="NoteAdded",
-            payload=payload.model_dump(),
-        )
-
-        await self._store.append(event)
-        await self._projector.project([event])
+        await self._events.emit(rhizome_id, "NoteAdded", payload, timestamp=now)
 
         row = await self._db.fetchone(
             "SELECT * FROM notes WHERE note_id = ?",
@@ -630,17 +544,7 @@ class RhizomeService:
 
         now = datetime.now(UTC)
         payload = NoteRemovedPayload(note_id=note_id)
-        event = EventEnvelope(
-            event_id=str(uuid4()),
-            rhizome_id=rhizome_id,
-            timestamp=now,
-            device_id="local",
-            event_type="NoteRemoved",
-            payload=payload.model_dump(),
-        )
-
-        await self._store.append(event)
-        await self._projector.project([event])
+        await self._events.emit(rhizome_id, "NoteRemoved", payload, timestamp=now)
 
     async def get_node_notes(
         self, rhizome_id: str, node_id: str,
@@ -702,17 +606,7 @@ class RhizomeService:
             label=request.label,
             notes=request.notes,
         )
-        event = EventEnvelope(
-            event_id=str(uuid4()),
-            rhizome_id=rhizome_id,
-            timestamp=now,
-            device_id="local",
-            event_type="BookmarkCreated",
-            payload=payload.model_dump(),
-        )
-
-        await self._store.append(event)
-        await self._projector.project([event])
+        await self._events.emit(rhizome_id, "BookmarkCreated", payload, timestamp=now)
 
         row = await self._db.fetchone(
             "SELECT * FROM bookmarks WHERE bookmark_id = ?",
@@ -734,17 +628,7 @@ class RhizomeService:
 
         now = datetime.now(UTC)
         payload = BookmarkRemovedPayload(bookmark_id=bookmark_id)
-        event = EventEnvelope(
-            event_id=str(uuid4()),
-            rhizome_id=rhizome_id,
-            timestamp=now,
-            device_id="local",
-            event_type="BookmarkRemoved",
-            payload=payload.model_dump(),
-        )
-
-        await self._store.append(event)
-        await self._projector.project([event])
+        await self._events.emit(rhizome_id, "BookmarkRemoved", payload, timestamp=now)
 
     async def get_rhizome_bookmarks(
         self, rhizome_id: str, query: str | None = None,
@@ -885,17 +769,7 @@ class RhizomeService:
             model=model_used,
             summarized_node_ids=summarized_node_ids,
         )
-        event = EventEnvelope(
-            event_id=str(uuid4()),
-            rhizome_id=rhizome_id,
-            timestamp=now,
-            device_id="local",
-            event_type="BookmarkSummaryGenerated",
-            payload=payload.model_dump(),
-        )
-
-        await self._store.append(event)
-        await self._projector.project([event])
+        await self._events.emit(rhizome_id, "BookmarkSummaryGenerated", payload, timestamp=now)
 
         updated_row = await self._db.fetchone(
             "SELECT * FROM bookmarks WHERE bookmark_id = ?",
@@ -983,16 +857,13 @@ class RhizomeService:
             summary_type=req.summary_type,
             prompt_used=req.custom_prompt if req.summary_type == "custom" else None,
         )
-        event = EventEnvelope(
-            event_id=str(uuid4()),
-            rhizome_id=rhizome_id,
+        await self._events.emit(
+            rhizome_id,
+            "SummaryGenerated",
+            payload,
             timestamp=now,
             device_id="summary",
-            event_type="SummaryGenerated",
-            payload=payload.model_dump(),
         )
-        await self._store.append(event)
-        await self._projector.project([event])
 
         return self._summary_from_row(
             await self._db.fetchone(
@@ -1018,16 +889,7 @@ class RhizomeService:
             raise SummaryNotFoundError(summary_id)
 
         payload = SummaryRemovedPayload(summary_id=summary_id)
-        event = EventEnvelope(
-            event_id=str(uuid4()),
-            rhizome_id=rhizome_id,
-            timestamp=datetime.now(UTC),
-            device_id="local",
-            event_type="SummaryRemoved",
-            payload=payload.model_dump(),
-        )
-        await self._store.append(event)
-        await self._projector.project([event])
+        await self._events.emit(rhizome_id, "SummaryRemoved", payload)
 
     @staticmethod
     def _summary_from_row(row) -> SummaryResponse:
@@ -1099,17 +961,7 @@ class RhizomeService:
             scope_node_id=request.scope_node_id,
             reason=request.reason,
         )
-        event = EventEnvelope(
-            event_id=str(uuid4()),
-            rhizome_id=rhizome_id,
-            timestamp=now,
-            device_id="local",
-            event_type="NodeContextExcluded",
-            payload=payload.model_dump(),
-        )
-
-        await self._store.append(event)
-        await self._projector.project([event])
+        await self._events.emit(rhizome_id, "NodeContextExcluded", payload, timestamp=now)
 
         return NodeExclusionResponse(
             rhizome_id=rhizome_id,
@@ -1128,17 +980,7 @@ class RhizomeService:
             node_id=node_id,
             scope_node_id=scope_node_id,
         )
-        event = EventEnvelope(
-            event_id=str(uuid4()),
-            rhizome_id=rhizome_id,
-            timestamp=now,
-            device_id="local",
-            event_type="NodeContextIncluded",
-            payload=payload.model_dump(),
-        )
-
-        await self._store.append(event)
-        await self._projector.project([event])
+        await self._events.emit(rhizome_id, "NodeContextIncluded", payload, timestamp=now)
 
     async def get_rhizome_exclusions(
         self, rhizome_id: str,
@@ -1182,30 +1024,12 @@ class RhizomeService:
         if row is not None:
             # Unanchor
             payload = NodeUnanchoredPayload(node_id=node_id)
-            event = EventEnvelope(
-                event_id=str(uuid4()),
-                rhizome_id=rhizome_id,
-                timestamp=now,
-                device_id="local",
-                event_type="NodeUnanchored",
-                payload=payload.model_dump(),
-            )
-            await self._store.append(event)
-            await self._projector.project([event])
+            await self._events.emit(rhizome_id, "NodeUnanchored", payload, timestamp=now)
             return False
         else:
             # Anchor
             payload = NodeAnchoredPayload(node_id=node_id)
-            event = EventEnvelope(
-                event_id=str(uuid4()),
-                rhizome_id=rhizome_id,
-                timestamp=now,
-                device_id="local",
-                event_type="NodeAnchored",
-                payload=payload.model_dump(),
-            )
-            await self._store.append(event)
-            await self._projector.project([event])
+            await self._events.emit(rhizome_id, "NodeAnchored", payload, timestamp=now)
             return True
 
     async def bulk_anchor(
@@ -1234,30 +1058,16 @@ class RhizomeService:
                 continue
             is_anchored = nid in currently_anchored
             if anchor and not is_anchored:
-                payload = NodeAnchoredPayload(node_id=nid)
-                events.append(EventEnvelope(
-                    event_id=str(uuid4()),
-                    rhizome_id=rhizome_id,
-                    timestamp=now,
-                    device_id="local",
-                    event_type="NodeAnchored",
-                    payload=payload.model_dump(),
+                events.append(EventLog.envelope(
+                    rhizome_id, "NodeAnchored", NodeAnchoredPayload(node_id=nid), timestamp=now,
                 ))
             elif not anchor and is_anchored:
-                payload = NodeUnanchoredPayload(node_id=nid)
-                events.append(EventEnvelope(
-                    event_id=str(uuid4()),
-                    rhizome_id=rhizome_id,
-                    timestamp=now,
-                    device_id="local",
-                    event_type="NodeUnanchored",
-                    payload=payload.model_dump(),
+                events.append(EventLog.envelope(
+                    rhizome_id, "NodeUnanchored", NodeUnanchoredPayload(node_id=nid), timestamp=now,
                 ))
 
-        for event in events:
-            await self._store.append(event)
         if events:
-            await self._projector.project(events)
+            await self._events.record(events)
 
         return len(events)
 
@@ -1297,17 +1107,7 @@ class RhizomeService:
             label=request.label,
             excluded_by_default=request.excluded_by_default,
         )
-        event = EventEnvelope(
-            event_id=str(uuid4()),
-            rhizome_id=rhizome_id,
-            timestamp=now,
-            device_id="local",
-            event_type="DigressionGroupCreated",
-            payload=payload.model_dump(),
-        )
-
-        await self._store.append(event)
-        await self._projector.project([event])
+        await self._events.emit(rhizome_id, "DigressionGroupCreated", payload, timestamp=now)
 
         return DigressionGroupResponse(
             group_id=group_id,
@@ -1351,17 +1151,7 @@ class RhizomeService:
             group_id=group_id,
             included=included,
         )
-        event = EventEnvelope(
-            event_id=str(uuid4()),
-            rhizome_id=rhizome_id,
-            timestamp=now,
-            device_id="local",
-            event_type="DigressionGroupToggled",
-            payload=payload.model_dump(),
-        )
-
-        await self._store.append(event)
-        await self._projector.project([event])
+        await self._events.emit(rhizome_id, "DigressionGroupToggled", payload, timestamp=now)
 
         # Read back with member nodes
         groups = await self._projector.get_digression_groups(rhizome_id)
@@ -1402,16 +1192,7 @@ class RhizomeService:
             raise PerturbationReportNotFoundError(report_id)
 
         payload = PerturbationReportRemovedPayload(report_id=report_id)
-        event = EventEnvelope(
-            event_id=str(uuid4()),
-            rhizome_id=rhizome_id,
-            timestamp=datetime.now(UTC),
-            device_id="local",
-            event_type="PerturbationReportRemoved",
-            payload=payload.model_dump(),
-        )
-        await self._store.append(event)
-        await self._projector.project([event])
+        await self._events.emit(rhizome_id, "PerturbationReportRemoved", payload)
 
     @staticmethod
     def _perturbation_report_from_row(row: dict) -> PerturbationReportResponse:
@@ -1445,16 +1226,11 @@ class RhizomeService:
         if row is None:
             raise DigressionGroupNotFoundError(group_id)
 
-        event = EventEnvelope(
-            event_id=str(uuid4()),
-            rhizome_id=rhizome_id,
-            timestamp=datetime.now(UTC),
-            device_id="local",
-            event_type="DigressionGroupDeleted",
-            payload=DigressionGroupDeletedPayload(group_id=group_id).model_dump(),
+        await self._events.emit(
+            rhizome_id,
+            "DigressionGroupDeleted",
+            DigressionGroupDeletedPayload(group_id=group_id),
         )
-        await self._store.append(event)
-        await self._projector.project([event])
 
     @staticmethod
     def _bookmark_from_row(row: dict) -> BookmarkResponse:

@@ -8,7 +8,6 @@ from uuid import uuid4
 
 from qivis.importer.models import ImportedNode, ImportedTree
 
-
 # ShareGPT role mapping
 _SHAREGPT_ROLES = {
     "human": "user",

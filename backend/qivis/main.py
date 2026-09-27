@@ -13,29 +13,34 @@ from fastapi.middleware.cors import CORSMiddleware
 from qivis.db.connection import Database
 from qivis.events.projector import StateProjector
 from qivis.events.store import EventStore
-from qivis.generation.perturbation import PerturbationService
-from qivis.generation.replay import ReplayService
-from qivis.generation.service import GenerationService
-from qivis.providers.anthropic import AnthropicProvider
-from qivis.providers.openai import OpenAIProvider
-from qivis.providers.openrouter import OpenRouterProvider
-from qivis.model_catalog import ModelCatalog, get_catalog, set_catalog
-from qivis.providers.registry import clear_providers, get_all_providers, register_provider
 from qivis.export.router import get_export_service
 from qivis.export.router import router as export_router
 from qivis.export.service import ExportService
+from qivis.generation.perturbation import PerturbationService
+from qivis.generation.replay import ReplayService
+from qivis.generation.service import GenerationService
 from qivis.importer.merge import MergeService
 from qivis.importer.merge_router import get_merge_service
 from qivis.importer.merge_router import router as merge_router
 from qivis.importer.router import get_import_service
 from qivis.importer.router import router as import_router
 from qivis.importer.service import ImportService
+from qivis.model_catalog import ModelCatalog, get_catalog, set_catalog
+from qivis.providers.anthropic import AnthropicProvider
+from qivis.providers.openai import OpenAIProvider
+from qivis.providers.openrouter import OpenRouterProvider
+from qivis.providers.registry import clear_providers, get_all_providers, register_provider
+from qivis.rhizomes.router import (
+    get_generation_service,
+    get_perturbation_service,
+    get_replay_service,
+    get_rhizome_service,
+)
+from qivis.rhizomes.router import router as rhizomes_router
+from qivis.rhizomes.service import RhizomeService
 from qivis.search.router import get_search_service
 from qivis.search.router import router as search_router
 from qivis.search.service import SearchService
-from qivis.rhizomes.router import get_generation_service, get_perturbation_service, get_replay_service, get_rhizome_service
-from qivis.rhizomes.router import router as rhizomes_router
-from qivis.rhizomes.service import RhizomeService
 
 
 @asynccontextmanager

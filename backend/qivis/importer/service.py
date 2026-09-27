@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 from qivis.db.connection import Database
+from qivis.events.log import EventLog
 from qivis.events.projector import StateProjector
 from qivis.events.store import EventStore
 from qivis.importer.models import ImportedNode, ImportedTree
@@ -17,11 +18,10 @@ from qivis.importer.parsers.openrouter import parse_openrouter
 from qivis.importer.schemas import (
     ConversationPreview,
     ImportPreviewResponse,
-    ImportResponse,
     ImportResult,
     MessagePreview,
 )
-from qivis.models import EventEnvelope, NodeCreatedPayload, RhizomeCreatedPayload
+from qivis.models import NodeCreatedPayload, RhizomeCreatedPayload
 
 
 class ImportService:
@@ -31,6 +31,7 @@ class ImportService:
         self._db = db
         self._store = store
         self._projector = projector
+        self._events = EventLog(store, projector)
 
     # ------------------------------------------------------------------
     # Public API
@@ -190,16 +191,11 @@ class ImportService:
                 "import_warnings": imported.warnings,
             },
         )
-        rhizome_event = EventEnvelope(
-            event_id=str(uuid4()),
-            rhizome_id=rhizome_id,
-            timestamp=rhizome_timestamp,
-            device_id="import",
-            event_type="RhizomeCreated",
-            payload=rhizome_payload.model_dump(),
-        )
-        await self._store.append(rhizome_event)
-        await self._projector.project([rhizome_event])
+        # All of it lands together, or none of it (no half-imported rhizomes)
+        events = [EventLog.envelope(
+            rhizome_id, "RhizomeCreated", rhizome_payload,
+            timestamp=rhizome_timestamp, device_id="import",
+        )]
 
         # 2. Topological sort + emit NodeCreated events
         sorted_nodes = self._topological_sort(imported)
@@ -231,16 +227,12 @@ class ImportService:
                 system_prompt=node.metadata.get("system_prompt"),
                 mode="chat",
             )
-            node_event = EventEnvelope(
-                event_id=str(uuid4()),
-                rhizome_id=rhizome_id,
-                timestamp=node_timestamp,
-                device_id="import",
-                event_type="NodeCreated",
-                payload=node_payload.model_dump(),
-            )
-            await self._store.append(node_event)
-            await self._projector.project([node_event])
+            events.append(EventLog.envelope(
+                rhizome_id, "NodeCreated", node_payload,
+                timestamp=node_timestamp, device_id="import",
+            ))
+
+        await self._events.record(events)
 
         return ImportResult(
             rhizome_id=rhizome_id,

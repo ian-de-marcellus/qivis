@@ -8,7 +8,7 @@ the default model.
 """
 
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import datetime
 
 from qivis.importer.models import ImportedNode, ImportedTree
 

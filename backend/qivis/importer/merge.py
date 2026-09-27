@@ -8,13 +8,13 @@ from uuid import uuid4
 from pydantic import BaseModel
 
 from qivis.db.connection import Database
+from qivis.events.log import EventLog
 from qivis.events.projector import StateProjector
 from qivis.events.store import EventStore
 from qivis.importer.models import ImportedNode, ImportedTree
 from qivis.importer.parsers.detection import ImportFormatError
 from qivis.importer.service import ImportService
-from qivis.models import EventEnvelope, NodeCreatedPayload
-
+from qivis.models import NodeCreatedPayload
 
 # ---------------------------------------------------------------------------
 # Schemas
@@ -135,6 +135,7 @@ class MergeService:
         self._db = db
         self._store = store
         self._projector = projector
+        self._events = EventLog(store, projector)
 
     async def preview_merge(
         self, rhizome_id: str, content: bytes, filename: str
@@ -258,6 +259,7 @@ class MergeService:
         # Create new nodes — map temp IDs to real IDs
         temp_to_real: dict[str, str] = {}
         node_ids: list[str] = []
+        events = []
 
         for node in plan.new_nodes:
             real_id = str(uuid4())
@@ -289,16 +291,12 @@ class MergeService:
                 system_prompt=node.metadata.get("system_prompt"),
                 mode="chat",
             )
-            node_event = EventEnvelope(
-                event_id=str(uuid4()),
-                rhizome_id=rhizome_id,
-                timestamp=node_timestamp,
-                device_id="merge",
-                event_type="NodeCreated",
-                payload=node_payload.model_dump(),
-            )
-            await self._store.append(node_event)
-            await self._projector.project([node_event])
+            events.append(EventLog.envelope(
+                rhizome_id, "NodeCreated", node_payload,
+                timestamp=node_timestamp, device_id="merge",
+            ))
+
+        await self._events.record(events)
 
         return MergeResult(
             created_count=len(node_ids),

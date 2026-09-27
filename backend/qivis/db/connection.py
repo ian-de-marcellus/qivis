@@ -1,5 +1,9 @@
 """Async SQLite connection wrapper with WAL mode and schema initialization."""
 
+import asyncio
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 import aiosqlite
 
 from qivis.db.schema import INDEX_SQL, TABLES_SQL, run_migrations
@@ -10,6 +14,10 @@ class Database:
 
     def __init__(self, connection: aiosqlite.Connection) -> None:
         self._conn = connection
+        # One connection is shared by every request, so writes take turns: a
+        # commit from one coroutine must never land inside another's transaction.
+        self._write_lock = asyncio.Lock()
+        self._tx_owner: asyncio.Task | None = None
 
     @classmethod
     async def connect(cls, path: str = "qivis.db") -> Database:
@@ -54,10 +62,33 @@ class Database:
         await self._conn.commit()
 
     async def execute(self, sql: str, params: tuple | None = None) -> aiosqlite.Cursor:
-        """Execute a single SQL statement."""
-        cursor = await self._conn.execute(sql, params or ())
-        await self._conn.commit()
-        return cursor
+        """Execute a single SQL statement (committed now, or with the enclosing transaction)."""
+        if self._in_transaction():
+            return await self._conn.execute(sql, params or ())
+        async with self._write_lock:
+            cursor = await self._conn.execute(sql, params or ())
+            await self._conn.commit()
+            return cursor
+
+    @asynccontextmanager
+    async def transaction(self) -> AsyncIterator[None]:
+        """Commit every write inside the block together, or none of them."""
+        if self._in_transaction():
+            yield  # nested: the outer block commits
+            return
+        async with self._write_lock:
+            self._tx_owner = asyncio.current_task()
+            try:
+                yield
+                await self._conn.commit()
+            except BaseException:
+                await self._conn.rollback()
+                raise
+            finally:
+                self._tx_owner = None
+
+    def _in_transaction(self) -> bool:
+        return self._tx_owner is not None and self._tx_owner is asyncio.current_task()
 
     async def fetchone(self, sql: str, params: tuple | None = None) -> aiosqlite.Row | None:
         """Execute and return a single row."""

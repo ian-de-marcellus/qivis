@@ -12,6 +12,10 @@ class EventStore:
     def __init__(self, db: Database) -> None:
         self._db = db
 
+    @property
+    def db(self) -> Database:
+        return self._db
+
     async def append(self, envelope: EventEnvelope) -> int:
         """Append an event and return the assigned sequence_num.
 

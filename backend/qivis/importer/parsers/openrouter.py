@@ -12,7 +12,7 @@ chain by sorting chronologically and linking each user message to the previous
 assistant message.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime
 
 from qivis.importer.models import ImportedNode, ImportedTree
 

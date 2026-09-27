@@ -2,9 +2,9 @@
 
 import asyncio
 from collections.abc import AsyncIterator
-from datetime import UTC, datetime
 from uuid import uuid4
 
+from qivis.events.log import EventLog
 from qivis.events.projector import StateProjector
 from qivis.events.store import EventStore
 from qivis.generation.context import ContextBuilder, resolve_context_limit
@@ -19,7 +19,6 @@ from qivis.generation.tokens import ApproximateTokenCounter
 from qivis.model_catalog import get_catalog
 from qivis.models import (
     ContextUsage,
-    EventEnvelope,
     EvictionReport,
     EvictionStrategy,
     GenerationStartedPayload,
@@ -92,6 +91,7 @@ class GenerationService:
         self._rhizome_service = rhizome_service
         self._store = store
         self._projector = projector
+        self._events = EventLog(store, projector)
         self._context_builder = ContextBuilder()
 
     async def generate(
@@ -1022,16 +1022,7 @@ class GenerationService:
             mode=mode,
             prefill_content=prefill_content,
         )
-        event = EventEnvelope(
-            event_id=str(uuid4()),
-            rhizome_id=rhizome_id,
-            timestamp=datetime.now(UTC),
-            device_id="local",
-            event_type="GenerationStarted",
-            payload=payload.model_dump(),
-        )
-        await self._store.append(event)
-        await self._projector.project([event])
+        await self._events.emit(rhizome_id, "GenerationStarted", payload)
 
     async def _emit_node_created(
         self,
@@ -1082,16 +1073,7 @@ class GenerationService:
             context_usage=context_usage,
             raw_response=result.raw_response,
         )
-        event = EventEnvelope(
-            event_id=str(uuid4()),
-            rhizome_id=rhizome_id,
-            timestamp=datetime.now(UTC),
-            device_id="local",
-            event_type="NodeCreated",
-            payload=payload.model_dump(),
-        )
-        await self._store.append(event)
-        await self._projector.project([event])
+        await self._events.emit(rhizome_id, "NodeCreated", payload)
 
         # Read back the projected node with sibling info
         nodes = await self._projector.get_nodes(rhizome_id)

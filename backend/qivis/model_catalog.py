@@ -32,7 +32,7 @@ class ModelCatalog:
         }
 
     @classmethod
-    def load(cls, path: Path | None = None) -> "ModelCatalog":
+    def load(cls, path: Path | None = None) -> ModelCatalog:
         path = path or Path(os.environ.get("QIVIS_MODEL_DEFAULTS", DEFAULT_PATH))
         return cls(json.loads(path.read_text()) if path.exists() else {})
 
