@@ -100,6 +100,16 @@ uv run python -m qivis.guest.cli add "Alice"          # prints Alice's invite li
 uv run python -m qivis.guest.cli revoke "Alice"       # takes effect immediately
 ```
 
+To run a local model only while someone is using it, put the on-demand
+supervisor where Qivis expects llama.cpp. It starts `llama-server` on the first
+request, passes everything through (streaming included), and stops it after
+`--idle` seconds of silence; starting Qivis doesn't wake it:
+
+```bash
+uv run python -m qivis.tools.llama_supervisor --model ~/Models/your-model.gguf \
+    --port 8080 --idle 3600 -- -ngl 99 -c 8192
+```
+
 Models guests can pick are listed in `guest_config.json` (`models`); per-model
 settings such as logit biases come from `model_defaults.json` as usual. The
 machine must be awake with Qivis and the model servers running.

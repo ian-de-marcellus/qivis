@@ -373,10 +373,15 @@ class TestLlamaCppExtraStops:
 
         client.post = AsyncMock(side_effect=mock_post)
 
+        client.stream = MagicMock(side_effect=lambda *a, **kw: MockStreamResponse(
+            ['data: {"content": "", "stop": true}']))
+
         provider = LlamaCppProvider(http_client=client)
         models = await provider.discover_models()
-
         assert models == ["test.gguf"]
+        assert provider._extra_stops == []  # discovery no longer probes (keeps servers asleep)
+
+        await provider.generate(_make_request())  # the first generation probes
         # All 3 garbled byte forms should be extra stops
         assert len(provider._extra_stops) == 3
 
@@ -417,8 +422,12 @@ class TestLlamaCppExtraStops:
 
         client.post = AsyncMock(side_effect=mock_post)
 
+        client.stream = MagicMock(side_effect=lambda *a, **kw: MockStreamResponse(
+            ['data: {"content": "", "stop": true}']))
+
         provider = LlamaCppProvider(http_client=client)
         await provider.discover_models()
+        await provider.generate(_make_request())  # the first generation probes
 
         # No extra stops needed — text forms match
         assert provider._extra_stops == []

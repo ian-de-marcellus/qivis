@@ -1,0 +1,245 @@
+"""On-demand llama.cpp server: start the model when someone talks to it,
+stop it after a stretch of silence.
+
+Sits on the port Qivis already uses for llama.cpp (LLAMACPP_BASE_URL) and
+proxies to a real llama-server it launches on a private port. Nothing in
+Qivis needs to change:
+
+- The first real request (e.g. /completion) starts llama-server and waits
+  for it to finish loading; the request is then passed through, streaming
+  included.
+- After `--idle` seconds with no requests in flight, llama-server is
+  stopped, freeing its memory. The next request starts it again.
+- /props is answered from memory while the model sleeps (the last real
+  /props, or a minimal one naming the model file), so Qivis starting up
+  or listing models doesn't wake it. /health reports the supervisor as up.
+
+    uv run python -m qivis.tools.llama_supervisor \\
+        --model ~/Models/Sun-v1.0.1-8B.Q4_K_M.gguf --port 8080 --idle 3600 \\
+        -- -ngl 99 -c 8192
+"""
+
+import argparse
+import asyncio
+import logging
+import time
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from pathlib import Path
+
+import httpx
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse, Response, StreamingResponse
+
+logger = logging.getLogger("llama_supervisor")
+HOP_HEADERS = {"content-length", "transfer-encoding", "connection", "keep-alive", "host"}
+
+
+class Supervisor:
+    def __init__(
+        self,
+        model: Path,
+        backend_port: int,
+        idle_seconds: float,
+        llama_cmd: list[str],
+        extra_args: list[str],
+        startup_timeout: float = 300.0,
+        log_path: Path | None = None,
+    ):
+        self.model = model
+        self.backend = f"http://127.0.0.1:{backend_port}"
+        self.backend_port = backend_port
+        self.idle_seconds = idle_seconds
+        self.llama_cmd = llama_cmd
+        self.extra_args = extra_args
+        self.startup_timeout = startup_timeout
+        self.log_path = log_path
+        self.proc: asyncio.subprocess.Process | None = None
+        self.in_flight = 0
+        self.last_activity = time.monotonic()
+        self.cached_props: dict | None = None
+        self._lock = asyncio.Lock()
+        self.client = httpx.AsyncClient(timeout=httpx.Timeout(600, connect=5))
+
+    @property
+    def running(self) -> bool:
+        return self.proc is not None and self.proc.returncode is None
+
+    def placeholder_props(self) -> dict:
+        return {
+            "model_alias": self.model.name,
+            "model_path": str(self.model),
+            "default_generation_settings": {},
+            "supervisor": "sleeping",
+        }
+
+    async def ensure_running(self) -> None:
+        async with self._lock:
+            if self.running:
+                return
+            logger.info("waking: starting llama-server for %s", self.model.name)
+            log = open(self.log_path, "ab") if self.log_path else asyncio.subprocess.DEVNULL
+            self.proc = await asyncio.create_subprocess_exec(
+                *self.llama_cmd,
+                "-m",
+                str(self.model),
+                "--host",
+                "127.0.0.1",
+                "--port",
+                str(self.backend_port),
+                *self.extra_args,
+                stdout=log,
+                stderr=log,
+            )
+            deadline = time.monotonic() + self.startup_timeout
+            while time.monotonic() < deadline:
+                if self.proc.returncode is not None:
+                    raise RuntimeError(f"llama-server exited with {self.proc.returncode}")
+                try:
+                    r = await self.client.get(f"{self.backend}/health", timeout=2)
+                    if r.status_code == 200:
+                        logger.info("llama-server ready")
+                        return
+                except httpx.HTTPError:
+                    pass
+                await asyncio.sleep(0.5)
+            await self.stop()
+            raise RuntimeError("llama-server did not become ready in time")
+
+    async def stop(self) -> None:
+        if self.proc is None:
+            return
+        if self.proc.returncode is None:
+            logger.info(
+                "sleeping: stopping llama-server after %.0fs idle",
+                time.monotonic() - self.last_activity,
+            )
+            self.proc.terminate()
+            try:
+                await asyncio.wait_for(self.proc.wait(), timeout=15)
+            except TimeoutError:
+                self.proc.kill()
+                await self.proc.wait()
+        self.proc = None
+
+    async def maybe_sleep(self) -> bool:
+        """Stop the model if it has been idle long enough. Returns True if stopped."""
+        if (
+            self.running
+            and self.in_flight == 0
+            and time.monotonic() - self.last_activity > self.idle_seconds
+        ):
+            async with self._lock:
+                if self.in_flight == 0 and self.running:
+                    await self.stop()
+                    return True
+        return False
+
+    async def idle_watch(self, interval: float = 30.0) -> None:
+        while True:
+            await asyncio.sleep(interval)
+            await self.maybe_sleep()
+
+
+def create_app(sup: Supervisor, idle_check_interval: float = 30.0) -> FastAPI:
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        watch = asyncio.create_task(sup.idle_watch(idle_check_interval))
+        yield
+        watch.cancel()
+        await sup.stop()
+
+    app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
+
+    @app.get("/supervisor/status")
+    async def status():
+        return {
+            "running": sup.running,
+            "in_flight": sup.in_flight,
+            "idle_for": round(time.monotonic() - sup.last_activity, 1),
+            "idle_limit": sup.idle_seconds,
+            "model": sup.model.name,
+        }
+
+    @app.get("/health")
+    async def health():
+        return {"status": "ok", "model": "running" if sup.running else "sleeping"}
+
+    @app.get("/props")
+    async def props():
+        if not sup.running:
+            return JSONResponse(sup.cached_props or sup.placeholder_props())
+        r = await sup.client.get(f"{sup.backend}/props")
+        if r.status_code == 200:
+            sup.cached_props = r.json()
+        return Response(r.content, status_code=r.status_code, media_type="application/json")
+
+    @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
+    async def proxy(path: str, request: Request):
+        sup.in_flight += 1
+        sup.last_activity = time.monotonic()
+        try:
+            await sup.ensure_running()
+            headers = {k: v for k, v in request.headers.items() if k.lower() not in HOP_HEADERS}
+            upstream = sup.client.build_request(
+                request.method,
+                f"{sup.backend}/{path}",
+                params=request.query_params,
+                headers=headers,
+                content=await request.body(),
+            )
+            resp = await sup.client.send(upstream, stream=True)
+        except Exception as e:
+            sup.in_flight -= 1
+            sup.last_activity = time.monotonic()
+            logger.exception("proxy failed")
+            return JSONResponse(
+                {"error": {"code": 503, "message": f"model server unavailable: {e}"}},
+                status_code=503,
+            )
+
+        async def body() -> AsyncIterator[bytes]:
+            try:
+                async for chunk in resp.aiter_raw():
+                    yield chunk
+            finally:
+                await resp.aclose()
+                sup.in_flight -= 1
+                sup.last_activity = time.monotonic()
+
+        out_headers = {k: v for k, v in resp.headers.items() if k.lower() not in HOP_HEADERS}
+        return StreamingResponse(body(), status_code=resp.status_code, headers=out_headers)
+
+    return app
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument("--model", required=True, type=Path)
+    parser.add_argument("--port", type=int, default=8080, help="port Qivis talks to")
+    parser.add_argument("--backend-port", type=int, default=8181, help="private llama-server port")
+    parser.add_argument(
+        "--idle", type=float, default=3600, help="seconds of silence before sleeping"
+    )
+    parser.add_argument("--llama-server", default="llama-server", help="llama-server binary")
+    parser.add_argument("--log", type=Path, default=None, help="append llama-server output here")
+    parser.add_argument("llama_args", nargs="*", help="extra llama-server args (after --)")
+    args = parser.parse_args()
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
+    sup = Supervisor(
+        model=args.model.expanduser(),
+        backend_port=args.backend_port,
+        idle_seconds=args.idle,
+        llama_cmd=[args.llama_server],
+        extra_args=args.llama_args,
+        log_path=args.log,
+    )
+    import uvicorn
+
+    uvicorn.run(create_app(sup), host="127.0.0.1", port=args.port, log_level="warning")
+
+
+if __name__ == "__main__":
+    main()

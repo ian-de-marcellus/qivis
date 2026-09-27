@@ -118,6 +118,9 @@ class LlamaCppProvider(LLMProvider):
         self._extra_stops: list[str] = []
         # Whether the server prepends BOS to string prompts; probed once
         self._adds_bos: bool | None = None
+        # Special-token byte forms are probed on first generation, not at
+        # discovery, so starting Qivis never wakes an on-demand model server
+        self._probed_stops = False
 
     @property
     def name(self) -> str:
@@ -308,6 +311,9 @@ class LlamaCppProvider(LLMProvider):
         self, request: GenerationRequest
     ) -> AsyncIterator[StreamChunk]:
         """Stream a completion; report any logit_bias applied beyond the reserved range."""
+        if not self._probed_stops:
+            self._probed_stops = True
+            await self._probe_special_token_stops()
         served = await self._served_model() if self._model_defaults else None
         applied = self._effective_logit_bias(request, served)
         body = self._build_request_body(request, applied)
@@ -538,9 +544,6 @@ class LlamaCppProvider(LLMProvider):
                 data.get("model_alias")
                 or data.get("default_generation_settings", {}).get("model")
             )
-
-            # Probe special token byte representations for stop matching
-            await self._probe_special_token_stops()
 
             return [model] if model else []
         except Exception:

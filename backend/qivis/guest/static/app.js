@@ -112,7 +112,14 @@ function pick(node, siblingId) {
 
 async function stream(res) {
   let live = null;
+  // If the model was asleep, the first words can take a few seconds.
+  const waking = el("p", "waking", `${state.model} is waking up… the first reply can take a few seconds.`);
+  const wakeTimer = setTimeout(() => {
+    $("messages").appendChild(waking);
+    $("messages").scrollTop = $("messages").scrollHeight;
+  }, 2500);
   await readSSE(res, (ev, data) => {
+    if (ev !== "user") { clearTimeout(wakeTimer); waking.remove(); }
     if (ev === "user") {
       state.nodes.push(data); render();
     } else if (ev === "delta") {
@@ -131,6 +138,7 @@ async function stream(res) {
       $("messages").appendChild(el("p", "error", data.message));
     }
   });
+  clearTimeout(wakeTimer); waking.remove();
 }
 
 async function send(e) {

@@ -72,6 +72,7 @@ header h1 { font-size: 1.1rem; font-weight: normal; margin: 0; flex: 1; }
 .tools button { font-size: 0.75rem; padding: 0.15rem 0.5rem; }
 .pager button { background: none; border: none; padding: 0 0.3rem; }
 .empty { color: var(--ink-soft); text-align: center; margin-top: 20vh; font-style: italic; }
+.waking { max-width: 42rem; margin: 0 auto; color: var(--ink-soft); font-style: italic; }
 .error { color: var(--accent); font-family: var(--sans); font-size: 0.85rem; }
 
 /* certainty heatmap */
