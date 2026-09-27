@@ -1,5 +1,6 @@
 /** Typed API client for Qivis backend. */
 
+import { postSSE, sseError, type SSEMessage } from './sse.ts'
 import type {
   AddAnnotationRequest,
   ModelEntry,
@@ -37,7 +38,16 @@ import type {
   RhizomeSummary,
 } from './types.ts'
 
-type SSEParsed = Record<string, unknown>
+/** Which completion an event in a fan-out stream (n>1, cross-model) belongs to */
+function completionIndex({ data }: SSEMessage): number | undefined {
+  return typeof data.completion_index === 'number' ? data.completion_index : undefined
+}
+
+/** A fan-out stream ends with generation_complete, or an error not tied to one completion */
+function isFanOutEnd(message: SSEMessage): boolean {
+  return message.event === 'generation_complete'
+    || (message.event === 'error' && completionIndex(message) === undefined)
+}
 
 const BASE = '/api'
 
@@ -406,81 +416,24 @@ export async function generateStream(
   onThinkingDelta?: (thinking: string) => void,
   signal?: AbortSignal,
 ): Promise<void> {
-  try {
-    const res = await fetch(`${BASE}${generatePath(rhizomeId, nodeId)}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...req, stream: true }),
-      signal,
-    })
-
-    if (!res.ok) {
-      const text = await res.text()
-      const err = new Error(`API error ${res.status}: ${text}`)
-      onError?.(err)
-      return
-    }
-
-    const reader = res.body?.getReader()
-    if (!reader) {
-      onError?.(new Error('No response body'))
-      return
-    }
-
-    const decoder = new TextDecoder()
-    let buffer = ''
-
-    let receivedComplete = false
-    let receivedError = false
-
-    try {
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        // Keep the last potentially incomplete line in the buffer
-        buffer = lines.pop() ?? ''
-
-        let currentEvent = ''
-        for (const line of lines) {
-          if (line.startsWith('event: ')) {
-            currentEvent = line.slice(7)
-          } else if (line.startsWith('data: ')) {
-            const data = line.slice(6)
-            try {
-              const parsed = JSON.parse(data) as Record<string, unknown>
-              if (currentEvent === 'thinking_delta' && typeof parsed.thinking === 'string') {
-                onThinkingDelta?.(parsed.thinking)
-              } else if (currentEvent === 'text_delta' && typeof parsed.text === 'string') {
-                onDelta(parsed.text)
-              } else if (currentEvent === 'message_stop') {
-                receivedComplete = true
-                onComplete(parsed as unknown as MessageStopEvent)
-              } else if (currentEvent === 'error') {
-                receivedError = true
-                onError?.(new Error(String(parsed.error ?? 'Unknown SSE error')))
-              }
-            } catch {
-              // Skip malformed JSON lines
-            }
-          }
-        }
+  await postSSE(
+    `${BASE}${generatePath(rhizomeId, nodeId)}`,
+    { ...req, stream: true },
+    ({ event, data }) => {
+      if (event === 'thinking_delta' && typeof data.thinking === 'string') {
+        onThinkingDelta?.(data.thinking)
+      } else if (event === 'text_delta' && typeof data.text === 'string') {
+        onDelta(data.text)
+      } else if (event === 'message_stop') {
+        onComplete(data as unknown as MessageStopEvent)
+      } else if (event === 'error') {
+        onError?.(sseError({ event, data }))
       }
-    } finally {
-      reader.releaseLock()
-    }
-
-    // If stream ended without a complete or error event, something went wrong
-    if (!receivedComplete && !receivedError) {
-      onError?.(new Error('Stream ended unexpectedly without completing'))
-    }
-  } catch (err) {
-    // User stopped generation — return silently
-    if (err instanceof DOMException && err.name === 'AbortError') return
-    throw err
-  }
+    },
+    ({ event }) => event === 'message_stop' || event === 'error',
+    onError,
+    signal,
+  )
 }
 
 // -- Generation (multi-stream n>1 via SSE) --
@@ -496,75 +449,27 @@ export async function generateMultiStream(
   onThinkingDelta?: (thinking: string, completionIndex: number) => void,
   signal?: AbortSignal,
 ): Promise<void> {
-  try {
-    const res = await fetch(`${BASE}${generatePath(rhizomeId, nodeId)}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...req, stream: true }),
-      signal,
-    })
-
-    if (!res.ok) {
-      const text = await res.text()
-      const err = new Error(`API error ${res.status}: ${text}`)
-      onError?.(err)
-      return
-    }
-
-    const reader = res.body?.getReader()
-    if (!reader) {
-      onError?.(new Error('No response body'))
-      return
-    }
-
-    const decoder = new TextDecoder()
-    let buffer = ''
-
-    try {
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop() ?? ''
-
-        let currentEvent = ''
-        for (const line of lines) {
-          if (line.startsWith('event: ')) {
-            currentEvent = line.slice(7)
-          } else if (line.startsWith('data: ')) {
-            const data = line.slice(6)
-            try {
-              const parsed = JSON.parse(data) as SSEParsed
-              if (currentEvent === 'thinking_delta' && typeof parsed.thinking === 'string') {
-                onThinkingDelta?.(parsed.thinking, parsed.completion_index as number)
-              } else if (currentEvent === 'text_delta' && typeof parsed.text === 'string') {
-                onDelta(parsed.text, parsed.completion_index as number)
-              } else if (currentEvent === 'message_stop') {
-                onStreamComplete(parsed as unknown as MessageStopEvent)
-              } else if (currentEvent === 'generation_complete') {
-                onAllComplete()
-              } else if (currentEvent === 'error') {
-                const idx = typeof parsed.completion_index === 'number'
-                  ? parsed.completion_index
-                  : undefined
-                onError?.(new Error(String(parsed.error ?? 'Unknown SSE error')), idx)
-              }
-            } catch {
-              // Skip malformed JSON lines
-            }
-          }
-        }
+  await postSSE(
+    `${BASE}${generatePath(rhizomeId, nodeId)}`,
+    { ...req, stream: true },
+    (message) => {
+      const { event, data } = message
+      if (event === 'thinking_delta' && typeof data.thinking === 'string') {
+        onThinkingDelta?.(data.thinking, data.completion_index as number)
+      } else if (event === 'text_delta' && typeof data.text === 'string') {
+        onDelta(data.text, data.completion_index as number)
+      } else if (event === 'message_stop') {
+        onStreamComplete(data as unknown as MessageStopEvent)
+      } else if (event === 'generation_complete') {
+        onAllComplete()
+      } else if (event === 'error') {
+        onError?.(sseError(message), completionIndex(message))
       }
-    } finally {
-      reader.releaseLock()
-    }
-  } catch (err) {
-    // User stopped generation — return silently
-    if (err instanceof DOMException && err.name === 'AbortError') return
-    throw err
-  }
+    },
+    isFanOutEnd,
+    onError,
+    signal,
+  )
 }
 
 // -- Replay --
@@ -589,75 +494,32 @@ export async function replayStream(
   onError?: (error: Error) => void,
   signal?: AbortSignal,
 ): Promise<void> {
-  try {
-    const res = await fetch(`${BASE}/rhizomes/${rhizomeId}/replay`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...req, stream: true }),
-      signal,
-    })
-
-    if (!res.ok) {
-      const text = await res.text()
-      onError?.(new Error(`API error ${res.status}: ${text}`))
-      return
-    }
-
-    const reader = res.body?.getReader()
-    if (!reader) {
-      onError?.(new Error('No response body'))
-      return
-    }
-
-    const decoder = new TextDecoder()
-    let buffer = ''
-
-    try {
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop() ?? ''
-
-        let currentEvent = ''
-        for (const line of lines) {
-          if (line.startsWith('event: ')) {
-            currentEvent = line.slice(7)
-          } else if (line.startsWith('data: ')) {
-            const data = line.slice(6)
-            try {
-              const parsed = JSON.parse(data) as SSEParsed
-              if (currentEvent === 'replay_step') {
-                onStep(
-                  parsed.step as number,
-                  parsed.total as number,
-                  parsed.type as string,
-                  parsed.node_id as string | undefined,
-                )
-              } else if (currentEvent === 'text_delta' && typeof parsed.text === 'string') {
-                onDelta(parsed.text, parsed.completion_index as number)
-              } else if (currentEvent === 'message_stop') {
-                onStepComplete(parsed as unknown as MessageStopEvent)
-              } else if (currentEvent === 'replay_complete') {
-                onComplete(parsed.created_node_ids as string[])
-              } else if (currentEvent === 'error') {
-                onError?.(new Error(String(parsed.error ?? 'Unknown SSE error')))
-              }
-            } catch {
-              // Skip malformed JSON
-            }
-          }
-        }
+  await postSSE(
+    `${BASE}/rhizomes/${rhizomeId}/replay`,
+    { ...req, stream: true },
+    (message) => {
+      const { event, data } = message
+      if (event === 'replay_step') {
+        onStep(
+          data.step as number,
+          data.total as number,
+          data.type as string,
+          data.node_id as string | undefined,
+        )
+      } else if (event === 'text_delta' && typeof data.text === 'string') {
+        onDelta(data.text, data.completion_index as number)
+      } else if (event === 'message_stop') {
+        onStepComplete(data as unknown as MessageStopEvent)
+      } else if (event === 'replay_complete') {
+        onComplete(data.created_node_ids as string[])
+      } else if (event === 'error') {
+        onError?.(sseError(message))
       }
-    } finally {
-      reader.releaseLock()
-    }
-  } catch (err) {
-    if (err instanceof DOMException && err.name === 'AbortError') return
-    throw err
-  }
+    },
+    ({ event }) => event === 'replay_complete' || event === 'error',
+    onError,
+    signal,
+  )
 }
 
 // -- Cross-model generation --
@@ -683,71 +545,25 @@ export async function generateCrossStream(
   onError?: (error: Error, completionIndex?: number) => void,
   signal?: AbortSignal,
 ): Promise<void> {
-  try {
-    const res = await fetch(`${BASE}/rhizomes/${rhizomeId}/nodes/${nodeId}/generate-cross`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...req, stream: true }),
-      signal,
-    })
-
-    if (!res.ok) {
-      const text = await res.text()
-      onError?.(new Error(`API error ${res.status}: ${text}`))
-      return
-    }
-
-    const reader = res.body?.getReader()
-    if (!reader) {
-      onError?.(new Error('No response body'))
-      return
-    }
-
-    const decoder = new TextDecoder()
-    let buffer = ''
-
-    try {
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop() ?? ''
-
-        let currentEvent = ''
-        for (const line of lines) {
-          if (line.startsWith('event: ')) {
-            currentEvent = line.slice(7)
-          } else if (line.startsWith('data: ')) {
-            const data = line.slice(6)
-            try {
-              const parsed = JSON.parse(data) as SSEParsed
-              if (currentEvent === 'text_delta' && typeof parsed.text === 'string') {
-                onDelta(parsed.text, parsed.completion_index as number)
-              } else if (currentEvent === 'message_stop') {
-                onStreamComplete(parsed as unknown as MessageStopEvent)
-              } else if (currentEvent === 'generation_complete') {
-                onAllComplete()
-              } else if (currentEvent === 'error') {
-                const idx = typeof parsed.completion_index === 'number'
-                  ? parsed.completion_index
-                  : undefined
-                onError?.(new Error(String(parsed.error ?? 'Unknown SSE error')), idx)
-              }
-            } catch {
-              // Skip malformed JSON
-            }
-          }
-        }
+  await postSSE(
+    `${BASE}/rhizomes/${rhizomeId}/nodes/${nodeId}/generate-cross`,
+    { ...req, stream: true },
+    (message) => {
+      const { event, data } = message
+      if (event === 'text_delta' && typeof data.text === 'string') {
+        onDelta(data.text, data.completion_index as number)
+      } else if (event === 'message_stop') {
+        onStreamComplete(data as unknown as MessageStopEvent)
+      } else if (event === 'generation_complete') {
+        onAllComplete()
+      } else if (event === 'error') {
+        onError?.(sseError(message), completionIndex(message))
       }
-    } finally {
-      reader.releaseLock()
-    }
-  } catch (err) {
-    if (err instanceof DOMException && err.name === 'AbortError') return
-    throw err
-  }
+    },
+    isFanOutEnd,
+    onError,
+    signal,
+  )
 }
 
 // -- Perturbation experiments --
@@ -777,75 +593,32 @@ export async function perturbStream(
   onError?: (error: Error) => void,
   signal?: AbortSignal,
 ): Promise<void> {
-  try {
-    const res = await fetch(`${BASE}/rhizomes/${rhizomeId}/nodes/${nodeId}/perturb`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...req, stream: true }),
-      signal,
-    })
-
-    if (!res.ok) {
-      const text = await res.text()
-      onError?.(new Error(`API error ${res.status}: ${text}`))
-      return
-    }
-
-    const reader = res.body?.getReader()
-    if (!reader) {
-      onError?.(new Error('No response body'))
-      return
-    }
-
-    const decoder = new TextDecoder()
-    let buffer = ''
-
-    try {
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop() ?? ''
-
-        let currentEvent = ''
-        for (const line of lines) {
-          if (line.startsWith('event: ')) {
-            currentEvent = line.slice(7)
-          } else if (line.startsWith('data: ')) {
-            const data = line.slice(6)
-            try {
-              const parsed = JSON.parse(data) as SSEParsed
-              if (currentEvent === 'perturbation_step') {
-                onStep(
-                  parsed.step as number,
-                  parsed.total as number,
-                  parsed.type as string,
-                  parsed.label as string,
-                )
-              } else if (currentEvent === 'text_delta' && typeof parsed.text === 'string') {
-                onDelta(parsed.text, parsed.step_index as number)
-              } else if (currentEvent === 'message_stop') {
-                onStepComplete(parsed as unknown as MessageStopEvent)
-              } else if (currentEvent === 'perturbation_complete') {
-                onComplete(parsed as unknown as PerturbationReportResponse)
-              } else if (currentEvent === 'error') {
-                onError?.(new Error(String(parsed.error ?? 'Unknown SSE error')))
-              }
-            } catch {
-              // Skip malformed JSON
-            }
-          }
-        }
+  await postSSE(
+    `${BASE}/rhizomes/${rhizomeId}/nodes/${nodeId}/perturb`,
+    { ...req, stream: true },
+    (message) => {
+      const { event, data } = message
+      if (event === 'perturbation_step') {
+        onStep(
+          data.step as number,
+          data.total as number,
+          data.type as string,
+          data.label as string,
+        )
+      } else if (event === 'text_delta' && typeof data.text === 'string') {
+        onDelta(data.text, data.step_index as number)
+      } else if (event === 'message_stop') {
+        onStepComplete(data as unknown as MessageStopEvent)
+      } else if (event === 'perturbation_complete') {
+        onComplete(data as unknown as PerturbationReportResponse)
+      } else if (event === 'error') {
+        onError?.(sseError(message))
       }
-    } finally {
-      reader.releaseLock()
-    }
-  } catch (err) {
-    if (err instanceof DOMException && err.name === 'AbortError') return
-    throw err
-  }
+    },
+    ({ event }) => event === 'perturbation_complete' || event === 'error',
+    onError,
+    signal,
+  )
 }
 
 // -- Search --
