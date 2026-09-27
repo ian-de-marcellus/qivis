@@ -96,6 +96,9 @@ export interface TokenLogprob {
   logprob: number
   linear_prob: number
   top_alternatives: AlternativeToken[]
+  /** Steered replies: who picked this token ("model": it flowed through on its own) */
+  chosen_by?: 'model' | 'researcher' | null
+  token_id?: number | null
 }
 
 export interface LogprobData {
@@ -535,4 +538,23 @@ export interface InterventionTypeInfo {
   type_name: string
   phase: string
   description: string
+}
+
+// -- Steering (token-by-token generation) --
+
+export interface SteeringSession {
+  session_id: string
+  model: string
+  provider: string
+  prompt_text: string
+  stop_sequences: string[]
+  context_usage: Record<string, unknown>
+}
+
+/** A possible next token, with the probability sampling would give it. */
+export interface TokenCandidate {
+  id: number
+  token: string
+  bytes: number[] | null
+  prob: number
 }

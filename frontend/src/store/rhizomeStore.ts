@@ -120,6 +120,12 @@ interface RhizomeStore {
   setActiveStreamIndex: (index: number) => void
   selectBranch: (parentId: string, childId: string) => void
   navigateToNode: (nodeId: string) => void
+  /** Refresh the rhizome and follow the path to a node just created elsewhere */
+  showNode: (nodeId: string) => Promise<void>
+  /** Steering a reply token by token: the node it answers ('' for a first turn) */
+  steerTarget: string | null
+  openSteer: (parentId: string) => void
+  closeSteer: () => void
   setComparisonHoveredNodeId: (nodeId: string | null) => void
   editNodeContent: (nodeId: string, editedContent: string | null) => Promise<void>
   setSelectedEditVersion: (nodeId: string, entry: EditHistoryEntry | null) => void
@@ -510,6 +516,7 @@ export const useRhizomeStore = create<RhizomeStore>((set, get) => ({
   searchLoading: false,
   scrollToNodeId: null,
   replayState: null,
+  steerTarget: null,
   perturbationReports: [],
 
   stopGeneration: () => {
@@ -769,6 +776,19 @@ export const useRhizomeStore = create<RhizomeStore>((set, get) => ({
     set((state) => ({
       branchSelections: { ...state.branchSelections, [parentId]: childId },
     }))
+  },
+
+  openSteer: (parentId: string) => set({ steerTarget: parentId }),
+  closeSteer: () => set({ steerTarget: null }),
+
+  showNode: async (nodeId: string) => {
+    const { currentRhizome } = get()
+    if (!currentRhizome) return
+    const rhizome = await api.getRhizome(currentRhizome.rhizome_id)
+    if (get().selectedRhizomeId !== rhizome.rhizome_id) return
+    set({ currentRhizome: rhizome })
+    get().navigateToNode(nodeId)
+    api.listRhizomes().then((rhizomes) => set({ rhizomes })).catch(() => {})
   },
 
   navigateToNode: (nodeId: string) => {

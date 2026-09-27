@@ -214,6 +214,7 @@ export function useConversationView() {
   const includeNode = useRhizomeStore(s => s.includeNode)
   const toggleAnchor = useRhizomeStore(s => s.toggleAnchor)
   const toggleGroupNodeSelection = useRhizomeStore(s => s.toggleGroupNodeSelection)
+  const openSteer = useRhizomeStore(s => s.openSteer)
 
   // Nodes excluded on this path: by a node exclusion scoped to a node on the
   // path, or by a switched-off digression group lying wholly on the path
@@ -274,6 +275,7 @@ export function useConversationView() {
       onReplay: () => togglePanel('replay', node.node_id),
       onCrossModel: () => togglePanel('crossModel', node.node_id),
       onWriteResponse: isUser ? () => togglePanel('writeResponse', node.node_id) : undefined,
+      onSteer: () => openSteer(node.node_id),
     }
   }
 

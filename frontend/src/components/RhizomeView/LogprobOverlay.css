@@ -140,3 +140,10 @@
 .raw-text {
   white-space: pre-wrap;
 }
+
+/* A steered reply's tokens that the researcher chose (not sampled, not flowed through) */
+.logprob-token-steered {
+  text-decoration: underline dotted var(--text-accent);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}

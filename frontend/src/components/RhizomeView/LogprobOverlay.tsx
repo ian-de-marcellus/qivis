@@ -22,6 +22,11 @@ function TokenTooltip({ token }: { token: TokenLogprob }) {
         <span className="token-tooltip-token">{JSON.stringify(token.token)}</span>
         <span className="token-tooltip-prob">{formatProb(token.linear_prob)}</span>
       </div>
+      {token.chosen_by && (
+        <div className="token-tooltip-count">
+          {token.chosen_by === 'researcher' ? 'steered by the researcher' : 'flowed through (the model\'s choice)'}
+        </div>
+      )}
       {altCount > 0 && (
         <>
           {isLargeSet && (
@@ -49,7 +54,7 @@ export function LogprobOverlay({ logprobs }: LogprobOverlayProps) {
       {logprobs.tokens.map((token, i) => (
         <span
           key={i}
-          className="logprob-token"
+          className={`logprob-token${token.chosen_by === 'researcher' ? ' logprob-token-steered' : ''}`}
           style={{ backgroundColor: uncertaintyColor(token.linear_prob) }}
           onMouseEnter={() => setHoveredIndex(i)}
           onMouseLeave={() => setHoveredIndex(null)}

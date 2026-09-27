@@ -14,6 +14,7 @@ import { SystemPromptInput } from './components/RhizomeView/SystemPromptInput.ts
 import { RhizomeSettings } from './components/RhizomeView/RhizomeSettings.tsx'
 import { getActivePath, useRhizomeStore, useRhizomeData, useNavigation, useRightPane } from './store/rhizomeStore.ts'
 import { AppSettings } from './components/shared/AppSettings.tsx'
+import { SteerHost } from './components/Steering/SteerHost.tsx'
 import './App.css'
 
 type ThemeMode = 'system' | 'light' | 'dark'
@@ -175,6 +176,8 @@ function App() {
             <p>Select a rhizome or create a new one to begin.</p>
           </div>
         )}
+
+        <SteerHost />
 
         {canvasOpen && currentRhizome && (
           <CanvasView

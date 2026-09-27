@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { useRhizomeStore, useRhizomeData, useStreamingState } from '../../store/rhizomeStore.ts'
+import { getActivePath, useRhizomeStore, useRhizomeData, useStreamingState } from '../../store/rhizomeStore.ts'
 import './MessageInput.css'
 
 export function MessageInput() {
@@ -7,6 +7,7 @@ export function MessageInput() {
   const { isGenerating } = useStreamingState()
   const sendMessage = useRhizomeStore(s => s.sendMessage)
   const sendMessageOnly = useRhizomeStore(s => s.sendMessageOnly)
+  const openSteer = useRhizomeStore(s => s.openSteer)
   const [content, setContent] = useState('')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
@@ -29,6 +30,18 @@ export function MessageInput() {
     if (!canSend) return
     sendMessageOnly(content.trim())
     resetInput()
+  }
+
+  // Steer the reply token by token: to what's typed (added first), else to the branch's end
+  const handleSteer = async () => {
+    if (isGenerating || !currentRhizome) return
+    if (content.trim()) {
+      await sendMessageOnly(content.trim())
+      resetInput()
+    }
+    const { currentRhizome: rhizome, branchSelections } = useRhizomeStore.getState()
+    const path = getActivePath(rhizome?.nodes ?? [], branchSelections)
+    openSteer(path[path.length - 1]?.node_id ?? '')
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -71,6 +84,14 @@ export function MessageInput() {
           title="Send without generating a response (Cmd+Enter)"
         >
           No gen
+        </button>
+        <button
+          className="send-only-btn"
+          onClick={handleSteer}
+          disabled={isGenerating || !currentRhizome}
+          title="Steer the reply token by token (local models)"
+        >
+          Steer
         </button>
       </div>
     </div>

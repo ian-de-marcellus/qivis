@@ -587,6 +587,20 @@ class LlamaCppProvider(LLMProvider):
             "candidates": candidates, "logit_bias": applied, "effective_prompt": effective_prompt,
         }
 
+    async def tokenize(self, text: str) -> list[dict[str, Any]]:
+        """Text as this model's tokens (no BOS): [{id, piece}]."""
+        resp = await self._client.post(
+            f"{self._base_url}/tokenize",
+            json={
+                "content": text, "add_special": False, "parse_special": True, "with_pieces": True,
+            },
+        )
+        resp.raise_for_status()
+        return [
+            {"id": t["id"], "token": _piece_text(t["piece"])}
+            for t in resp.json().get("tokens", [])
+        ]
+
     async def detokenize(self, ids: list[int]) -> str:
         resp = await self._client.post(f"{self._base_url}/detokenize", json={"tokens": ids})
         resp.raise_for_status()
@@ -607,3 +621,8 @@ class LlamaCppProvider(LLMProvider):
             return [model] if model else []
         except Exception:
             return []
+
+
+def _piece_text(piece: str | list[int]) -> str:
+    """A token's text; llama.cpp gives raw bytes for part of a multi-byte character."""
+    return piece if isinstance(piece, str) else bytes(piece).decode("utf-8", errors="replace")

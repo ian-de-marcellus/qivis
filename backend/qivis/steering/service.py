@@ -167,6 +167,10 @@ class SteeringService:
             effective_prompt_text=session.effective_prompt,
         ))
 
+    async def tokenize(self, session_id: str, text: str) -> list[dict[str, Any]]:
+        """Typed text as the session model's tokens, to append as researcher choices."""
+        return await self._provider(self._session(session_id)).tokenize(text)
+
     def discard(self, session_id: str) -> None:
         self._sessions.pop(session_id, None)
 

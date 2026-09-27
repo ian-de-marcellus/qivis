@@ -74,6 +74,17 @@ async def commit(
     return await svc.commit(session_id, body.token_ids, body.chosen_by)
 
 
+class Tokenize(BaseModel):
+    text: str
+
+
+@router.post("/steer/{session_id}/tokenize")
+async def tokenize(
+    session_id: str, body: Tokenize, svc: SteeringService = Depends(get_steering_service),
+) -> list[dict]:
+    return await svc.tokenize(session_id, body.text)
+
+
 @router.delete("/steer/{session_id}", status_code=204)
 async def discard(session_id: str, svc: SteeringService = Depends(get_steering_service)) -> None:
     svc.discard(session_id)

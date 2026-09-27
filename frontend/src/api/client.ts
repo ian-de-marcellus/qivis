@@ -35,6 +35,8 @@ import type {
   TaxonomyResponse,
   RhizomeDetail,
   RhizomeSummary,
+  SteeringSession,
+  TokenCandidate,
 } from './types.ts'
 
 /** Which completion an event in a fan-out stream (n>1, cross-model) belongs to */
@@ -673,4 +675,41 @@ export function searchNodes(params: {
   if (params.date_to) searchParams.set('date_to', params.date_to)
   if (params.limit != null) searchParams.set('limit', String(params.limit))
   return request(`/search?${searchParams.toString()}`)
+}
+
+// -- Steering --
+
+export function startSteering(
+  rhizomeId: string,
+  nodeId: string | null,
+  body: { provider: string; model?: string | null; system_prompt?: string | null },
+): Promise<SteeringSession> {
+  const path = nodeId ? `/rhizomes/${rhizomeId}/nodes/${nodeId}/steer` : `/rhizomes/${rhizomeId}/steer`
+  return request(path, { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function steerNext(sessionId: string, continuation: number[], k = 20): Promise<TokenCandidate[]> {
+  return request(`/steer/${sessionId}/next`, {
+    method: 'POST',
+    body: JSON.stringify({ continuation, k }),
+  })
+}
+
+export function steerTokenize(sessionId: string, text: string): Promise<{ id: number; token: string }[]> {
+  return request(`/steer/${sessionId}/tokenize`, { method: 'POST', body: JSON.stringify({ text }) })
+}
+
+export function steerCommit(
+  sessionId: string,
+  tokenIds: number[],
+  chosenBy: ('model' | 'researcher')[],
+): Promise<NodeResponse> {
+  return request(`/steer/${sessionId}/commit`, {
+    method: 'POST',
+    body: JSON.stringify({ token_ids: tokenIds, chosen_by: chosenBy }),
+  })
+}
+
+export function steerDiscard(sessionId: string): Promise<void> {
+  return request(`/steer/${sessionId}`, { method: 'DELETE' })
 }
