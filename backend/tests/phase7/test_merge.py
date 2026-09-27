@@ -8,12 +8,11 @@ from httpx import ASGITransport, AsyncClient
 from qivis.db.connection import Database
 from qivis.events.projector import StateProjector
 from qivis.events.store import EventStore
-from qivis.importer.merge import MergePlan, _compute_merge_plan
+from qivis.importer.merge import _compute_merge_plan
 from qivis.importer.models import ImportedNode, ImportedTree
 from qivis.main import app
 from qivis.rhizomes.router import get_rhizome_service
 from qivis.rhizomes.service import RhizomeService
-
 
 # ---------------------------------------------------------------------------
 # Helpers for building fixture data
@@ -288,8 +287,8 @@ async def setup():
     merge_svc = MergeService(db, store, projector)
     app.dependency_overrides[get_merge_service] = lambda: merge_svc
 
-    from qivis.importer.service import ImportService
     from qivis.importer.router import get_import_service
+    from qivis.importer.service import ImportService
 
     import_svc = ImportService(db, store, projector)
     app.dependency_overrides[get_import_service] = lambda: import_svc

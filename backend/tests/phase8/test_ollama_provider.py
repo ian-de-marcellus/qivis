@@ -3,12 +3,9 @@
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
-
 from qivis.models import SamplingParams
 from qivis.providers.base import GenerationRequest
 from qivis.providers.ollama import OllamaProvider
-
 
 # -- Helpers (same pattern as test_openai_provider.py) --
 

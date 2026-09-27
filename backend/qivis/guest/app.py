@@ -32,9 +32,11 @@ SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "no-referrer",
 }
-NEED_INVITE = """<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+NEED_INVITE = """<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Invite needed</title><link rel="stylesheet" href="/app.css"></head><body><main class="gate">
-<h1>You need an invite link</h1><p>This is a private space. If someone invited you, open the personal link they sent.</p>
+<h1>You need an invite link</h1>
+<p>This is a private space. If someone invited you, open the personal link they sent.</p>
 </main></body></html>"""
 
 

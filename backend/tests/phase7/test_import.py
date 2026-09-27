@@ -12,7 +12,6 @@ from qivis.main import app
 from qivis.rhizomes.router import get_rhizome_service
 from qivis.rhizomes.service import RhizomeService
 
-
 # ---------------------------------------------------------------------------
 # ChatGPT fixture data
 # ---------------------------------------------------------------------------

@@ -88,7 +88,8 @@ def main(argv: list[str] | None = None) -> int:
     elif args.cmd == "list":
         for g in cfg.guests:
             print(
-                f"{g.name:20} {'revoked' if g.revoked else 'active':8} since {g.created_at[:10]}  id={g.id}"
+                f"{g.name:20} {'revoked' if g.revoked else 'active':8} "
+                f"since {g.created_at[:10]}  id={g.id}"
             )
     elif args.cmd == "url":
         cfg.public_url = args.public_url.rstrip("/")

@@ -6,19 +6,15 @@ Three sections:
 3. Event sourcing integrity -- anchors survive replay
 """
 
-import pytest
 
 from qivis.events.projector import StateProjector
-from qivis.events.store import EventStore
 from tests.fixtures import (
-    create_test_rhizome,
     create_rhizome_with_messages,
     make_node_anchored_envelope,
     make_node_created_envelope,
     make_node_unanchored_envelope,
     make_rhizome_created_envelope,
 )
-
 
 # ---------------------------------------------------------------------------
 # Contract tests: event -> store -> projector -> verify state

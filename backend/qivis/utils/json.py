@@ -30,7 +30,7 @@ def parse_json_field(raw: str | dict | None) -> dict[str, Any] | None:
     return None
 
 
-def parse_json_or_none(raw: str | dict | list | None) -> dict | list | None:
+def parse_json_or_none(raw: str | dict | list | None) -> Any:
     """Parse a JSON string or return structured value as-is, None on failure.
 
     For node fields (usage, logprobs, context_usage) that may be dict or list.

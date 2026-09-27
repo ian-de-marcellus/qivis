@@ -3,12 +3,9 @@
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
-
 from qivis.models import SamplingParams
 from qivis.providers.base import GenerationRequest
 from qivis.providers.generic_openai import GenericOpenAIProvider
-
 
 # -- Helpers --
 

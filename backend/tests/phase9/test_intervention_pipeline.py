@@ -11,7 +11,6 @@ Tests the extensible architecture for context interventions:
 - GenerationService integration with intervention pipeline
 """
 
-import pytest
 
 from qivis.generation.context import ContextBuilder
 from qivis.generation.interventions import (
@@ -21,8 +20,7 @@ from qivis.generation.interventions import (
     InterventionPipeline,
     InterventionRegistry,
 )
-from qivis.models import NodeCreatedPayload, SamplingParams
-
+from qivis.models import NodeCreatedPayload
 
 # ---------------------------------------------------------------------------
 # Dummy interventions for testing

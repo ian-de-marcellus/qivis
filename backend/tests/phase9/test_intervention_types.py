@@ -4,18 +4,15 @@ Tests SystemPromptReposition, ReminderInjection, and MessageWrapper
 intervention types.
 """
 
-import pytest
 
 from qivis.generation.interventions import (
     InterventionConfig,
     InterventionContext,
-    InterventionPipeline,
-    InterventionRegistry,
     default_registry,
 )
-from qivis.generation.interventions.system_prompt_reposition import SystemPromptReposition
-from qivis.generation.interventions.reminder_injection import ReminderInjection
 from qivis.generation.interventions.message_wrapper import MessageWrapper
+from qivis.generation.interventions.reminder_injection import ReminderInjection
+from qivis.generation.interventions.system_prompt_reposition import SystemPromptReposition
 
 
 def _make_ctx(

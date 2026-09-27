@@ -336,7 +336,8 @@ class StateProjector:
         """Project a NodeContextIncluded event: remove matching exclusion."""
         payload = NodeContextIncludedPayload.model_validate(event.payload)
         await self._db.execute(
-            "DELETE FROM node_exclusions WHERE rhizome_id = ? AND node_id = ? AND scope_node_id = ?",
+            "DELETE FROM node_exclusions"
+            " WHERE rhizome_id = ? AND node_id = ? AND scope_node_id = ?",
             (event.rhizome_id, payload.node_id, payload.scope_node_id),
         )
 

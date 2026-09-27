@@ -183,7 +183,13 @@ async def health() -> dict:
 @app.get("/api/providers")
 async def providers() -> list[dict]:
     return [
-        {"name": p.name, "available": True, "models": p.suggested_models, "supported_params": p.supported_params, "supported_modes": p.supported_modes}
+        {
+            "name": p.name,
+            "available": True,
+            "models": p.suggested_models,
+            "supported_params": p.supported_params,
+            "supported_modes": p.supported_modes,
+        }
         for p in get_all_providers()
     ]
 

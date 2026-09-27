@@ -5,9 +5,8 @@ projector round-trip, context builder thinking inclusion, and schema migration.
 """
 
 import json
-import math
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock
 from uuid import uuid4
 
 import pytest
@@ -18,7 +17,6 @@ from qivis.models import (
     SamplingParams,
 )
 from qivis.providers.base import GenerationResult, StreamChunk
-
 
 # ---------------------------------------------------------------------------
 # Step 1: Data model field existence and defaults

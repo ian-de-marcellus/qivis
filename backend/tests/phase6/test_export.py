@@ -5,7 +5,6 @@ Tests JSON export, CSV export, and tree paths endpoint.
 
 import csv
 import io
-import json
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -19,8 +18,8 @@ from qivis.main import app
 from qivis.rhizomes.router import get_rhizome_service
 from qivis.rhizomes.service import RhizomeService
 from tests.fixtures import (
-    create_test_rhizome,
     create_rhizome_with_messages,
+    create_test_rhizome,
 )
 
 

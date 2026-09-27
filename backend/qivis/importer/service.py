@@ -131,6 +131,8 @@ class ImportService:
         if fmt == "claude":
             return parse_claude(data)
         if fmt == "openrouter":
+            if not isinstance(data, dict):
+                raise ImportFormatError("OpenRouter format requires a JSON object")
             return parse_openrouter(data)
         if fmt == "linear":
             if not isinstance(data, list):

@@ -4,8 +4,7 @@ import aiosqlite
 import pytest
 
 from qivis.db.connection import Database
-from qivis.db.schema import INDEX_SQL, TABLES_SQL, _MIGRATIONS, run_migrations
-
+from qivis.db.schema import _MIGRATIONS, INDEX_SQL, TABLES_SQL, run_migrations
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -114,8 +113,8 @@ class TestMigrationsContract:
 
     async def test_idempotent_across_multiple_connects(self):
         """Connecting twice to the same database does not re-apply or error."""
-        import tempfile
         import os
+        import tempfile
 
         with tempfile.TemporaryDirectory() as tmpdir:
             path = os.path.join(tmpdir, "test.db")
@@ -143,8 +142,8 @@ class TestMigrationTransition:
         Simulates a database created with the old system: columns exist from
         bare ALTER TABLE statements, but no schema_migrations table.
         """
-        import tempfile
         import os
+        import tempfile
 
         with tempfile.TemporaryDirectory() as tmpdir:
             path = os.path.join(tmpdir, "legacy.db")
@@ -180,11 +179,11 @@ class TestMigrationTransition:
         tables use old names (trees, tree_id). Database.connect() should run
         018 rename migrations before TABLES_SQL, avoiding conflicts.
         """
-        import tempfile
         import os
+        import tempfile
 
         # Old schema with tree_id columns (pre-rename)
-        OLD_SCHEMA = """
+        old_schema = """
         CREATE TABLE IF NOT EXISTS events (
             sequence_num INTEGER PRIMARY KEY AUTOINCREMENT,
             event_id TEXT UNIQUE NOT NULL,
@@ -313,7 +312,7 @@ class TestMigrationTransition:
 
             # Create a database with old table/column names and pre-018 migrations applied
             conn = await _raw_connect(path)
-            await conn.executescript(OLD_SCHEMA)
+            await conn.executescript(old_schema)
             await conn.commit()
             # Record pre-018 migrations as already applied
             for name, _sql in _MIGRATIONS:

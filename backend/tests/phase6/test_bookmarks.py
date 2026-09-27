@@ -7,20 +7,17 @@ Four sections:
 4. Event sourcing integrity -- bookmarks survive replay
 """
 
-import pytest
 
 from qivis.events.projector import StateProjector
-from qivis.events.store import EventStore
 from tests.fixtures import (
-    create_test_rhizome,
     create_rhizome_with_messages,
+    create_test_rhizome,
     make_bookmark_created_envelope,
     make_bookmark_removed_envelope,
     make_bookmark_summary_generated_envelope,
     make_node_created_envelope,
     make_rhizome_created_envelope,
 )
-
 
 # ---------------------------------------------------------------------------
 # Contract tests: event -> store -> projector -> verify state

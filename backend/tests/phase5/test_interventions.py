@@ -4,11 +4,10 @@ Tests that GET /api/rhizomes/{rhizome_id}/interventions returns a chronological
 list of NodeContentEdited and system-prompt TreeMetadataUpdated events.
 """
 
-import pytest
 
 from tests.fixtures import (
-    create_test_rhizome,
     create_rhizome_with_messages,
+    create_test_rhizome,
 )
 
 

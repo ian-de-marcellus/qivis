@@ -17,6 +17,7 @@ import dataclasses
 import logging
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
+from typing import Literal
 from uuid import uuid4
 
 from qivis.events.log import EventLog
@@ -48,6 +49,8 @@ from qivis.rhizomes.service import NodeNotFoundError, RhizomeNotFoundError, Rhiz
 from qivis.utils.json import parse_json_field
 
 logger = logging.getLogger(__name__)
+
+Mode = Literal["chat", "completion"]
 
 FALLBACK_MODEL = "claude-sonnet-4-5-20250929"
 
@@ -133,7 +136,7 @@ class Prepared:
     generation_id: str
     provider: LLMProvider
     model: str
-    mode: str  # "chat" | "completion"
+    mode: Mode
     request: GenerationRequest
     context_usage: ContextUsage
     active_interventions: list[dict] | None
@@ -144,7 +147,7 @@ class Prepared:
     completion_index: int | None = None
 
     @property
-    def recorded_mode(self) -> str:
+    def recorded_mode(self) -> Literal["chat", "completion", "prefill"]:
         return "prefill" if self.prefill else self.mode
 
 
@@ -368,7 +371,7 @@ class GenerationService:
         generation_id = generation_id or str(uuid4())
         default_model = ctx.rhizome.get("default_model") or FALLBACK_MODEL
         models = [t.model or default_model for t in targets]
-        modes = [
+        modes: list[Mode] = [
             self._mode_for(t.provider, m, ctx.rhizome, ctx.metadata, t.mode)
             for t, m in zip(targets, models, strict=True)
         ]
@@ -378,7 +381,7 @@ class GenerationService:
         ]
         context_limit = self._debug_context_limit(ctx.metadata) or min(limits)
 
-        builds: dict[str, _Built] = {}
+        builds: dict[Mode, _Built] = {}
         prepared: list[Prepared] = []
         for index, (target, model, mode) in enumerate(zip(targets, models, modes, strict=True)):
             if mode not in builds:
@@ -457,7 +460,7 @@ class GenerationService:
     @staticmethod
     def _mode_for(
         provider: LLMProvider, model: str, rhizome: dict, metadata: dict, override: str | None,
-    ) -> str:
+    ) -> Mode:
         """The mode a generation runs in: a model's format comes from the model.
 
         Single-mode providers decide for themselves. For dual-mode providers:
@@ -470,10 +473,10 @@ class GenerationService:
             return "chat"
         if "chat" not in provider.supported_modes:
             return "completion"
-        if override in ("chat", "completion"):
+        if override == "chat" or override == "completion":
             return override
         profile_mode = (get_catalog().profile(model) or {}).get("generation_mode")
-        if profile_mode in ("chat", "completion"):
+        if profile_mode == "chat" or profile_mode == "completion":
             return profile_mode
         is_rhizome_model = model == (rhizome.get("default_model") or FALLBACK_MODEL)
         if is_rhizome_model and metadata.get("generation_mode") == "completion":

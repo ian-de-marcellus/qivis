@@ -24,8 +24,6 @@ from qivis.models import (
     EventEnvelope,
     LogprobData,
     NodeCreatedPayload,
-    PerturbationReportGeneratedPayload,
-    SamplingParams,
     TokenLogprob,
 )
 from qivis.providers.base import (
@@ -37,7 +35,6 @@ from qivis.providers.base import (
 from qivis.providers.registry import clear_providers, register_provider
 from qivis.rhizomes.schemas import CreateNodeRequest, CreateRhizomeRequest
 from qivis.rhizomes.service import RhizomeService
-
 
 # ---------------------------------------------------------------------------
 # Divergence metric tests (pure functions)
@@ -223,7 +220,6 @@ async def perturb_env(db: Database):
     # Create a digression group containing user2 + asst2 (nodes 2,3 — index 2,3)
     from tests.fixtures import (
         make_digression_group_created_envelope,
-        make_node_context_excluded_envelope,
     )
 
     group_id = str(uuid4())
@@ -342,7 +338,7 @@ class TestPerturbationContextModification:
         env = perturb_env
         from qivis.rhizomes.schemas import PerturbationConfig
 
-        report = await env["perturb_svc"].run_experiment(
+        await env["perturb_svc"].run_experiment(
             rhizome_id=env["rhizome_id"],
             node_id=env["node_ids"][-1],
             perturbations=[PerturbationConfig(

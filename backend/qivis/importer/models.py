@@ -5,7 +5,7 @@ to emit events. This decouples format-specific parsing from event emission.
 """
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 
 
 @dataclass
@@ -14,7 +14,7 @@ class ImportedNode:
 
     temp_id: str
     parent_temp_id: str | None
-    role: str  # "user" | "assistant" | "system"
+    role: Literal["system", "user", "assistant", "tool", "researcher_note"]
     content: str
     model: str | None = None
     provider: str | None = None

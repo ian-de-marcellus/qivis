@@ -68,7 +68,7 @@ class TestSmartEvictionProtection:
         first_four_contents = [n["content"] for n in nodes[:4] if n["role"] in ("user", "assistant")]
         surviving_contents = [m["content"] for m in messages]
         for content in first_four_contents[:4]:
-            assert content in surviving_contents, f"First-turn protected message was evicted"
+            assert content in surviving_contents, "First-turn protected message was evicted"
 
     def test_protects_recent_n_turns(self, builder: ContextBuilder):
         """Last recent_turns_to_keep messages are never evicted."""

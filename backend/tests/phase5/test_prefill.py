@@ -15,7 +15,6 @@ from tests.fixtures import (
     make_rhizome_created_envelope,
 )
 
-
 # ---------------------------------------------------------------------------
 # Contract tests: mode field projected correctly
 # ---------------------------------------------------------------------------

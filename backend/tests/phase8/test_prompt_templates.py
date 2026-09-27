@@ -1,7 +1,6 @@
 """Contract tests for prompt template rendering."""
 
-from qivis.generation.templates import render_prompt, render_chatml, render_alpaca, render_llama3
-
+from qivis.generation.templates import render_alpaca, render_chatml, render_llama3, render_prompt
 
 MESSAGES = [
     {"role": "user", "content": "Hello"},

@@ -7,8 +7,6 @@ and integration with _resolve_context() via GenerationService.
 
 import json
 from collections.abc import AsyncIterator
-from datetime import UTC, datetime
-from uuid import uuid4
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -17,6 +15,7 @@ from qivis.db.connection import Database
 from qivis.events.projector import StateProjector
 from qivis.events.store import EventStore
 from qivis.generation.service import GenerationService, merge_sampling_params
+from qivis.main import app
 from qivis.models import SamplingParams
 from qivis.providers.base import (
     GenerationRequest,
@@ -25,12 +24,8 @@ from qivis.providers.base import (
     StreamChunk,
 )
 from qivis.providers.registry import clear_providers, register_provider
-from qivis.main import app
 from qivis.rhizomes.router import get_generation_service, get_rhizome_service
 from qivis.rhizomes.service import RhizomeService
-
-from tests.fixtures import make_node_created_envelope, make_rhizome_created_envelope
-
 
 # ---------------------------------------------------------------------------
 # Unit tests: merge_sampling_params

@@ -1,6 +1,6 @@
 """Tests for Phase 7.1: FTS5 full-text search across conversation nodes."""
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -9,17 +9,15 @@ from qivis.db.connection import Database
 from qivis.events.projector import StateProjector
 from qivis.events.store import EventStore
 from qivis.main import app
-from qivis.search.router import get_search_service
-from qivis.search.service import SearchService
 from qivis.rhizomes.router import get_rhizome_service
 from qivis.rhizomes.service import RhizomeService
-
+from qivis.search.router import get_search_service
+from qivis.search.service import SearchService
 from tests.fixtures import (
     make_annotation_added_envelope,
     make_node_created_envelope,
     make_rhizome_created_envelope,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -126,7 +124,7 @@ class TestFTS5Infrastructure:
 
     async def test_fts_insert_trigger_fires(self, db, event_store, projector):
         """When a node is created via the projector, it appears in FTS search."""
-        data = await _seed_tree(event_store, projector, nodes=[
+        await _seed_tree(event_store, projector, nodes=[
             {"role": "user", "content": "The quick brown fox jumps over the lazy dog"},
         ])
         rows = await db.fetchall(
@@ -250,7 +248,7 @@ class TestSearchService:
         data1 = await _seed_tree(event_store, projector, title="Tree A", nodes=[
             {"role": "user", "content": "universal search term here"},
         ])
-        data2 = await _seed_tree(event_store, projector, title="Tree B", nodes=[
+        await _seed_tree(event_store, projector, title="Tree B", nodes=[
             {"role": "user", "content": "universal search term here"},
         ])
         result = await search_service.search(

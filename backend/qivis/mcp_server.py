@@ -76,7 +76,9 @@ class QivisBridge:
 
     async def _create(self, model: dict) -> str:
         return (await self.q.post("/api/rhizomes", json={
-            "title": f"{self.caller} ↔ {model['label']} · {datetime.now(UTC).strftime('%Y-%m-%d %H:%M')}",
+            "title": (
+                f"{self.caller} ↔ {model['label']} · {datetime.now(UTC).strftime('%Y-%m-%d %H:%M')}"
+            ),
             "default_provider": model["provider"],
             "default_model": model["model"],
             "metadata": {
@@ -176,13 +178,15 @@ class QivisBridge:
         # Only answered exchanges read as the conversation
         full = _current_line(rh["nodes"])
         path = [n for i, n in enumerate(full)
-                if n["role"] == "assistant" or (i + 1 < len(full) and full[i + 1]["role"] == "assistant")]
+                if n["role"] == "assistant"
+                or (i + 1 < len(full) and full[i + 1]["role"] == "assistant")]
         if not path:
             return f"No messages with {model['label']} in this conversation yet."
         if last and last > 0:
             path = path[-int(last):]
         return "\n\n".join(
-            f"{'You' if n['role'] == 'user' else model['label']}: {n.get('edited_content') or n['content']}"
+            f"{'You' if n['role'] == 'user' else model['label']}: "
+            f"{n.get('edited_content') or n['content']}"
             for n in path
         )
 
@@ -191,7 +195,8 @@ def build_server(bridge: QivisBridge) -> MCPServer:
     server = MCPServer(
         name="qivis",
         instructions=(
-            "Talk with locally trained models (for example Sun, an electronic mind trained by Ian). "
+            "Talk with locally trained models "
+            "(for example Sun, an electronic mind trained by Ian). "
             "Use list_models to see who's available, then send_message to talk; conversations "
             "continue across calls. Conversations are recorded in Ian's research tool, Qivis."
         ),
@@ -216,7 +221,9 @@ def build_server(bridge: QivisBridge) -> MCPServer:
         return (await bridge.send(model, text, conversation_id))["reply"]
 
     @server.tool()
-    async def model_read(model: str, last: int | None = None, conversation_id: str | None = None) -> str:
+    async def model_read(
+        model: str, last: int | None = None, conversation_id: str | None = None,
+    ) -> str:
         """Read your current conversation with a model (optionally only the last N messages)."""
         return await bridge.read(model, last, conversation_id)
 

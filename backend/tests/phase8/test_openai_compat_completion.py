@@ -5,18 +5,15 @@ when request.prompt_text is set, and uses existing chat path otherwise.
 """
 
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, PropertyMock
-
-import pytest
+from unittest.mock import AsyncMock, MagicMock
 
 from qivis.models import SamplingParams
 from qivis.providers.base import GenerationRequest
-from qivis.providers.openai_compat import OpenAICompatibleProvider
-from qivis.providers.openai import OpenAIProvider
-from qivis.providers.openrouter import OpenRouterProvider
 from qivis.providers.generic_openai import GenericOpenAIProvider
 from qivis.providers.ollama import OllamaProvider
-
+from qivis.providers.openai import OpenAIProvider
+from qivis.providers.openai_compat import OpenAICompatibleProvider
+from qivis.providers.openrouter import OpenRouterProvider
 
 # -- Helpers --
 

@@ -19,7 +19,6 @@ from qivis.main import app
 from qivis.models import (
     GenerationStartedPayload,
     NodeCreatedPayload,
-    SamplingParams,
 )
 from qivis.providers.base import (
     GenerationRequest,
@@ -29,14 +28,13 @@ from qivis.providers.base import (
 )
 from qivis.providers.registry import clear_providers, register_provider
 from qivis.rhizomes.router import get_generation_service, get_rhizome_service
-from qivis.rhizomes.schemas import GenerateRequest, NodeResponse
+from qivis.rhizomes.schemas import GenerateRequest
 from qivis.rhizomes.service import RhizomeService
 from tests.fixtures import (
     create_test_rhizome,
     make_node_created_envelope,
     make_rhizome_created_envelope,
 )
-
 
 # ---------------------------------------------------------------------------
 # Test provider that captures its input and returns canned continuation

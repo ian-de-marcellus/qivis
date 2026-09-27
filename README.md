@@ -75,6 +75,16 @@ pnpm dev
 cd backend
 uv sync --extra dev   # test tools are an optional extra; plain `uv sync` removes them
 uv run pytest tests/ -v
+
+cd ../frontend
+pnpm test
+```
+
+A pre-commit hook lints and type-checks what you commit (ruff and pyright for
+the backend, tsc and ESLint for the frontend). Turn it on once per clone:
+
+```bash
+git config core.hooksPath .githooks
 ```
 
 ### Guest portal (optional)

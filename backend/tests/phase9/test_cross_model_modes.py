@@ -7,7 +7,6 @@ provider may want completion. So each target can set its own mode;
 leaving it unset keeps the rhizome's behavior.
 """
 
-import json
 from collections.abc import AsyncIterator
 
 import pytest

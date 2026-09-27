@@ -6,18 +6,14 @@ Three sections:
 3. RhizomeSummary enrichment tests -- folders/tags parsed from metadata
 """
 
-import pytest
 
 from qivis.events.projector import StateProjector
-from qivis.events.store import EventStore
-from qivis.rhizomes.service import RhizomeNotFoundError, RhizomeService
 from tests.fixtures import (
     create_test_rhizome,
     make_rhizome_archived_envelope,
     make_rhizome_created_envelope,
     make_rhizome_unarchived_envelope,
 )
-
 
 # ---------------------------------------------------------------------------
 # Contract tests: event -> store -> projector -> verify state

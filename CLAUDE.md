@@ -29,7 +29,7 @@ Qivis is an open-source research instrument for exploring AI personality, emotio
 - `.Claude/` — architecture docs, build plan, archive/
 - `backend/` — Python/FastAPI backend (package: `qivis`)
 - `frontend/` — React/TypeScript frontend
-- `tests/` — organized by phase (phase0/, phase1/, etc.)
+- `backend/tests/` — organized by phase (phase0/, phase1/, etc.) plus interlude/, guest/, tools/; frontend tests sit beside their modules (`*.test.ts`)
 
 ## Conventions
 - All references to "loom" in architecture docs should be read as "qivis"

@@ -46,7 +46,7 @@ class ModelCatalog:
         profiled: set[tuple[str, str]] = set()
         for model, cfg in self.profiles.items():
             provider = cfg.get("provider")
-            if provider not in by_name:
+            if not isinstance(provider, str) or provider not in by_name:
                 continue  # its provider isn't configured on this machine
             profiled.add((provider, model))
             entries.append(self._entry(by_name[provider], model, cfg, "profile"))

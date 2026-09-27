@@ -6,6 +6,17 @@ migrations rename tree_id → rhizome_id, then indexes are created on the
 now-renamed columns.
 """
 
+from __future__ import annotations
+
+import logging
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING
+
+import aiosqlite
+
+if TYPE_CHECKING:
+    from qivis.db.connection import Database
+
 TABLES_SQL = """
 CREATE TABLE IF NOT EXISTS events (
     sequence_num INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -163,10 +174,6 @@ CREATE INDEX IF NOT EXISTS idx_summaries_rhizome_id ON summaries(rhizome_id);
 CREATE INDEX IF NOT EXISTS idx_summaries_anchor_node_id ON summaries(anchor_node_id);
 """
 
-import logging
-from datetime import UTC, datetime
-
-import aiosqlite
 
 logger = logging.getLogger(__name__)
 
@@ -290,7 +297,7 @@ _MIGRATIONS: list[tuple[str, str]] = [
 ]
 
 
-async def run_migrations(db: object) -> None:
+async def run_migrations(db: Database) -> None:
     """Run schema migrations with version tracking.
 
     Each migration is identified by name. Applied migrations are recorded in

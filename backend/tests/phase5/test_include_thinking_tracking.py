@@ -7,7 +7,6 @@ from httpx import AsyncClient
 
 from qivis.models import EventEnvelope, NodeCreatedPayload, RhizomeCreatedPayload
 
-
 # ---- Contract tests ----
 
 
@@ -107,6 +106,7 @@ async def test_context_flags_projected_from_event():
     assert len(rows) == 1
     assert rows[0]["include_thinking_in_context"] == 1
     assert rows[0]["include_timestamps"] == 1
+    await db.close()
 
 
 @pytest.mark.anyio
@@ -145,6 +145,7 @@ async def test_context_flags_default_in_projection():
     assert len(rows) == 1
     assert rows[0]["include_thinking_in_context"] == 0
     assert rows[0]["include_timestamps"] == 0
+    await db.close()
 
 
 # ---- API tests ----

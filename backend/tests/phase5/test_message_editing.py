@@ -10,13 +10,12 @@ import pytest
 
 from qivis.generation.context import ContextBuilder
 from tests.fixtures import (
-    create_test_rhizome,
     create_rhizome_with_messages,
+    create_test_rhizome,
     make_node_content_edited_envelope,
     make_node_created_envelope,
     make_rhizome_created_envelope,
 )
-
 
 # ---------------------------------------------------------------------------
 # Contract tests: event → store → projector → verify state

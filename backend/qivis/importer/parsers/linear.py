@@ -36,7 +36,7 @@ def _normalize_message(msg: dict, is_sharegpt: bool) -> tuple[str, str]:
         content = msg.get("content", "")
 
     role = _SHAREGPT_ROLES.get(raw_role, raw_role)
-    return role, content
+    return str(role), str(content)
 
 
 def parse_linear(data: list) -> ImportedTree:

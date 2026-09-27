@@ -12,18 +12,16 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from qivis.events.projector import StateProjector
-from qivis.events.store import EventStore
 from qivis.rhizomes.schemas import CreateSummaryRequest
 from qivis.rhizomes.service import RhizomeService
 from tests.fixtures import (
-    create_test_rhizome,
     create_rhizome_with_messages,
+    create_test_rhizome,
     make_node_created_envelope,
+    make_rhizome_created_envelope,
     make_summary_generated_envelope,
     make_summary_removed_envelope,
-    make_rhizome_created_envelope,
 )
-
 
 # ---------------------------------------------------------------------------
 # Contract tests: event -> store -> projector -> verify state

@@ -4,6 +4,7 @@ import json as json_module
 import logging
 from collections.abc import AsyncIterator, Iterator
 from contextlib import contextmanager
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
@@ -471,7 +472,7 @@ async def _dispatch_generate(
             status_code=400,
             detail="prefill_content cannot be combined with n > 1",
         )
-    kwargs = dict(
+    kwargs: dict[str, Any] = dict(
         model=request.model,
         system_prompt=request.system_prompt,
         sampling_params=request.sampling_params,
@@ -593,7 +594,7 @@ async def replay(
     replay_service: ReplayService = Depends(get_replay_service),
 ) -> list[NodeResponse] | StreamingResponse:
     provider = _provider(request.provider, request.generation_mode)
-    kwargs = dict(
+    kwargs: dict[str, Any] = dict(
         generation_mode=request.generation_mode,
         model=request.model,
         system_prompt=request.system_prompt,
@@ -632,7 +633,9 @@ async def generate_cross(
         {"provider": t.provider, "model": t.model, "mode": t.mode}
         for t in request.targets
     ]
-    kwargs = dict(system_prompt=request.system_prompt, sampling_params=request.sampling_params)
+    kwargs: dict[str, Any] = dict(
+        system_prompt=request.system_prompt, sampling_params=request.sampling_params,
+    )
 
     if request.stream:
         return _sse_response(
@@ -657,7 +660,7 @@ async def perturb(
     perturb_service: PerturbationService = Depends(get_perturbation_service),
 ) -> PerturbationReportResponse | StreamingResponse:
     provider = _provider(request.provider)
-    kwargs = dict(
+    kwargs: dict[str, Any] = dict(
         model=request.model,
         sampling_params=request.sampling_params,
         include_control=request.include_control,

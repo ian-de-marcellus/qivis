@@ -6,20 +6,14 @@ Three sections:
 3. Event sourcing integrity — notes survive replay
 """
 
-import pytest
 
-from qivis.events.projector import StateProjector
-from qivis.events.store import EventStore
 from tests.fixtures import (
-    create_test_rhizome,
     create_rhizome_with_messages,
-    make_annotation_added_envelope,
     make_node_created_envelope,
     make_note_added_envelope,
     make_note_removed_envelope,
     make_rhizome_created_envelope,
 )
-
 
 # ---------------------------------------------------------------------------
 # Contract tests: event -> store -> projector -> verify state

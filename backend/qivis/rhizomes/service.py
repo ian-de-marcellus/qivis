@@ -1,8 +1,11 @@
 """Rhizome service: coordinates EventStore and StateProjector for rhizome/node operations."""
 
+import sqlite3
 from collections import defaultdict
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 from uuid import uuid4
 
 import yaml
@@ -75,7 +78,7 @@ _TAXONOMY_PATH = Path(__file__).parent.parent / "annotation_taxonomy.yml"
 class RhizomeService:
     """Coordinates event store and projector for rhizome/node CRUD."""
 
-    def __init__(self, db: Database, summary_client: object | None = None) -> None:
+    def __init__(self, db: Database, summary_client: Any = None) -> None:
         self._store = EventStore(db)
         self._projector = StateProjector(db)
         self._events = EventLog(self._store, self._projector)
@@ -145,7 +148,7 @@ class RhizomeService:
 
             old_value = field_to_current.get(field_name)
             if field_name == "metadata":
-                new_value = {**old_value, **(new_value or {})}
+                new_value = {**(old_value or {}), **(new_value or {})}
                 new_value = {k: v for k, v in new_value.items() if v is not None}
             if new_value == old_value:
                 continue
@@ -171,7 +174,8 @@ class RhizomeService:
 
         # Annotation counts per node
         ann_rows = await self._db.fetchall(
-            "SELECT node_id, COUNT(*) as cnt FROM annotations WHERE rhizome_id = ? GROUP BY node_id",
+            "SELECT node_id, COUNT(*) as cnt FROM annotations"
+            " WHERE rhizome_id = ? GROUP BY node_id",
             (rhizome_id,),
         )
         annotation_counts = {r["node_id"]: r["cnt"] for r in ann_rows}
@@ -351,8 +355,8 @@ class RhizomeService:
         entries = [
             EditHistoryEntry(
                 event_id=ev.event_id,
-                sequence_num=ev.sequence_num,
-                timestamp=ev.timestamp.isoformat() if hasattr(ev.timestamp, 'isoformat') else str(ev.timestamp),
+                sequence_num=_seq(ev),
+                timestamp=ev.timestamp.isoformat(),
                 new_content=ev.payload["new_content"],
             )
             for ev in events
@@ -391,8 +395,8 @@ class RhizomeService:
         for ev in edit_events:
             entries.append(InterventionEntry(
                 event_id=ev.event_id,
-                sequence_num=ev.sequence_num,
-                timestamp=ev.timestamp.isoformat() if hasattr(ev.timestamp, "isoformat") else str(ev.timestamp),
+                sequence_num=_seq(ev),
+                timestamp=ev.timestamp.isoformat(),
                 intervention_type="node_edited",
                 node_id=ev.payload["node_id"],
                 original_content=ev.payload.get("original_content"),
@@ -403,8 +407,8 @@ class RhizomeService:
         for ev in system_prompt_events:
             entries.append(InterventionEntry(
                 event_id=ev.event_id,
-                sequence_num=ev.sequence_num,
-                timestamp=ev.timestamp.isoformat() if hasattr(ev.timestamp, "isoformat") else str(ev.timestamp),
+                sequence_num=_seq(ev),
+                timestamp=ev.timestamp.isoformat(),
                 intervention_type="system_prompt_changed",
                 old_value=ev.payload.get("old_value"),
                 new_value=ev.payload.get("new_value"),
@@ -1187,7 +1191,7 @@ class RhizomeService:
         )
 
     @staticmethod
-    def _bookmark_from_row(row: dict) -> BookmarkResponse:
+    def _bookmark_from_row(row: Row) -> BookmarkResponse:
         """Convert a projected bookmark row to a response."""
         summarized = parse_json_or_none(row["summarized_node_ids"])
         return BookmarkResponse(
@@ -1203,7 +1207,7 @@ class RhizomeService:
         )
 
     @staticmethod
-    def _note_from_row(row: dict) -> NoteResponse:
+    def _note_from_row(row: Row) -> NoteResponse:
         """Convert a projected note row to a response."""
         return NoteResponse(
             note_id=row["note_id"],
@@ -1214,7 +1218,7 @@ class RhizomeService:
         )
 
     @staticmethod
-    def _annotation_from_row(row: dict) -> AnnotationResponse:
+    def _annotation_from_row(row: Row) -> AnnotationResponse:
         """Convert a projected annotation row to a response."""
         value = parse_json_or_none(row["value"])
         return AnnotationResponse(
@@ -1379,6 +1383,15 @@ class RhizomeService:
             is_excluded=ie,
             is_anchored=ia,
         )
+
+
+Row = Mapping[str, Any] | sqlite3.Row
+
+
+def _seq(event: EventEnvelope) -> int:
+    """An event read back from the store always has its sequence number."""
+    assert event.sequence_num is not None
+    return event.sequence_num
 
 
 class RhizomeNotFoundError(NotFoundError):

@@ -4,7 +4,6 @@ Tests the full flow: interventions configured in rhizome metadata → resolved
 by GenerationService → applied during generation → snapshotted on node.
 """
 
-import pytest
 
 from tests.fixtures import (
     create_rhizome_with_messages,
@@ -28,8 +27,9 @@ class TestInterventionSnapshotPersistence:
 
     async def test_node_created_with_interventions_via_event(self, client, event_store, projector):
         """An assistant node with active_interventions set persists through the event pipeline."""
-        from uuid import uuid4
         from datetime import UTC, datetime
+        from uuid import uuid4
+
         from qivis.models import EventEnvelope, NodeCreatedPayload
 
         rhizome = await create_test_rhizome(client)

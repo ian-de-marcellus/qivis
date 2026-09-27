@@ -419,7 +419,7 @@ class LlamaCppProvider(LLMProvider):
                             _find_lost_turn_end(chunk_lp.tokens, len(accumulated_probs))
                             if chunk_lp else None
                         )
-                        if idx is not None:
+                        if chunk_lp is not None and idx is not None:
                             kept = "".join(t.token for t in chunk_lp.tokens[:idx])
                             if kept:
                                 accumulated_text += kept

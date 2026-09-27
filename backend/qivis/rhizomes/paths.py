@@ -7,6 +7,7 @@ every root-to-leaf path. Siblings are always in creation order.
 
 from collections import defaultdict
 from collections.abc import Iterable
+from collections.abc import Set as AbstractSet
 
 
 def ancestry(
@@ -48,7 +49,7 @@ def children_of(nodes: Iterable[dict]) -> dict[str | None, list[dict]]:
 
 
 def current_path(
-    nodes: Iterable[dict], choose: set[str] = frozenset(),
+    nodes: Iterable[dict], choose: AbstractSet[str] = frozenset(),
 ) -> list[tuple[dict, list[dict]]]:
     """From the root down: at each step the chosen sibling, else the newest.
 

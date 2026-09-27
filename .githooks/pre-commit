@@ -1,0 +1,19 @@
+#!/bin/sh
+# Lint and type-check what's being committed. (Tests are left to you: `uv run
+# pytest` in backend/, `pnpm test` in frontend/.) Skip once with --no-verify.
+# Enabled by: git config core.hooksPath .githooks
+set -e
+root=$(git rev-parse --show-toplevel)
+staged=$(git diff --cached --name-only --diff-filter=ACMR)
+
+if echo "$staged" | grep -q '^backend/.*\.py$'; then
+  echo "pre-commit: backend (ruff, pyright)"
+  (cd "$root/backend" && uv run --quiet ruff check qivis tests && uv run --quiet pyright qivis >/dev/null) \
+    || { echo "pre-commit: backend checks failed (run them in backend/ to see why)"; exit 1; }
+fi
+
+if echo "$staged" | grep -qE '^frontend/.*\.(ts|tsx|js)$'; then
+  echo "pre-commit: frontend (tsc, eslint)"
+  (cd "$root/frontend" && pnpm exec tsc -b && pnpm exec eslint src) \
+    || { echo "pre-commit: frontend checks failed"; exit 1; }
+fi

@@ -12,7 +12,6 @@ from qivis.db.connection import Database
 from qivis.events.projector import StateProjector
 from qivis.events.store import EventStore
 from qivis.generation.service import GenerationService
-from qivis.models import SamplingParams
 from qivis.providers.base import (
     GenerationRequest,
     GenerationResult,
@@ -25,7 +24,6 @@ from qivis.rhizomes.schemas import (
     PatchRhizomeRequest,
 )
 from qivis.rhizomes.service import RhizomeService
-
 
 # -- Fixtures --
 
@@ -197,7 +195,7 @@ class TestCompletionModeGenerate:
         provider = CompletionModeProvider()
         provider.generate = lambda req: capture_generate(provider, req)
 
-        result = await gen_service.generate(
+        await gen_service.generate(
             rhizome_id, node_id, provider, model="test-model.gguf"
         )
 
@@ -222,7 +220,7 @@ class TestCompletionModeGenerate:
         provider = ChatOnlyProvider()
         provider.generate = lambda req: capture_generate(provider, req)
 
-        result = await gen_service.generate(
+        await gen_service.generate(
             rhizome_id, node_id, provider, model="test-model.gguf"
         )
 
@@ -420,7 +418,7 @@ class TestPromptTextRoundTrip:
         rhizome_id, node_id = await _create_rhizome_with_user_node(rhizome_service)
 
         provider = CompletionModeProvider()
-        node = await gen_service.generate(
+        await gen_service.generate(
             rhizome_id, node_id, provider, model="test-model.gguf"
         )
 

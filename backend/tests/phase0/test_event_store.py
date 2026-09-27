@@ -62,7 +62,7 @@ class TestEventStoreAppend:
 
     async def test_event_payload_preserved_as_json(self, event_store):
         """Complex nested payload (SamplingParams inside TreeCreated) round-trips."""
-        from qivis.models import SamplingParams, RhizomeCreatedPayload
+        from qivis.models import RhizomeCreatedPayload, SamplingParams
 
         payload = RhizomeCreatedPayload(
             title="Complex",

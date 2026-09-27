@@ -3,7 +3,6 @@
 Tests endpoint behavior, SSE streaming, and report persistence.
 """
 
-import json
 from collections.abc import AsyncIterator
 
 import pytest
@@ -14,6 +13,7 @@ from qivis.events.projector import StateProjector
 from qivis.events.store import EventStore
 from qivis.generation.perturbation import PerturbationService
 from qivis.generation.service import GenerationService
+from qivis.main import app
 from qivis.models import LogprobData, TokenLogprob
 from qivis.providers.base import (
     GenerationRequest,
@@ -22,7 +22,6 @@ from qivis.providers.base import (
     StreamChunk,
 )
 from qivis.providers.registry import clear_providers, register_provider
-from qivis.main import app
 from qivis.rhizomes.router import (
     get_generation_service,
     get_perturbation_service,
@@ -30,7 +29,6 @@ from qivis.rhizomes.router import (
 )
 from qivis.rhizomes.service import RhizomeService
 from tests.fixtures import create_rhizome_with_messages
-
 
 # -- Mock provider --
 

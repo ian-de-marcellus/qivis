@@ -159,7 +159,7 @@ class ContextBuilder:
         if eviction_mode == "none":
             # No eviction — send everything even if over limit
             pass
-        elif eviction_mode == "smart" and total > model_context_limit:
+        elif eviction_mode == "smart" and eviction is not None and total > model_context_limit:
             messages, message_node_ids, message_tokens, report = self._smart_evict(
                 messages, message_node_ids, message_tokens,
                 system_tokens, model_context_limit,
@@ -306,7 +306,7 @@ class ContextBuilder:
 
         if eviction_mode == "none":
             pass
-        elif eviction_mode == "smart" and total > model_context_limit:
+        elif eviction_mode == "smart" and eviction is not None and total > model_context_limit:
             messages, node_ids, message_tokens, report = self._smart_evict(
                 messages, node_ids, message_tokens,
                 system_tokens, model_context_limit,
