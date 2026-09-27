@@ -114,9 +114,9 @@
 
 /* Item with error/warning color (like Exclude) */
 .action-menu-item.item-warn {
-  color: var(--error, #c44);
+  color: var(--error-text);
 }
 
 .action-menu-item.item-warn:hover {
-  color: var(--error, #c44);
+  color: var(--error-text);
 }

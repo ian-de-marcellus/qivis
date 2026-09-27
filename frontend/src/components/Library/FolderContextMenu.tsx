@@ -117,14 +117,14 @@ export function FolderContextMenu({
             margin: 0,
             lineHeight: 1.4,
           }}>
-            Remove folder from {treeCount} tree{treeCount !== 1 ? 's' : ''}?
-            Trees will become unsorted.
+            Remove folder from {treeCount} rhizome{treeCount !== 1 ? 's' : ''}?
+            They will become unsorted.
           </p>
           <button
             className="rhizome-context-item rhizome-context-item--danger"
             onClick={handleDelete}
           >
-            Remove from {treeCount} tree{treeCount !== 1 ? 's' : ''}
+            Remove from {treeCount} rhizome{treeCount !== 1 ? 's' : ''}
           </button>
         </div>
       )}

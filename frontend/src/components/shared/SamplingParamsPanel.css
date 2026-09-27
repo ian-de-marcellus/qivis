@@ -85,11 +85,18 @@
 }
 
 .unsupported-param {
-  opacity: 0.4;
+  opacity: 0.35;
+}
+
+.unsupported-param input,
+.unsupported-param select {
+  cursor: not-allowed;
 }
 
 .unsupported-hint {
+  font-family: var(--font-ui);
   font-size: var(--text-xs);
   color: var(--text-tertiary);
   margin-left: var(--space-sm);
+  font-style: italic;
 }

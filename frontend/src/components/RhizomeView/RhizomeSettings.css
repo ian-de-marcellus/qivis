@@ -151,6 +151,7 @@
   font-size: var(--text-sm);
   font-weight: 500;
   letter-spacing: 0.02em;
+  text-transform: none;
   background: transparent;
   color: var(--text-secondary);
   border: 1px solid var(--border);
@@ -335,7 +336,7 @@
 }
 
 .rhizome-settings-export-btn:hover {
-  background: var(--bg-tertiary);
+  background: var(--bg-hover);
   border-color: var(--text-tertiary);
 }
 
@@ -368,7 +369,7 @@
   font-size: var(--text-xs);
   line-height: var(--leading-relaxed);
   color: var(--text-secondary);
-  background: var(--bg-tertiary);
+  background: var(--bg-hover);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
   padding: var(--space-sm) var(--space-md);

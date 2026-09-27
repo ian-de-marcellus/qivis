@@ -11,6 +11,8 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
   padding: var(--space-lg) var(--space-md);
   border-bottom: 1px solid var(--border-subtle);
 }
@@ -28,6 +30,12 @@
   display: flex;
   align-items: center;
   gap: var(--space-xs);
+  flex-shrink: 0;
+  margin-left: auto; /* right-aligned, including when it wraps below the title */
+}
+
+.rhizome-list-header-actions button {
+  white-space: nowrap;
 }
 
 /* View mode toggle buttons */
@@ -187,53 +195,6 @@
 .new-rhizome-form textarea {
   font-family: var(--font-mono);
   font-size: var(--text-xs);
-}
-
-/* Mode selector — segmented control */
-
-.mode-selector {
-  display: flex;
-  gap: 0;
-}
-
-.mode-selector .mode-selector-btn {
-  flex: 1;
-  padding: var(--space-xs) var(--space-sm);
-  font-family: var(--font-ui);
-  font-size: var(--text-sm);
-  font-weight: 500;
-  letter-spacing: 0.02em;
-  text-transform: none;
-  background: transparent;
-  color: var(--text-secondary);
-  border: 1px solid var(--border);
-  border-radius: 0;
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
-}
-
-.mode-selector .mode-selector-btn:first-child {
-  border-radius: var(--radius-sm) 0 0 var(--radius-sm);
-}
-
-.mode-selector .mode-selector-btn:last-child {
-  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
-  border-left: none;
-}
-
-.mode-selector .mode-selector-btn:hover:not(.active) {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-}
-
-.mode-selector .mode-selector-btn.active {
-  background: var(--accent);
-  color: var(--accent-text);
-  border-color: var(--accent);
-}
-
-.mode-selector .mode-selector-btn.active + .mode-selector-btn {
-  border-left-color: var(--accent);
 }
 
 .new-rhizome-form .create-submit {

@@ -200,15 +200,15 @@
 }
 
 .digression-delete-btn:hover {
-  color: var(--error, #c44);
-  border-color: var(--error, #c44);
+  color: var(--error-text);
+  border-color: var(--error-text);
 }
 
 .digression-confirm-delete {
   font-family: var(--font-ui);
   font-size: 0.6rem;
   padding: 0.1rem 0.35rem;
-  background: var(--error, #c44);
+  background: var(--error-text);
   color: white;
   border: none;
   border-radius: var(--radius-sm);

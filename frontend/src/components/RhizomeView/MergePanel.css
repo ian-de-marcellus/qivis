@@ -241,7 +241,7 @@
 .merge-error-message {
   font-family: var(--font-ui);
   font-size: var(--text-xs);
-  color: var(--text-error, #e55);
+  color: var(--error-text);
   word-break: break-word;
 }
 

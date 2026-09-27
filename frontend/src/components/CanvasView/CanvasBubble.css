@@ -109,7 +109,7 @@
 
 .canvas-content.excluded {
   opacity: 0.4;
-  border-left: 2px solid var(--error, #c44);
+  border-left: 2px solid var(--error-text);
   transition: opacity 0.15s;
 }
 
@@ -118,6 +118,6 @@
 }
 
 .canvas-tag.excluded-tag {
-  background: color-mix(in srgb, var(--error, #c44) 12%, transparent);
-  color: var(--error, #c44);
+  background: color-mix(in srgb, var(--error-text) 12%, transparent);
+  color: var(--error-text);
 }

@@ -53,8 +53,8 @@
 
 .token-tooltip-count {
   font-size: var(--text-xs);
-  color: var(--text-muted);
-  padding: var(--space-xxs) 0;
+  color: var(--text-tertiary);
+  padding: calc(var(--space-xs) / 2) 0;
   border-top: 1px solid var(--border-subtle);
   text-align: center;
 }

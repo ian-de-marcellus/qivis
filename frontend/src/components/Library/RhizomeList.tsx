@@ -278,7 +278,7 @@ export function RhizomeList() {
   return (
     <div className="rhizome-list">
       <div className="rhizome-list-header">
-        <h2>Trees</h2>
+        <h2>Rhizomes</h2>
         <div className="rhizome-list-header-actions">
           <button
             className={`view-mode-btn ${viewMode === 'all' ? 'active' : ''}`}
@@ -443,7 +443,7 @@ export function RhizomeList() {
           </>
         )}
         {sorted.length === 0 && !isLoading && (
-          <p className="rhizome-empty">No trees yet. Create one to start.</p>
+          <p className="rhizome-empty">No rhizomes yet. Create one to start.</p>
         )}
       </div>
 

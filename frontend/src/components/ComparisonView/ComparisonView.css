@@ -111,7 +111,7 @@
 
 .comparison-card-content {
   font-family: var(--font-body);
-  font-size: var(--text-md);
+  font-size: var(--text-base);
   line-height: var(--leading-normal);
   color: var(--text-primary);
   white-space: pre-wrap;

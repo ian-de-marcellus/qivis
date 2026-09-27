@@ -101,7 +101,7 @@ export function SearchPanel() {
           className="form-input"
           ref={inputRef}
           type="text"
-          placeholder="Search all trees..."
+          placeholder="Search all rhizomes..."
           value={searchQuery}
           onChange={handleChange}
           onKeyDown={handleKeyDown}

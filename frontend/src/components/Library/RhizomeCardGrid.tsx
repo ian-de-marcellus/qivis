@@ -40,7 +40,7 @@ export function RhizomeCardGrid({
   }, [rhizomes, selectedFolder, folderTrie])
 
   const label = selectedFolder === null
-    ? 'All Trees'
+    ? 'All rhizomes'
     : selectedFolder === '__unsorted__'
       ? 'Unsorted'
       : selectedFolder.split('/').pop()
@@ -49,7 +49,7 @@ export function RhizomeCardGrid({
     <div className="library-content-panel">
       <div className="library-content-header">
         <span className="library-content-title">{label}</span>
-        <span className="library-content-count">{filtered.length} tree{filtered.length !== 1 ? 's' : ''}</span>
+        <span className="library-content-count">{filtered.length} rhizome{filtered.length !== 1 ? 's' : ''}</span>
       </div>
       <div className="library-grid">
         {filtered.map(tree => (
@@ -69,10 +69,10 @@ export function RhizomeCardGrid({
         {filtered.length === 0 && (
           <p className="library-empty">
             {selectedFolder === '__unsorted__'
-              ? 'All trees are organized into folders.'
+              ? 'All rhizomes are organized into folders.'
               : selectedFolder
-                ? 'No trees in this folder yet. Drag trees here to organize them.'
-                : 'No trees yet. Create one to start.'}
+                ? 'No rhizomes in this folder yet. Drag rhizomes here to organize them.'
+                : 'No rhizomes yet. Create one to start.'}
           </p>
         )}
       </div>

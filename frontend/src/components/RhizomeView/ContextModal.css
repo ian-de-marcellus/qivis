@@ -171,10 +171,10 @@
 .context-modal-excluded-info {
   font-family: var(--font-ui);
   font-size: var(--text-xs);
-  color: var(--error, #c44);
+  color: var(--error-text);
   background: var(--bg-secondary);
   border-radius: var(--radius-sm);
-  border-left: 2px solid var(--error, #c44);
+  border-left: 2px solid var(--error-text);
   padding: var(--space-xs) var(--space-sm);
   margin-bottom: var(--space-sm);
 }
@@ -244,7 +244,7 @@
 
 .excluded-message {
   opacity: 0.5;
-  border-left: 2px solid var(--error, #c44);
+  border-left: 2px solid var(--error-text);
   padding-left: var(--space-sm);
   transition: opacity 0.15s;
 }
@@ -254,8 +254,8 @@
 }
 
 .context-modal-tag-excluded {
-  background: color-mix(in srgb, var(--error, #c44) 12%, transparent);
-  color: var(--error, #c44);
+  background: color-mix(in srgb, var(--error-text) 12%, transparent);
+  color: var(--error-text);
 }
 
 .excluded-preview {
@@ -408,5 +408,5 @@
   color: var(--text-tertiary);
   padding: 0.05rem 0.3rem;
   border-radius: var(--radius-sm);
-  background: var(--bg-tertiary);
+  background: var(--bg-hover);
 }

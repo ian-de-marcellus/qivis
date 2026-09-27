@@ -100,7 +100,7 @@ export function ReplayPanel({
                   marginLeft: '0.5rem',
                   width: '100px',
                   height: '4px',
-                  background: 'var(--border-color)',
+                  background: 'var(--border)',
                   borderRadius: '2px',
                   verticalAlign: 'middle',
                 }}>
@@ -108,7 +108,7 @@ export function ReplayPanel({
                     display: 'block',
                     width: `${(step / total) * 100}%`,
                     height: '100%',
-                    background: 'var(--accent-primary)',
+                    background: 'var(--accent)',
                     borderRadius: '2px',
                     transition: 'width 0.3s ease',
                   }} />

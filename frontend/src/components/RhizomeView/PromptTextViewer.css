@@ -59,7 +59,7 @@
   text-transform: uppercase;
   letter-spacing: 0.06em;
   padding: var(--space-xs) var(--space-sm);
-  background: var(--bg-tertiary);
+  background: var(--bg-hover);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   color: var(--text-tertiary);

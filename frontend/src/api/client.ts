@@ -28,7 +28,6 @@ import type {
   NoteResponse,
   PatchRhizomeRequest,
   PerturbationReportResponse,
-  PerturbationRequest,
   ProviderInfo,
   ReplayRequest,
   SearchResponse,
@@ -378,12 +377,6 @@ export async function exportRhizome(
   URL.revokeObjectURL(url)
 }
 
-export function getRhizomePaths(
-  rhizomeId: string,
-): Promise<{ paths: string[][] }> {
-  return request(`/rhizomes/${rhizomeId}/paths`)
-}
-
 // -- Generation (non-streaming) --
 
 /** Generate endpoint path. A null/empty nodeId is a root generation: the model speaks first. */
@@ -474,16 +467,6 @@ export async function generateMultiStream(
 
 // -- Replay --
 
-export function replayPath(
-  rhizomeId: string,
-  req: ReplayRequest,
-): Promise<NodeResponse[]> {
-  return request(`/rhizomes/${rhizomeId}/replay`, {
-    method: 'POST',
-    body: JSON.stringify({ ...req, stream: false }),
-  })
-}
-
 export async function replayStream(
   rhizomeId: string,
   req: ReplayRequest,
@@ -524,17 +507,6 @@ export async function replayStream(
 
 // -- Cross-model generation --
 
-export function generateCross(
-  rhizomeId: string,
-  nodeId: string,
-  req: CrossModelGenerateRequest,
-): Promise<NodeResponse[]> {
-  return request(`/rhizomes/${rhizomeId}/nodes/${nodeId}/generate-cross`, {
-    method: 'POST',
-    body: JSON.stringify({ ...req, stream: false }),
-  })
-}
-
 export async function generateCrossStream(
   rhizomeId: string,
   nodeId: string,
@@ -572,53 +544,10 @@ export function getPerturbationReports(rhizomeId: string): Promise<PerturbationR
   return request(`/rhizomes/${rhizomeId}/perturbation-reports`)
 }
 
-export function getPerturbationReport(rhizomeId: string, reportId: string): Promise<PerturbationReportResponse> {
-  return request(`/rhizomes/${rhizomeId}/perturbation-reports/${reportId}`)
-}
-
 export function deletePerturbationReport(rhizomeId: string, reportId: string): Promise<void> {
   return request(`/rhizomes/${rhizomeId}/perturbation-reports/${reportId}`, {
     method: 'DELETE',
   })
-}
-
-export async function perturbStream(
-  rhizomeId: string,
-  nodeId: string,
-  req: PerturbationRequest,
-  onStep: (step: number, total: number, type: string, label: string) => void,
-  onDelta: (text: string, stepIndex: number) => void,
-  onStepComplete: (event: MessageStopEvent) => void,
-  onComplete: (report: PerturbationReportResponse) => void,
-  onError?: (error: Error) => void,
-  signal?: AbortSignal,
-): Promise<void> {
-  await postSSE(
-    `${BASE}/rhizomes/${rhizomeId}/nodes/${nodeId}/perturb`,
-    { ...req, stream: true },
-    (message) => {
-      const { event, data } = message
-      if (event === 'perturbation_step') {
-        onStep(
-          data.step as number,
-          data.total as number,
-          data.type as string,
-          data.label as string,
-        )
-      } else if (event === 'text_delta' && typeof data.text === 'string') {
-        onDelta(data.text, data.completion_index as number)
-      } else if (event === 'message_stop') {
-        onStepComplete(data as unknown as MessageStopEvent)
-      } else if (event === 'perturbation_complete') {
-        onComplete(data as unknown as PerturbationReportResponse)
-      } else if (event === 'error') {
-        onError?.(sseError(message))
-      }
-    },
-    ({ event }) => event === 'perturbation_complete' || event === 'error',
-    onError,
-    signal,
-  )
 }
 
 // -- Search --

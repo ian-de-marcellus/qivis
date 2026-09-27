@@ -30,7 +30,7 @@
 }
 
 .rhizome-context-item--danger {
-  color: var(--color-red);
+  color: var(--error-text);
 }
 
 .rhizome-context-divider {
@@ -64,7 +64,7 @@
   border: none;
   color: var(--text-secondary);
   cursor: pointer;
-  font-size: var(--text-md);
+  font-size: var(--text-base);
   padding: 0;
   line-height: 1;
   transition: color 0.1s;
@@ -127,7 +127,7 @@
 
 .rhizome-context-folder-chip button:hover,
 .rhizome-context-tag-chip button:hover {
-  color: var(--color-red);
+  color: var(--error-text);
 }
 
 .rhizome-context-tag-dot {

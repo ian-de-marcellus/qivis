@@ -103,13 +103,13 @@ export function FolderTreePanel({
   return (
     <div className="library-folder-panel">
       <div className="library-folder-list">
-        {/* All Trees */}
+        {/* All rhizomes */}
         <button
           className={`library-folder-row library-folder-row--special ${selectedFolder === null ? 'active' : ''}`}
           onClick={() => onSelectFolder(null)}
         >
           <span className="library-folder-chevron spacer">&#9654;</span>
-          <span className="library-folder-name">All Trees</span>
+          <span className="library-folder-name">All rhizomes</span>
           <span className="library-folder-count">{totalCount}</span>
         </button>
 

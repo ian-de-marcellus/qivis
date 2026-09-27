@@ -30,7 +30,7 @@ export function DivergenceBar({ value, label, centered }: DivergenceBarProps) {
     return (
       <div className="divergence-bar-row">
         {label && <span className="divergence-bar-label">{label}</span>}
-        <div className="divergence-bar-track centered" style={{ position: 'relative', height: 8, flex: 1, background: 'var(--border-color)', borderRadius: 4 }}>
+        <div className="divergence-bar-track centered" style={{ position: 'relative', height: 8, flex: 1, background: 'var(--border)', borderRadius: 4 }}>
           <div style={{
             position: 'absolute',
             top: 0,
@@ -62,7 +62,7 @@ export function DivergenceBar({ value, label, centered }: DivergenceBarProps) {
   return (
     <div className="divergence-bar-row">
       {label && <span className="divergence-bar-label">{label}</span>}
-      <div style={{ position: 'relative', height: 8, flex: 1, background: 'var(--border-color)', borderRadius: 4 }}>
+      <div style={{ position: 'relative', height: 8, flex: 1, background: 'var(--border)', borderRadius: 4 }}>
         <div style={{
           width: `${pct}%`,
           height: '100%',

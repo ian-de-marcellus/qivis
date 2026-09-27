@@ -18,7 +18,6 @@ import type {
   NodeResponse,
   NoteResponse,
   PatchRhizomeRequest,
-  PerturbationConfig,
   PerturbationReportResponse,
   ModelEntry,
   ProviderInfo,
@@ -97,13 +96,6 @@ interface RhizomeStore {
     total: number
     streamingText: string
     createdNodeIds: string[]
-  } | null
-  perturbationState: {
-    active: boolean
-    step: number
-    total: number
-    currentLabel: string
-    stepContents: Record<number, string>
   } | null
   perturbationReports: PerturbationReportResponse[]
 
@@ -200,14 +192,6 @@ interface RhizomeStore {
     targets: CrossModelTarget[],
     systemPrompt?: string,
     samplingParams?: SamplingParams,
-  ) => Promise<void>
-  runPerturbation: (
-    nodeId: string,
-    perturbations: PerturbationConfig[],
-    provider: string,
-    model?: string,
-    samplingParams?: SamplingParams,
-    includeControl?: boolean,
   ) => Promise<void>
   fetchPerturbationReports: () => Promise<void>
   deletePerturbationReport: (reportId: string) => Promise<void>
@@ -526,7 +510,6 @@ export const useRhizomeStore = create<RhizomeStore>((set, get) => ({
   searchLoading: false,
   scrollToNodeId: null,
   replayState: null,
-  perturbationState: null,
   perturbationReports: [],
 
   stopGeneration: () => {
@@ -545,13 +528,12 @@ export const useRhizomeStore = create<RhizomeStore>((set, get) => ({
     }
 
     // Clear all streaming state (an aborted stream reports nothing, so a
-    // running replay or perturbation ends here too)
+    // running replay ends here too)
     set({
       ...MULTI_STREAMING_RESET,
       regeneratingParentId: null,
       replayState: null,
-      perturbationState: null,
-    })
+        })
 
     const rhizomeId = currentRhizome?.rhizome_id
     // streamingParentId is '' for a root generation, so check null explicitly
@@ -655,8 +637,7 @@ export const useRhizomeStore = create<RhizomeStore>((set, get) => ({
       comparisonNodeId: null,
       comparisonPickingMode: false,
       comparisonPickingSourceId: null,
-      perturbationState: null,
-      perturbationReports: [],
+          perturbationReports: [],
     })
     // Everything below lands only if this rhizome is still the selected one
     const stillSelected = () => get().selectedRhizomeId === rhizomeId
@@ -1541,88 +1522,6 @@ export const useRhizomeStore = create<RhizomeStore>((set, get) => ({
       )
     } catch (e) {
       fail(e)
-    }
-  },
-
-  runPerturbation: async (nodeId, perturbations, provider, model, samplingParams, includeControl = true) => {
-    const { currentRhizome } = get()
-    if (!currentRhizome) return
-
-    const rhizomeId = currentRhizome.rhizome_id
-    const ac = new AbortController()
-    set({
-      error: null,
-      _abortController: ac,
-      perturbationState: {
-        active: true,
-        step: 0,
-        total: perturbations.length + (includeControl ? 1 : 0),
-        currentLabel: '',
-        stepContents: {},
-      },
-    })
-
-    try {
-      await api.perturbStream(
-        rhizomeId,
-        nodeId,
-        {
-          perturbations,
-          provider,
-          model,
-          sampling_params: samplingParams,
-          include_control: includeControl,
-        },
-        (step, total, _type, label) => {
-          set((state) => ({
-            perturbationState: state.perturbationState
-              ? { ...state.perturbationState, step, total, currentLabel: label, stepContents: { ...state.perturbationState.stepContents, [step - 1]: '' } }
-              : null,
-          }))
-        },
-        (text, stepIndex) => {
-          set((state) => ({
-            perturbationState: state.perturbationState
-              ? {
-                  ...state.perturbationState,
-                  stepContents: {
-                    ...state.perturbationState.stepContents,
-                    [stepIndex]: (state.perturbationState.stepContents[stepIndex] ?? '') + text,
-                  },
-                }
-              : null,
-          }))
-        },
-        (_event) => {
-          // Step completed
-        },
-        (_report) => {
-          set({
-            perturbationState: null,
-            _abortController: null,
-          })
-          refreshRhizome(rhizomeId, set)
-          // Refresh reports
-          api.getPerturbationReports(rhizomeId).then((reports) => {
-            set({ perturbationReports: reports })
-          }).catch(() => {})
-        },
-        (error) => {
-          set({
-            perturbationState: null,
-            _abortController: null,
-            error: error.message,
-          })
-          refreshRhizome(rhizomeId, set)
-        },
-        ac.signal,
-      )
-    } catch (e) {
-      set({
-        perturbationState: null,
-        _abortController: null,
-        error: String(e),
-      })
     }
   },
 

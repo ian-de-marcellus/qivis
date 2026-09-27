@@ -226,7 +226,7 @@
   font-size: var(--text-xs);
   color: var(--text-secondary);
   background: var(--bg-secondary);
-  border: 1px solid var(--border-primary);
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   padding: var(--space-xs) var(--space-md);
   cursor: pointer;
@@ -236,5 +236,5 @@
 .first-turn-btn:hover {
   color: var(--text-primary);
   border-color: var(--text-tertiary);
-  background: var(--bg-tertiary);
+  background: var(--bg-hover);
 }

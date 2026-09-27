@@ -429,7 +429,7 @@
 }
 
 .rhizome-card-folder-chip button:hover {
-  color: var(--color-red);
+  color: var(--error-text);
 }
 
 /* ---- Card bottom row (folders + archive) ---- */
