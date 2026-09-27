@@ -146,6 +146,8 @@ INDEX_SQL = """
 CREATE INDEX IF NOT EXISTS idx_events_rhizome_id ON events(rhizome_id);
 CREATE INDEX IF NOT EXISTS idx_events_event_type ON events(event_type);
 CREATE INDEX IF NOT EXISTS idx_events_timestamp ON events(timestamp);
+CREATE INDEX IF NOT EXISTS idx_events_rhizome_type ON events(rhizome_id, event_type);
+CREATE INDEX IF NOT EXISTS idx_node_exclusions_rhizome_id ON node_exclusions(rhizome_id);
 CREATE INDEX IF NOT EXISTS idx_nodes_rhizome_id ON nodes(rhizome_id);
 CREATE INDEX IF NOT EXISTS idx_nodes_parent_id ON nodes(parent_id);
 CREATE INDEX IF NOT EXISTS idx_annotations_node_id ON annotations(node_id);

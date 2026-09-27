@@ -298,17 +298,16 @@ class StateProjector:
             "SELECT * FROM digression_groups WHERE rhizome_id = ?",
             (rhizome_id,),
         )
-        groups = []
-        for row in group_rows:
-            member_rows = await self._db.fetchall(
-                "SELECT node_id FROM digression_group_nodes WHERE group_id = ? ORDER BY sort_order",
-                (row["group_id"],),
-            )
-            groups.append({
-                **dict(row),
-                "node_ids": [m["node_id"] for m in member_rows],
-            })
-        return groups
+        member_rows = await self._db.fetchall(
+            """SELECT m.group_id, m.node_id FROM digression_group_nodes m
+               JOIN digression_groups g ON g.group_id = m.group_id
+               WHERE g.rhizome_id = ? ORDER BY m.group_id, m.sort_order""",
+            (rhizome_id,),
+        )
+        members: dict[str, list[str]] = {}
+        for m in member_rows:
+            members.setdefault(m["group_id"], []).append(m["node_id"])
+        return [{**dict(row), "node_ids": members.get(row["group_id"], [])} for row in group_rows]
 
     async def _handle_node_context_excluded(self, event: EventEnvelope) -> None:
         """Project a NodeContextExcluded event into node_exclusions."""

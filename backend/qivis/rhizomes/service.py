@@ -287,9 +287,7 @@ class RhizomeService:
             raise RhizomeNotFoundError(rhizome_id)
 
         if request.parent_id is not None:
-            nodes = await self._projector.get_nodes(rhizome_id)
-            node_ids = {n["node_id"] for n in nodes}
-            if request.parent_id not in node_ids:
+            if await self._projector.get_node(rhizome_id, request.parent_id) is None:
                 raise InvalidParentError(request.parent_id)
 
         node_id = str(uuid4())
@@ -319,10 +317,7 @@ class RhizomeService:
         if rhizome is None:
             raise RhizomeNotFoundError(rhizome_id)
 
-        nodes = await self._projector.get_nodes(rhizome_id)
-        node_row = next((n for n in nodes if n["node_id"] == node_id), None)
-        if node_row is None:
-            raise NodeNotFoundError(node_id)
+        node_row = await self._require_node(rhizome_id, node_id)
 
         # Normalize: empty string -> None, same-as-original -> None
         if edited_content is not None:
@@ -350,10 +345,7 @@ class RhizomeService:
         if rhizome is None:
             raise RhizomeNotFoundError(rhizome_id)
 
-        nodes = await self._projector.get_nodes(rhizome_id)
-        node_row = next((n for n in nodes if n["node_id"] == node_id), None)
-        if node_row is None:
-            raise NodeNotFoundError(node_id)
+        node_row = await self._require_node(rhizome_id, node_id)
 
         events = await self._store.get_events_by_type(rhizome_id, "NodeContentEdited")
         entries = [
@@ -433,9 +425,7 @@ class RhizomeService:
         if rhizome is None:
             raise RhizomeNotFoundError(rhizome_id)
 
-        nodes = await self._projector.get_nodes(rhizome_id)
-        if not any(n["node_id"] == node_id for n in nodes):
-            raise NodeNotFoundError(node_id)
+        await self._require_node(rhizome_id, node_id)
 
         annotation_id = str(uuid4())
         now = datetime.now(UTC)
@@ -516,9 +506,7 @@ class RhizomeService:
         if rhizome is None:
             raise RhizomeNotFoundError(rhizome_id)
 
-        nodes = await self._projector.get_nodes(rhizome_id)
-        if not any(n["node_id"] == node_id for n in nodes):
-            raise NodeNotFoundError(node_id)
+        await self._require_node(rhizome_id, node_id)
 
         note_id = str(uuid4())
         now = datetime.now(UTC)
@@ -599,9 +587,7 @@ class RhizomeService:
         if rhizome is None:
             raise RhizomeNotFoundError(rhizome_id)
 
-        nodes = await self._projector.get_nodes(rhizome_id)
-        if not any(n["node_id"] == node_id for n in nodes):
-            raise NodeNotFoundError(node_id)
+        await self._require_node(rhizome_id, node_id)
 
         bookmark_id = str(uuid4())
         now = datetime.now(UTC)
@@ -923,12 +909,8 @@ class RhizomeService:
         if rhizome is None:
             raise RhizomeNotFoundError(rhizome_id)
 
-        nodes = await self._projector.get_nodes(rhizome_id)
-        node_ids = {n["node_id"] for n in nodes}
-        if node_id not in node_ids:
-            raise NodeNotFoundError(node_id)
-        if request.scope_node_id not in node_ids:
-            raise NodeNotFoundError(request.scope_node_id)
+        await self._require_node(rhizome_id, node_id)
+        await self._require_node(rhizome_id, request.scope_node_id)
 
         now = datetime.now(UTC)
         payload = NodeContextExcludedPayload(
@@ -984,10 +966,7 @@ class RhizomeService:
         if rhizome is None:
             raise RhizomeNotFoundError(rhizome_id)
 
-        nodes = await self._projector.get_nodes(rhizome_id)
-        node_ids = {n["node_id"] for n in nodes}
-        if node_id not in node_ids:
-            raise NodeNotFoundError(node_id)
+        await self._require_node(rhizome_id, node_id)
 
         # Check current state
         row = await self._db.fetchone(
@@ -1247,6 +1226,12 @@ class RhizomeService:
             notes=row["notes"],
             created_at=row["created_at"],
         )
+
+    async def _require_node(self, rhizome_id: str, node_id: str) -> dict:
+        node = await self._projector.get_node(rhizome_id, node_id)
+        if node is None:
+            raise NodeNotFoundError(node_id)
+        return node
 
     async def node_response(self, rhizome_id: str, node_id: str) -> NodeResponse:
         """A freshly created node as the API returns it, with its place among siblings."""
