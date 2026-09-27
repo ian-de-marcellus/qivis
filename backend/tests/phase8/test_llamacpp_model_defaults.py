@@ -167,3 +167,13 @@ class TestRecording:
         node = (await client.get(f"/api/rhizomes/{rid}")).json()["nodes"][0]
         assert node["sampling_params"]["logit_bias"] == {"128009": pytest.approx(5.955837)}
         assert node["sampling_params"]["temperature"] == 0.7
+
+
+def test_served_name_is_the_file_name_whatever_the_server_reports():
+    """Newer llama-server reports model_alias as a full path; profiles key on the file name."""
+    from qivis.providers.llamacpp import _served_name
+
+    assert _served_name({"model_alias": "/Users/x/Models/sun-1.0.1.gguf"}) == "sun-1.0.1.gguf"
+    assert _served_name({"model_alias": "sun-1.0.1.gguf"}) == "sun-1.0.1.gguf"
+    assert _served_name({"model_path": "/m/sun.gguf"}) == "sun.gguf"
+    assert _served_name({}) is None

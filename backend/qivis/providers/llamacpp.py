@@ -145,8 +145,7 @@ class LlamaCppProvider(LLMProvider):
     async def _served_model(self) -> str | None:
         """Name of the model llama-server actually has loaded (it ignores the requested name)."""
         data = await self._props()
-        name = data.get("model_alias") or (data.get("model_path") or "").rsplit("/", 1)[-1]
-        return name if isinstance(name, str) and name else None
+        return _served_name(data)
 
     async def context_window(self, model: str) -> int | None:
         """llama-server's n_ctx: the one window it serves, whatever model is asked for."""
@@ -612,12 +611,10 @@ class LlamaCppProvider(LLMProvider):
             resp = await self._client.get(f"{self._base_url}/props")
             resp.raise_for_status()
             data = resp.json()
-            # llama.cpp exposes model name at top level, not inside default_generation_settings
-            model = (
-                data.get("model_alias")
-                or data.get("default_generation_settings", {}).get("model")
+            # The same name profiles and _served_model use (the file name)
+            model = _served_name(data) or _served_name(
+                {"model_path": data.get("default_generation_settings", {}).get("model")}
             )
-
             return [model] if model else []
         except Exception:
             return []
@@ -626,3 +623,16 @@ class LlamaCppProvider(LLMProvider):
 def _piece_text(piece: str | list[int]) -> str:
     """A token's text; llama.cpp gives raw bytes for part of a multi-byte character."""
     return piece if isinstance(piece, str) else bytes(piece).decode("utf-8", errors="replace")
+
+
+def _served_name(props: dict) -> str | None:
+    """The served model's name as profiles key it: the file name.
+
+    Newer llama-server builds report model_alias as the full path when no
+    alias was given; older ones gave the file name. Either way, the name is
+    the last path component.
+    """
+    name = props.get("model_alias") or props.get("model_path") or ""
+    if not isinstance(name, str):
+        return None
+    return name.rsplit("/", 1)[-1] or None
