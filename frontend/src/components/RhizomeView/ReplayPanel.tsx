@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ProviderInfo, SamplingParams } from '../../api/types.ts'
 import { useRhizomeStore } from '../../store/rhizomeStore.ts'
-import { type GenerationModeChoice, ModeSelect } from './ModeSelect.tsx'
+import { type GenerationModeChoice, effectiveMode } from './generationMode.ts'
+import { ModeSelect } from './ModeSelect.tsx'
 import './ForkPanel.css'
 
 interface ReplayPanelProps {
@@ -48,6 +49,14 @@ export function ReplayPanel({
   }, [])
 
   const isActive = replayState?.active ?? false
+
+  // Close once a replay we started finishes; the view has already moved to
+  // the new model's answer
+  const wasActive = useRef(false)
+  useEffect(() => {
+    if (wasActive.current && !isActive) onCancel()
+    wasActive.current = isActive
+  }, [isActive, onCancel])
   const step = replayState?.step ?? 0
   const total = replayState?.total ?? pathNodeIds.length
   const streamingText = replayState?.streamingText ?? ''
@@ -62,7 +71,7 @@ export function ReplayPanel({
       'context_faithful',
       systemPrompt || undefined,
       samplingParams,
-      generationMode || undefined,
+      effectiveMode(selectedProvider, generationMode),
     )
   }
 

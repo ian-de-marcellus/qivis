@@ -1,7 +1,6 @@
 import type { ProviderInfo } from '../../api/types.ts'
 import { useRhizomeData } from '../../store/rhizomeStore.ts'
-
-export type GenerationModeChoice = '' | 'chat' | 'completion'
+import { type GenerationModeChoice, isDualMode } from './generationMode.ts'
 
 interface ModeSelectProps {
   provider: ProviderInfo | undefined
@@ -21,8 +20,7 @@ export function ModeSelect({ provider, value, onChange, row = true }: ModeSelect
   const { currentRhizome } = useRhizomeData()
   // What a dual-mode provider does when no override is set
   const rhizomeMode = currentRhizome?.metadata?.generation_mode === 'completion' ? 'completion' : 'chat'
-  const modes = provider?.supported_modes ?? []
-  if (!(modes.includes('chat') && modes.includes('completion'))) return null
+  if (!isDualMode(provider)) return null
 
   const select = (
     <select

@@ -111,6 +111,9 @@ export function useBranchDefaults(path: NodeResponse[]) {
       provider: lastAssistant?.provider ?? currentRhizome?.default_provider ?? '',
       model: lastAssistant?.model ?? currentRhizome?.default_model ?? '',
       systemPrompt: currentRhizome?.default_system_prompt ?? '',
+      mode: (lastAssistant?.mode === 'chat' || lastAssistant?.mode === 'completion'
+        ? lastAssistant.mode
+        : undefined) as 'chat' | 'completion' | undefined,
     }
   }, [path, currentRhizome])
 }

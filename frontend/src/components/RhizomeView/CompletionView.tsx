@@ -16,13 +16,16 @@ import type { NodeResponse } from '../../api/types.ts'
 import { useRhizomeStore, useRhizomeData, useStreamingState, useComparison, useResearchMetadata } from '../../store/rhizomeStore.ts'
 import { CompletionNode } from './CompletionNode.tsx'
 import { ContextModal } from './ContextModal.tsx'
+import { CrossModelPanel } from './CrossModelPanel.tsx'
 import { reconstructContext } from './contextReconstruction.ts'
 import { ForkPanel } from './ForkPanel.tsx'
 import { FirstTurnAction } from './FirstTurnAction.tsx'
 import { GenerationErrorPanel } from './GenerationErrorPanel.tsx'
 import { MessageRow } from './MessageRow.tsx'
+import { ReplayPanel } from './ReplayPanel.tsx'
 import { StreamingDisplay } from './StreamingDisplay.tsx'
 import { SummarizePanel } from './SummarizePanel.tsx'
+import { WriteResponsePanel } from './WriteResponsePanel.tsx'
 import { useActivePath, useAutoScroll, useScrollToNode, useBranchDefaults, useForkPanel } from './useViewShared.ts'
 import './ChatView.css'
 
@@ -50,9 +53,13 @@ export function CompletionView() {
   const includeNode = useRhizomeStore(s => s.includeNode)
   const toggleAnchor = useRhizomeStore(s => s.toggleAnchor)
   const editNodeContent = useRhizomeStore(s => s.editNodeContent)
+  const prefillAssistant = useRhizomeStore(s => s.prefillAssistant)
 
   const bottomRef = useRef<HTMLDivElement>(null)
   const [summarizeTargetId, setSummarizeTargetId] = useState<string | null>(null)
+  const [replayFromNodeId, setReplayFromNodeId] = useState<string | null>(null)
+  const [crossModelNodeId, setCrossModelNodeId] = useState<string | null>(null)
+  const [writeResponseNodeId, setWriteResponseNodeId] = useState<string | null>(null)
 
   // Shared hooks
   const { nodes, path, childMap, leafNodeId } = useActivePath()
@@ -234,6 +241,15 @@ export function CompletionView() {
                   onSummarize: () => setSummarizeTargetId(
                     summarizeTargetId === node.node_id ? null : node.node_id
                   ),
+                  onReplay: () => setReplayFromNodeId(
+                    replayFromNodeId === node.node_id ? null : node.node_id
+                  ),
+                  onCrossModel: () => setCrossModelNodeId(
+                    crossModelNodeId === node.node_id ? null : node.node_id
+                  ),
+                  onWriteResponse: node.role === 'user' ? () => setWriteResponseNodeId(
+                    writeResponseNodeId === node.node_id ? null : node.node_id
+                  ) : undefined,
                 }}
                 isExcludedOnPath={effectiveExcludedIds.has(node.node_id)}
               />
@@ -260,6 +276,42 @@ export function CompletionView() {
                 <SummarizePanel
                   nodeId={node.node_id}
                   onClose={() => setSummarizeTargetId(null)}
+                />
+              )}
+              {replayFromNodeId === node.node_id && (() => {
+                // Replay from this node to the active leaf
+                const nodeIdx = path.findIndex(n => n.node_id === node.node_id)
+                if (nodeIdx === -1) return null
+                const desc = `From "${(node.content || '').slice(0, 40)}${node.content.length > 40 ? '...' : ''}"`
+                return (
+                  <ReplayPanel
+                    pathNodeIds={path.slice(nodeIdx).map(n => n.node_id)}
+                    pathDescription={desc}
+                    onCancel={() => setReplayFromNodeId(null)}
+                    providers={providers}
+                    defaults={branchDefaults}
+                  />
+                )
+              })()}
+              {crossModelNodeId === node.node_id && (
+                <CrossModelPanel
+                  nodeId={node.node_id}
+                  onCancel={() => setCrossModelNodeId(null)}
+                  isGenerating={isGenerating}
+                  providers={providers}
+                  defaults={{
+                    provider: branchDefaults.provider,
+                    model: branchDefaults.model,
+                  }}
+                />
+              )}
+              {writeResponseNodeId === node.node_id && (
+                <WriteResponsePanel
+                  onSubmit={(content) => {
+                    prefillAssistant(node.node_id, content)
+                    setWriteResponseNodeId(null)
+                  }}
+                  onCancel={() => setWriteResponseNodeId(null)}
                 />
               )}
             </Fragment>

@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import type { GenerateRequest, ProviderInfo, SamplingParams } from '../../api/types.ts'
 import { SamplingParamsPanel, type SamplingParamValues } from '../shared/SamplingParamsPanel.tsx'
-import { type GenerationModeChoice, ModeSelect } from './ModeSelect.tsx'
+import { type GenerationModeChoice, effectiveMode } from './generationMode.ts'
+import { ModeSelect } from './ModeSelect.tsx'
 import './ForkPanel.css'
 
 interface ForkPanelProps {
@@ -17,6 +18,8 @@ interface ForkPanelProps {
     provider: string | null
     model: string | null
     systemPrompt: string | null
+    /** Mode of the last assistant turn on the branch, if any */
+    mode?: 'chat' | 'completion'
   }
   streamDefault: boolean
   samplingDefaults: SamplingParams | null
@@ -45,7 +48,9 @@ export function ForkPanel({
     ''
   const [provider, setProvider] = useState(defaultProvider)
   const [model, setModel] = useState(defaults.model ?? '')
-  const [generationMode, setGenerationMode] = useState<GenerationModeChoice>('')
+  // Follow the branch, like provider and model: regenerating after a chat-mode
+  // GPT turn in a completion-mode rhizome should stay chat
+  const [generationMode, setGenerationMode] = useState<GenerationModeChoice>(defaults.mode ?? '')
 
   const selectedProvider = providers.find((p) => p.name === provider)
   const suggestedModels = selectedProvider?.models ?? []
@@ -105,7 +110,7 @@ export function ForkPanel({
         system_prompt: systemPrompt || undefined,
         sampling_params: Object.keys(samplingParams).length > 0 ? samplingParams : undefined,
         stream,
-        mode: generationMode || undefined,
+        mode: effectiveMode(selectedProvider, generationMode),
       }
       onPrefillContinue(content.trim(), overrides)
     }
@@ -270,7 +275,7 @@ export function ForkPanel({
       sampling_params: Object.keys(samplingParams).length > 0 ? samplingParams : undefined,
       n,
       stream,
-      mode: generationMode || undefined,
+      mode: effectiveMode(selectedProvider, generationMode),
     }
 
     if (mode === 'regenerate' || mode === 'generate') {
