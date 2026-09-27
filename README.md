@@ -114,6 +114,27 @@ Models guests can pick are listed in `guest_config.json` (`models`); per-model
 settings such as logit biases come from `model_defaults.json` as usual. The
 machine must be awake with Qivis and the model servers running.
 
+### MCP server: other models talk to local ones (optional)
+
+`qivis.mcp_server` is a stdio MCP server that lets another model (for example a
+connectome agent) talk to your profiled local models. Tools: `models_list`,
+`model_send(model, text)`, `model_read(model, last?)`,
+`model_new_conversation(model)`, `model_conversations(model?)`. Conversations
+continue by default and are recorded in Qivis in a **Connectome** folder, with the
+caller's name on its turns.
+
+```json
+"qivis": {
+  "command": "/path/to/uv",
+  "args": ["run", "--project", "/path/to/qivis/backend", "python", "-m", "qivis.mcp_server"],
+  "env": { "QIVIS_MCP_CALLER": "Fable" },
+  "requestTimeoutMs": 600000
+}
+```
+
+Optional env: `QIVIS_URL` (default `http://127.0.0.1:8000`), `QIVIS_MCP_MODELS`
+(comma-separated allowlist; default: every profiled model).
+
 ## License
 
 MIT
