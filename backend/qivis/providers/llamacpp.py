@@ -8,6 +8,7 @@ from typing import Any
 
 import httpx
 
+from qivis.models import LogprobData, TokenLogprob
 from qivis.providers.base import (
     GenerationRequest,
     GenerationResult,
@@ -36,6 +37,31 @@ _SPECIAL_TOKEN_IDS: dict[int, str] = {
 # bytes from decoded special tokens are often Unicode (Cyrillic etc.) which
 # Python's \w would match, preventing detection.
 _TURN_BOUNDARY_RE = re.compile(r"(?<!\w )(user|assistant)(?![a-zA-Z])")
+
+# Lost end-of-turn: some fine-tunes (Sun: Llama 3.1 8B, CPT+SFT) have a
+# damaged <|eot_id|> path.  Where the model means to end its turn, the
+# next-token distribution goes flat over junk -- every candidate sits near
+# -6 logprob -- and a fragment like "еристи" or '">\r\r\n' gets sampled.
+# Real text never looks like this: even a surprising token comes from a
+# distribution whose best candidate is reasonably likely.  Validated on 44
+# stored Sun turns (1811 tokens): fires only at turn ends, no false cuts.
+_LOST_TURN_END_SAMPLED = -5.0  # sampled token's logprob is below this...
+_LOST_TURN_END_BEST = -4.0  # ...and so is every candidate's
+# Probes requested for detection when the caller didn't ask for logprobs
+_DETECTION_N_PROBS = 2
+
+
+def _is_lost_turn_end(tok: TokenLogprob) -> bool:
+    best = max([tok.logprob] + [a.logprob for a in tok.top_alternatives])
+    return tok.logprob < _LOST_TURN_END_SAMPLED and best < _LOST_TURN_END_BEST
+
+
+def _find_lost_turn_end(tokens: list[TokenLogprob], offset: int = 0) -> int | None:
+    """Index of the first lost end-of-turn token, never the reply's first token."""
+    for i, tok in enumerate(tokens):
+        if offset + i > 0 and _is_lost_turn_end(tok):
+            return i
+    return None
 
 
 class LlamaCppProvider(LLMProvider):
@@ -114,6 +140,9 @@ class LlamaCppProvider(LLMProvider):
             body["presence_penalty"] = sp.presence_penalty
         if sp.logprobs and sp.top_logprobs is not None:
             body["n_probs"] = sp.top_logprobs
+        elif self._is_llama3(request):
+            # Needed to detect a lost end-of-turn; not returned to the caller
+            body["n_probs"] = _DETECTION_N_PROBS
 
         # Llama 3 template-specific adjustments
         if request.prompt_text and "<|begin_of_text|>" in request.prompt_text:
@@ -124,6 +153,33 @@ class LlamaCppProvider(LLMProvider):
             ]
 
         return body
+
+    @staticmethod
+    def _is_llama3(request: GenerationRequest) -> bool:
+        return bool(request.prompt_text and "<|begin_of_text|>" in request.prompt_text)
+
+    @staticmethod
+    def _returned_logprobs(
+        request: GenerationRequest, logprobs: LogprobData | None,
+    ) -> LogprobData | None:
+        """Drop probes that were requested only for lost turn-end detection."""
+        sp = request.sampling_params
+        return logprobs if sp.logprobs and sp.top_logprobs is not None else None
+
+    @staticmethod
+    def _cut_at_lost_turn_end(
+        content: str, logprobs: LogprobData | None,
+    ) -> tuple[str, LogprobData | None]:
+        """Cut content (and logprobs) where the model lost its end-of-turn."""
+        if logprobs is None:
+            return content, logprobs
+        idx = _find_lost_turn_end(logprobs.tokens)
+        if idx is None:
+            return content, logprobs
+        prefix = "".join(t.token for t in logprobs.tokens[:idx])
+        if not content.startswith(prefix):
+            return content, logprobs
+        return prefix, logprobs.model_copy(update={"tokens": logprobs.tokens[:idx]})
 
     @staticmethod
     def _truncate_at_boundary(text: str, is_llama3: bool) -> str:
@@ -174,8 +230,11 @@ class LlamaCppProvider(LLMProvider):
         )
 
         content = data.get("content", "")
-        is_llama3 = bool(request.prompt_text and "<|begin_of_text|>" in request.prompt_text)
+        is_llama3 = self._is_llama3(request)
+        if is_llama3:
+            content, logprobs = self._cut_at_lost_turn_end(content, logprobs)
         content = self._truncate_at_boundary(content, is_llama3)
+        logprobs = self._returned_logprobs(request, logprobs)
 
         return GenerationResult(
             content=content,
@@ -206,9 +265,7 @@ class LlamaCppProvider(LLMProvider):
 
         accumulated_text = ""
         accumulated_probs: list[dict] = []
-        is_llama3 = bool(
-            request.prompt_text and "<|begin_of_text|>" in request.prompt_text
-        )
+        is_llama3 = self._is_llama3(request)
 
         async with self._client.stream(
             "POST", f"{self._base_url}/completion", json=body
@@ -234,8 +291,8 @@ class LlamaCppProvider(LLMProvider):
                         clean = self._truncate_at_boundary(
                             accumulated_text, is_llama3
                         )
-                        logprobs = LogprobNormalizer.from_llamacpp(
-                            accumulated_probs
+                        logprobs = self._returned_logprobs(
+                            request, LogprobNormalizer.from_llamacpp(accumulated_probs)
                         )
                         yield StreamChunk(
                             type="message_stop",
@@ -257,9 +314,43 @@ class LlamaCppProvider(LLMProvider):
                 is_stop = data.get("stop", False)
 
                 if content and not is_stop:
+                    chunk_probs = data.get("completion_probabilities", [])
+
+                    # Lost end-of-turn: stop before the junk is ever shown
+                    if is_llama3 and chunk_probs:
+                        chunk_lp = LogprobNormalizer.from_llamacpp(chunk_probs)
+                        idx = (
+                            _find_lost_turn_end(chunk_lp.tokens, len(accumulated_probs))
+                            if chunk_lp else None
+                        )
+                        if idx is not None:
+                            kept = "".join(t.token for t in chunk_lp.tokens[:idx])
+                            if kept:
+                                accumulated_text += kept
+                                yield StreamChunk(type="text_delta", text=kept)
+                            accumulated_probs.extend(chunk_probs[:idx])
+                            logger.info(
+                                "Lost end-of-turn after %d chars, ending turn",
+                                len(accumulated_text),
+                            )
+                            yield StreamChunk(
+                                type="message_stop",
+                                is_final=True,
+                                result=GenerationResult(
+                                    content=accumulated_text,
+                                    model=data.get("model", request.model),
+                                    finish_reason="stop",
+                                    usage={},
+                                    logprobs=self._returned_logprobs(
+                                        request,
+                                        LogprobNormalizer.from_llamacpp(accumulated_probs),
+                                    ),
+                                ),
+                            )
+                            return
+
                     accumulated_text += content
                     # Collect per-token logprob data from streaming chunks
-                    chunk_probs = data.get("completion_probabilities", [])
                     if chunk_probs:
                         accumulated_probs.extend(chunk_probs)
                     yield StreamChunk(type="text_delta", text=content)
@@ -275,8 +366,8 @@ class LlamaCppProvider(LLMProvider):
                                 "truncating to %d",
                                 len(accumulated_text), len(clean),
                             )
-                            logprobs = LogprobNormalizer.from_llamacpp(
-                                accumulated_probs
+                            logprobs = self._returned_logprobs(
+                                request, LogprobNormalizer.from_llamacpp(accumulated_probs)
                             )
                             yield StreamChunk(
                                 type="message_stop",
@@ -303,8 +394,8 @@ class LlamaCppProvider(LLMProvider):
                     final_probs = data.get("completion_probabilities", [])
                     if final_probs:
                         accumulated_probs.extend(final_probs)
-                    logprobs = LogprobNormalizer.from_llamacpp(
-                        accumulated_probs
+                    logprobs = self._returned_logprobs(
+                        request, LogprobNormalizer.from_llamacpp(accumulated_probs)
                     )
                     yield StreamChunk(
                         type="message_stop",
