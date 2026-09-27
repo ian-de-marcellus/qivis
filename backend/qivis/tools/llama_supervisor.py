@@ -66,10 +66,16 @@ class Supervisor:
         return self.proc is not None and self.proc.returncode is None
 
     def placeholder_props(self) -> dict:
+        settings: dict = {}
+        for flag in ("-c", "--ctx-size"):
+            if flag in self.extra_args:
+                i = self.extra_args.index(flag)
+                if i + 1 < len(self.extra_args) and self.extra_args[i + 1].isdigit():
+                    settings["n_ctx"] = int(self.extra_args[i + 1])
         return {
             "model_alias": self.model.name,
             "model_path": str(self.model),
-            "default_generation_settings": {},
+            "default_generation_settings": settings,
             "supervisor": "sleeping",
         }
 

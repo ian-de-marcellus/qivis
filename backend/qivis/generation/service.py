@@ -7,7 +7,7 @@ from uuid import uuid4
 
 from qivis.events.projector import StateProjector
 from qivis.events.store import EventStore
-from qivis.generation.context import ContextBuilder, get_model_context_limit
+from qivis.generation.context import ContextBuilder, resolve_context_limit
 from qivis.generation.interventions import (
     InterventionConfig,
     InterventionContext,
@@ -112,7 +112,8 @@ class GenerationService:
          anchored_ids, eviction_strategy, metadata) = (
             await self._resolve_context(rhizome_id, node_id, model, system_prompt, sampling_params)
         )
-        context_limit = _apply_debug_context_limit(rhizome, get_model_context_limit(resolved_model))
+        context_limit = _apply_debug_context_limit(rhizome, await resolve_context_limit(
+            provider, resolved_model, resolved_params.max_tokens))
         pipeline = self._resolve_interventions(metadata)
         messages, context_usage, eviction_report, resolved_prompt, active_interventions = (
             self._build_context_with_interventions(
@@ -193,7 +194,8 @@ class GenerationService:
          anchored_ids, eviction_strategy, metadata) = (
             await self._resolve_context(rhizome_id, node_id, model, system_prompt, sampling_params)
         )
-        context_limit = _apply_debug_context_limit(rhizome, get_model_context_limit(resolved_model))
+        context_limit = _apply_debug_context_limit(rhizome, await resolve_context_limit(
+            provider, resolved_model, resolved_params.max_tokens))
         pipeline = self._resolve_interventions(metadata)
         messages, context_usage, eviction_report, resolved_prompt, active_interventions = (
             self._build_context_with_interventions(
@@ -277,7 +279,8 @@ class GenerationService:
                 rhizome_id, node_id, model, system_prompt, sampling_params
             )
         )
-        context_limit = _apply_debug_context_limit(rhizome, get_model_context_limit(resolved_model))
+        context_limit = _apply_debug_context_limit(rhizome, await resolve_context_limit(
+            provider, resolved_model, resolved_params.max_tokens))
         pipeline = self._resolve_interventions(metadata)
         messages, context_usage, eviction_report, resolved_prompt, active_interventions = (
             self._build_context_with_interventions(
@@ -425,9 +428,11 @@ class GenerationService:
         )
         first_model = targets[0]["model"]
         # Shared context must fit every target, so use the tightest limit
-        context_limit = _apply_debug_context_limit(
-            rhizome, min(get_model_context_limit(t["model"]) for t in targets),
-        )
+        context_limit = _apply_debug_context_limit(rhizome, min([
+            await resolve_context_limit(
+                get_provider(t["provider"]), t["model"], resolved_params.max_tokens)
+            for t in targets
+        ]))
         pipeline = self._resolve_interventions(metadata)
         messages, context_usage, eviction_report, resolved_prompt, active_interventions = (
             self._build_context_with_interventions(
@@ -498,9 +503,11 @@ class GenerationService:
         )
         first_model = targets[0]["model"]
         # Shared context must fit every target, so use the tightest limit
-        context_limit = _apply_debug_context_limit(
-            rhizome, min(get_model_context_limit(t["model"]) for t in targets),
-        )
+        context_limit = _apply_debug_context_limit(rhizome, min([
+            await resolve_context_limit(
+                get_provider(t["provider"]), t["model"], resolved_params.max_tokens)
+            for t in targets
+        ]))
         pipeline = self._resolve_interventions(metadata)
         messages, context_usage, eviction_report, resolved_prompt, active_interventions = (
             self._build_context_with_interventions(
@@ -627,7 +634,8 @@ class GenerationService:
          anchored_ids, eviction_strategy, metadata) = (
             await self._resolve_context(rhizome_id, node_id, model, system_prompt, sampling_params)
         )
-        context_limit = _apply_debug_context_limit(rhizome, get_model_context_limit(resolved_model))
+        context_limit = _apply_debug_context_limit(rhizome, await resolve_context_limit(
+            provider, resolved_model, resolved_params.max_tokens))
         pipeline = self._resolve_interventions(metadata)
         messages, context_usage, eviction_report, resolved_prompt, active_interventions = (
             self._build_context_with_interventions(

@@ -131,16 +131,26 @@ class LlamaCppProvider(LLMProvider):
     # these, causing the model to emit them instead of real special tokens.
     _LLAMA3_RESERVED_RANGE = range(128011, 128256)
 
-    async def _served_model(self) -> str | None:
-        """Name of the model llama-server actually has loaded (it ignores the requested name)."""
+    async def _props(self) -> dict:
         try:
             resp = await self._client.get(f"{self._base_url}/props")
             resp.raise_for_status()
             data = resp.json()
-            name = data.get("model_alias") or (data.get("model_path") or "").rsplit("/", 1)[-1]
-            return name if isinstance(name, str) and name else None
+            return data if isinstance(data, dict) else {}
         except Exception:
-            return None
+            return {}
+
+    async def _served_model(self) -> str | None:
+        """Name of the model llama-server actually has loaded (it ignores the requested name)."""
+        data = await self._props()
+        name = data.get("model_alias") or (data.get("model_path") or "").rsplit("/", 1)[-1]
+        return name if isinstance(name, str) and name else None
+
+    async def context_window(self, model: str) -> int | None:
+        """llama-server's n_ctx: the one window it serves, whatever model is asked for."""
+        settings = (await self._props()).get("default_generation_settings") or {}
+        n_ctx = settings.get("n_ctx")
+        return n_ctx if isinstance(n_ctx, int) and n_ctx > 0 else None
 
     def _effective_logit_bias(
         self, request: GenerationRequest, served: str | None,

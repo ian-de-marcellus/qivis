@@ -9,6 +9,7 @@ summarization, digression groups) comes in Phase 3.
 from datetime import datetime
 
 from qivis.generation.tokens import ApproximateTokenCounter, TokenCounter
+from qivis.model_catalog import get_catalog
 from qivis.models import ContextUsage, EvictionReport, EvictionStrategy
 
 # Known model context limits (tokens). Falls back to DEFAULT for unknown models.
@@ -35,9 +36,29 @@ MODEL_CONTEXT_LIMITS: dict[str, int] = {
 DEFAULT_CONTEXT_LIMIT = 200_000
 
 
+# Room left for the reply when a local model's window is known but max_tokens isn't set
+DEFAULT_REPLY_RESERVE = 1024
+
+
 def get_model_context_limit(model: str) -> int:
     """Look up context limit for a model, falling back to a conservative default."""
     return MODEL_CONTEXT_LIMITS.get(model, DEFAULT_CONTEXT_LIMIT)
+
+
+async def resolve_context_limit(provider, model: str, max_tokens: int | None) -> int:
+    """The prompt budget for a generation.
+
+    A model's own window (its profile's context_limit, else what the provider
+    reports, e.g. llama-server's n_ctx) holds prompt and reply together, so the
+    reply's max_tokens is set aside. Otherwise the known-model table applies.
+    """
+    window = (get_catalog().profile(model) or {}).get("context_limit")
+    if not isinstance(window, int) or window <= 0:
+        window = await provider.context_window(model)
+    if window:
+        reserve = max_tokens or DEFAULT_REPLY_RESERVE
+        return max(window - reserve, window // 4)
+    return get_model_context_limit(model)
 
 
 class ContextBuilder:

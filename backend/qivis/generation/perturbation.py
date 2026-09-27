@@ -9,7 +9,7 @@ from uuid import uuid4
 
 from qivis.events.projector import StateProjector
 from qivis.events.store import EventStore
-from qivis.generation.context import get_model_context_limit
+from qivis.generation.context import resolve_context_limit
 from qivis.generation.divergence import (
     certainty_delta,
     length_ratio,
@@ -463,7 +463,7 @@ class PerturbationService:
         eviction,
     ) -> _StepResult:
         """Run a single generation step with the given context kwargs."""
-        context_limit = get_model_context_limit(model)
+        context_limit = await resolve_context_limit(provider, model, params.max_tokens)
         pipeline = GenerationService._resolve_interventions(metadata)
 
         messages, ctx_usage, eviction_report, final_prompt, active_intv = (
@@ -538,7 +538,7 @@ class PerturbationService:
         yield_chunks: bool = True,
     ) -> AsyncIterator[StreamChunk]:
         """Run a single streaming generation step, yielding text_delta chunks."""
-        context_limit = get_model_context_limit(model)
+        context_limit = await resolve_context_limit(provider, model, params.max_tokens)
         pipeline = GenerationService._resolve_interventions(metadata)
 
         messages, ctx_usage, eviction_report, final_prompt, active_intv = (

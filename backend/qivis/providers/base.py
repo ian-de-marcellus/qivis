@@ -65,6 +65,10 @@ class LLMProvider(ABC):
         """Provider identifier (e.g., 'anthropic')."""
         ...
 
+    async def context_window(self, model: str) -> int | None:
+        """The model's whole context window in tokens, if the provider can tell."""
+        return None
+
     @abstractmethod
     async def generate(self, request: GenerationRequest) -> GenerationResult:
         """Send a non-streaming generation request. Returns the full result."""
