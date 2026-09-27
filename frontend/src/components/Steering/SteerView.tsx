@@ -243,6 +243,14 @@ export function SteerView({
     onClose()
   }, [onClose])
 
+  // Leaving with steered tokens not yet kept asks once (click or Esc again to confirm)
+  const [confirmClose, setConfirmClose] = useState(false)
+  const requestClose = useCallback(() => {
+    const unkept = live.current.sessionId != null && live.current.tokens.length > 0
+    if (unkept && !confirmClose) setConfirmClose(true)
+    else close()
+  }, [close, confirmClose])
+
   // -- Keyboard --
 
   useEffect(() => {
@@ -259,14 +267,14 @@ export function SteerView({
         e.preventDefault()
         undo()
       } else if (e.key === 'Escape') {
-        close()
+        requestClose()
       } else if (/^[1-9]$/.test(e.key) && live.current.paused) {
         chooseRank(Number(e.key) - 1)
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [undo, close, chooseRank])
+  }, [undo, requestClose, chooseRank])
 
   // -- The frame loop --
 
@@ -510,6 +518,15 @@ export function SteerView({
             >
               {modelOptions.map((m) => <option key={m} value={m}>{m}</option>)}
             </select>
+            <button
+              className={`steer-close${confirmClose ? ' confirming' : ''}`}
+              onClick={requestClose}
+              onBlur={() => setConfirmClose(false)}
+              aria-label="Close steering"
+              title="Close (Esc)"
+            >
+              {confirmClose ? `Discard ${tokens.length} token${tokens.length === 1 ? '' : 's'}?` : '×'}
+            </button>
           </div>
 
           <div className="steer-label">Context (end)</div>
@@ -572,7 +589,9 @@ export function SteerView({
           {error && <div className="steer-error">{error}</div>}
 
           <div className="steer-actions">
-            <button className="steer-discard" onClick={close}>Discard</button>
+            <button className="steer-discard" onClick={requestClose}>
+              {confirmClose ? 'Really discard?' : 'Discard'}
+            </button>
             <button
               className="steer-keep"
               onClick={() => keep({ thenYourTurn: false })}

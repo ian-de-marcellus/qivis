@@ -45,6 +45,8 @@
 }
 
 .steer-model {
+  flex: 0 1 auto;
+  min-width: 0;
   max-width: 190px;
   background: var(--bg-input);
   border: 1px solid var(--border-subtle);
@@ -273,4 +275,24 @@
 .steer-your-turn .steer-keep {
   border-color: var(--text-accent);
   color: var(--text-accent);
+}
+
+.steer-side .steer-close {
+  flex-shrink: 0;
+  margin-left: auto;
+  white-space: nowrap;
+  padding: 0 var(--space-xs);
+  border: none;
+  font-size: var(--text-lg);
+  line-height: 1;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text-tertiary);
+}
+
+.steer-side .steer-close.confirming {
+  padding: 2px var(--space-sm);
+  border: 1px solid var(--error-text);
+  font-size: var(--text-xs);
+  color: var(--error-text);
 }
