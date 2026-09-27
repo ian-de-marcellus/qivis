@@ -292,11 +292,7 @@ class RhizomeService:
 
         await self._events.emit(rhizome_id, "NodeCreated", payload, timestamp=now)
 
-        # Read back the projected node with sibling info
-        nodes = await self._projector.get_nodes(rhizome_id)
-        sibling_info = self._compute_sibling_info(nodes)
-        node_row = next(n for n in nodes if n["node_id"] == node_id)
-        return self._node_from_row(node_row, sibling_info=sibling_info)
+        return await self.node_response(rhizome_id, node_id)
 
     async def edit_node_content(
         self, rhizome_id: str, node_id: str, edited_content: str | None,
@@ -330,11 +326,7 @@ class RhizomeService:
         )
         await self._events.emit(rhizome_id, "NodeContentEdited", payload, timestamp=now)
 
-        # Read back with sibling info
-        nodes = await self._projector.get_nodes(rhizome_id)
-        sibling_info = self._compute_sibling_info(nodes)
-        updated_row = next(n for n in nodes if n["node_id"] == node_id)
-        return self._node_from_row(updated_row, sibling_info=sibling_info)
+        return await self.node_response(rhizome_id, node_id)
 
     async def get_edit_history(
         self, rhizome_id: str, node_id: str,
@@ -1272,6 +1264,14 @@ class RhizomeService:
             notes=row["notes"],
             created_at=row["created_at"],
         )
+
+    async def node_response(self, rhizome_id: str, node_id: str) -> NodeResponse:
+        """A freshly created node as the API returns it, with its place among siblings."""
+        row = await self._projector.get_node(rhizome_id, node_id)
+        if row is None:
+            raise NodeNotFoundError(node_id)
+        siblings = await self._projector.get_children(rhizome_id, row["parent_id"])
+        return self._node_from_row(row, sibling_info=self._compute_sibling_info(siblings))
 
     @staticmethod
     def _compute_sibling_info(

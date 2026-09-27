@@ -1,43 +1,33 @@
-"""Replay service: orchestrates conversation replay through a different model."""
+"""Replay service: answer a conversation's assistant turns with a different model.
 
-import json
+Context-faithful: at each assistant turn on the path, the new model answers
+the same context the original model saw. Each answer is stored as a sibling
+of the original turn (same parent), generated through the normal generation
+path -- so the parent chain is exactly what the model saw, and exclusions,
+interventions, and eviction apply as usual.
+
+(Trajectory replay, where the model saw its own earlier replies and the user
+turns were copied into a new branch, was removed in Sep 2026: it only made
+sense for scripted conversations. It's in git history.)
+"""
+
 from collections.abc import AsyncIterator
-from typing import Literal
-from uuid import uuid4
 
-from qivis.events.log import EventLog
 from qivis.events.projector import StateProjector
 from qivis.events.store import EventStore
-from qivis.generation.context import ContextBuilder
-from qivis.generation.service import GenerationService, merge_sampling_params
-from qivis.models import (
-    NodeCreatedPayload,
-    SamplingParams,
-)
-from qivis.providers.base import GenerationRequest, GenerationResult, LLMProvider, StreamChunk
+from qivis.generation.service import GenerationService, RhizomeNotFoundForGenerationError
+from qivis.models import SamplingParams
+from qivis.providers.base import LLMProvider, StreamChunk
 from qivis.rhizomes.schemas import NodeResponse
 from qivis.rhizomes.service import RhizomeService
-from qivis.utils.json import parse_json_field
 
 
 class InvalidReplayPathError(Exception):
     """Raised when the provided path is empty or disconnected."""
-    pass
 
 
 class ReplayService:
-    """Orchestrates conversation replay through a different model.
-
-    Supports two modes:
-    - context_faithful: at each assistant turn on the path, the new model
-      answers the same context the original model saw. Each answer is stored
-      as a sibling of the original turn (same parent), generated through the
-      normal generation path -- so the parent chain is exactly what the model
-      saw, and exclusions, interventions, and eviction apply as usual.
-    - trajectory: the model sees its own prior responses at each step; the
-      user turns are copied into a new branch. (Parked: only meaningful for
-      scripted conversations whose user turns don't depend on the replies.)
-    """
+    """Replays a path's assistant turns through another model (context-faithful)."""
 
     def __init__(
         self,
@@ -46,12 +36,8 @@ class ReplayService:
         store: EventStore,
         projector: StateProjector,
     ) -> None:
-        self._rhizome_svc = rhizome_service
         self._gen_svc = generation_service
-        self._store = store
         self._projector = projector
-        self._events = EventLog(store, projector)
-        self._context_builder = ContextBuilder()
 
     async def replay_path(
         self,
@@ -59,268 +45,14 @@ class ReplayService:
         path_node_ids: list[str],
         provider: LLMProvider,
         *,
-        mode: Literal["context_faithful", "trajectory"] = "context_faithful",
         model: str | None = None,
         system_prompt: str | None = None,
         sampling_params: SamplingParams | None = None,
         generation_mode: str | None = None,
     ) -> list[NodeResponse]:
-        """Replay a conversation path through a different model.
-
-        context_faithful returns the new sibling assistant nodes; trajectory
-        returns all created nodes (user copies + assistant generations).
-        """
-        self._validate_path(path_node_ids)
-        if mode == "context_faithful":
-            return await self._replay_faithful(
-                rhizome_id, path_node_ids, provider, model=model,
-                system_prompt=system_prompt, sampling_params=sampling_params,
-                generation_mode=generation_mode,
-            )
-
-        rhizome = await self._projector.get_rhizome(rhizome_id)
-        if rhizome is None:
-            raise InvalidReplayPathError(f"Rhizome not found: {rhizome_id}")
-
-        nodes = await self._projector.get_nodes(rhizome_id)
-        node_map = {n["node_id"]: n for n in nodes}
-
-        # Validate all path nodes exist and are connected
-        self._validate_path_connectivity(path_node_ids, node_map)
-
-        # Separate path into steps
-        path_nodes = [node_map[nid] for nid in path_node_ids]
-
-        # Resolve parameters
-        metadata = parse_json_field(rhizome.get("metadata")) or {}
-        resolved_model = model or rhizome.get("default_model") or "claude-sonnet-4-5-20250929"
-        resolved_prompt = system_prompt if system_prompt is not None else rhizome.get("default_system_prompt")
-        resolved_params = merge_sampling_params(
-            sampling_params, rhizome.get("default_sampling_params"), metadata=metadata,
-        )
-
-        replay_id = str(uuid4())
-        created_nodes: list[NodeResponse] = []
-        prev_replay_node_id: str | None = path_nodes[0].get("parent_id")  # fork point
-
-        for i, path_node in enumerate(path_nodes):
-            role = path_node["role"]
-
-            if role in ("user", "system", "tool", "researcher_note"):
-                # Copy user message as new node
-                content = path_node.get("edited_content") or path_node["content"]
-                node = await self._create_replay_node(
-                    rhizome_id=rhizome_id,
-                    parent_id=prev_replay_node_id,
-                    role=role,
-                    content=content,
-                    replay_id=replay_id,
-                )
-                created_nodes.append(node)
-                prev_replay_node_id = node.node_id
-
-            elif role == "assistant":
-                # Trajectory: build context from the replay branch
-                messages = self._build_trajectory_messages(created_nodes)
-
-                result = await self._generate_with_context(
-                    provider=provider,
-                    messages=messages,
-                    system_prompt=resolved_prompt,
-                    model=resolved_model,
-                    params=resolved_params,
-                    metadata=metadata,
-                )
-
-                node = await self._emit_replay_assistant(
-                    rhizome_id=rhizome_id,
-                    replay_id=replay_id,
-                    parent_id=prev_replay_node_id,
-                    result=result,
-                    provider_name=provider.name,
-                    system_prompt=resolved_prompt,
-                    sampling_params=resolved_params,
-                    model=resolved_model,
-                )
-                created_nodes.append(node)
-                prev_replay_node_id = node.node_id
-
-        return created_nodes
-
-    async def replay_path_stream(
-        self,
-        rhizome_id: str,
-        path_node_ids: list[str],
-        provider: LLMProvider,
-        *,
-        mode: Literal["context_faithful", "trajectory"] = "context_faithful",
-        model: str | None = None,
-        system_prompt: str | None = None,
-        sampling_params: SamplingParams | None = None,
-        generation_mode: str | None = None,
-    ) -> AsyncIterator[StreamChunk]:
-        """Streaming replay with progress events.
-
-        Yields replay_step, text_delta, message_stop, and replay_complete events.
-        """
-        self._validate_path(path_node_ids)
-        if mode == "context_faithful":
-            async for chunk in self._replay_faithful_stream(
-                rhizome_id, path_node_ids, provider, model=model,
-                system_prompt=system_prompt, sampling_params=sampling_params,
-                generation_mode=generation_mode,
-            ):
-                yield chunk
-            return
-
-        rhizome = await self._projector.get_rhizome(rhizome_id)
-        if rhizome is None:
-            raise InvalidReplayPathError(f"Rhizome not found: {rhizome_id}")
-
-        nodes = await self._projector.get_nodes(rhizome_id)
-        node_map = {n["node_id"]: n for n in nodes}
-        self._validate_path_connectivity(path_node_ids, node_map)
-
-        path_nodes = [node_map[nid] for nid in path_node_ids]
-
-        metadata = parse_json_field(rhizome.get("metadata")) or {}
-        resolved_model = model or rhizome.get("default_model") or "claude-sonnet-4-5-20250929"
-        resolved_prompt = system_prompt if system_prompt is not None else rhizome.get("default_system_prompt")
-        resolved_params = merge_sampling_params(
-            sampling_params, rhizome.get("default_sampling_params"), metadata=metadata,
-        )
-
-        replay_id = str(uuid4())
-        created_nodes: list[NodeResponse] = []
-        created_node_ids: list[str] = []
-        prev_replay_node_id: str | None = path_nodes[0].get("parent_id")
-        total = len(path_nodes)
-
-        for i, path_node in enumerate(path_nodes):
-            role = path_node["role"]
-            step = i + 1
-
-            if role in ("user", "system", "tool", "researcher_note"):
-                content = path_node.get("edited_content") or path_node["content"]
-                node = await self._create_replay_node(
-                    rhizome_id=rhizome_id,
-                    parent_id=prev_replay_node_id,
-                    role=role,
-                    content=content,
-                    replay_id=replay_id,
-                )
-                created_nodes.append(node)
-                created_node_ids.append(node.node_id)
-                prev_replay_node_id = node.node_id
-
-                yield StreamChunk(
-                    type="replay_step",
-                    text=f'{{"step": {step}, "total": {total}, "type": "user_copied", "node_id": "{node.node_id}"}}',
-                )
-
-            elif role == "assistant":
-                yield StreamChunk(
-                    type="replay_step",
-                    text=f'{{"step": {step}, "total": {total}, "type": "generating"}}',
-                )
-
-                messages = self._build_trajectory_messages(created_nodes)
-
-                # Stream the generation
-                request = GenerationRequest(
-                    model=resolved_model,
-                    messages=messages,
-                    system_prompt=resolved_prompt,
-                    sampling_params=resolved_params,
-                )
-
-                accumulated = ""
-                final_result = None
-                async for chunk in provider.generate_stream(request):
-                    if chunk.is_final and chunk.result:
-                        final_result = chunk.result
-                        accumulated = chunk.result.content
-                    elif chunk.text:
-                        accumulated += chunk.text
-                        yield StreamChunk(
-                            type="text_delta",
-                            text=chunk.text,
-                            completion_index=i,
-                        )
-
-                if final_result is None:
-                    final_result = GenerationResult(
-                        content=accumulated,
-                        model=resolved_model,
-                        finish_reason="stop",
-                    )
-
-                node = await self._emit_replay_assistant(
-                    rhizome_id=rhizome_id,
-                    replay_id=replay_id,
-                    parent_id=prev_replay_node_id,
-                    result=final_result,
-                    provider_name=provider.name,
-                    system_prompt=resolved_prompt,
-                    sampling_params=resolved_params,
-                    model=resolved_model,
-                )
-                created_nodes.append(node)
-                created_node_ids.append(node.node_id)
-                prev_replay_node_id = node.node_id
-
-                # Emit message_stop for this step
-                stop_data = {
-                    "type": "message_stop",
-                    "node_id": node.node_id,
-                    "content": final_result.content,
-                    "finish_reason": final_result.finish_reason,
-                    "completion_index": i,
-                }
-                yield StreamChunk(
-                    type="message_stop",
-                    text=str(stop_data),
-                    is_final=False,
-                    result=final_result,
-                    completion_index=i,
-                )
-
-        # Final replay_complete event
-        yield StreamChunk(
-            type="replay_complete",
-            text=json.dumps({"replay_id": replay_id, "created_node_ids": created_node_ids}),
-        )
-
-    # -- Context-faithful replay: a sibling at each assistant turn --
-
-    async def _faithful_steps(
-        self, rhizome_id: str, path_node_ids: list[str],
-    ) -> list[dict]:
-        """Validate the path and return its assistant nodes (the turns to replay)."""
-        rhizome = await self._projector.get_rhizome(rhizome_id)
-        if rhizome is None:
-            raise InvalidReplayPathError(f"Rhizome not found: {rhizome_id}")
-        nodes = await self._projector.get_nodes(rhizome_id)
-        node_map = {n["node_id"]: n for n in nodes}
-        self._validate_path_connectivity(path_node_ids, node_map)
-        return [
-            node_map[nid] for nid in path_node_ids
-            if node_map[nid]["role"] == "assistant"
-        ]
-
-    async def _replay_faithful(
-        self,
-        rhizome_id: str,
-        path_node_ids: list[str],
-        provider: LLMProvider,
-        *,
-        model: str | None,
-        system_prompt: str | None,
-        sampling_params: SamplingParams | None,
-        generation_mode: str | None,
-    ) -> list[NodeResponse]:
+        """Answer each assistant turn on the path; returns the new sibling nodes."""
         created: list[NodeResponse] = []
-        for original in await self._faithful_steps(rhizome_id, path_node_ids):
+        for original in await self._assistant_turns(rhizome_id, path_node_ids):
             # parent_id None (a root assistant turn) is a root generation
             created.append(await self._gen_svc.generate(
                 rhizome_id, original.get("parent_id"), provider,
@@ -329,161 +61,52 @@ class ReplayService:
             ))
         return created
 
-    async def _replay_faithful_stream(
+    async def replay_path_stream(
         self,
         rhizome_id: str,
         path_node_ids: list[str],
         provider: LLMProvider,
         *,
-        model: str | None,
-        system_prompt: str | None,
-        sampling_params: SamplingParams | None,
-        generation_mode: str | None,
+        model: str | None = None,
+        system_prompt: str | None = None,
+        sampling_params: SamplingParams | None = None,
+        generation_mode: str | None = None,
     ) -> AsyncIterator[StreamChunk]:
-        steps = await self._faithful_steps(rhizome_id, path_node_ids)
+        """Streaming replay: replay_step, text_delta, message_stop per turn, then
+        replay_complete. Deltas and stops carry the step as completion_index."""
+        steps = await self._assistant_turns(rhizome_id, path_node_ids)
         created_node_ids: list[str] = []
-        total = len(steps)
         for i, original in enumerate(steps):
             parent_id = original.get("parent_id")
-            yield StreamChunk(type="replay_step", text=json.dumps({
-                "step": i + 1, "total": total, "type": "generating",
+            yield StreamChunk(type="replay_step", data={
+                "step": i + 1, "total": len(steps), "type": "generating",
                 "parent_id": parent_id, "original_node_id": original["node_id"],
-            }))
+            })
             async for chunk in self._gen_svc.generate_stream(
                 rhizome_id, parent_id, provider,
                 model=model, system_prompt=system_prompt,
                 sampling_params=sampling_params, mode_override=generation_mode,
             ):
-                if chunk.is_final and chunk.result is not None:
-                    node_id = (chunk.result.raw_response or {}).get("node_id")
-                    if node_id:
-                        created_node_ids.append(node_id)
-                    yield StreamChunk(
-                        type="message_stop", is_final=False,
-                        result=chunk.result, completion_index=i,
-                    )
-                elif chunk.text:
-                    yield StreamChunk(
-                        type="text_delta", text=chunk.text, completion_index=i,
-                    )
-        yield StreamChunk(type="replay_complete", text=json.dumps({
+                if chunk.node_id:
+                    created_node_ids.append(chunk.node_id)
+                yield chunk.model_copy(update={"completion_index": i})
+        yield StreamChunk(type="replay_complete", data={
             "mode": "context_faithful", "created_node_ids": created_node_ids,
-        }))
+        })
 
-    # -- Validation --
-
-    def _validate_path(self, path_node_ids: list[str]) -> None:
+    async def _assistant_turns(self, rhizome_id: str, path_node_ids: list[str]) -> list[dict]:
+        """Validate the path and return its assistant nodes (the turns to replay)."""
         if not path_node_ids:
             raise InvalidReplayPathError("Replay path is empty")
-
-    def _validate_path_connectivity(
-        self, path_node_ids: list[str], node_map: dict[str, dict]
-    ) -> None:
-        """Validate that path_node_ids form a connected parent→child chain."""
+        if await self._projector.get_rhizome(rhizome_id) is None:
+            raise RhizomeNotFoundForGenerationError(rhizome_id)
+        node_map = {n["node_id"]: n for n in await self._projector.get_nodes(rhizome_id)}
         for nid in path_node_ids:
             if nid not in node_map:
                 raise InvalidReplayPathError(f"Node {nid} not found in rhizome")
-
-        for i in range(1, len(path_node_ids)):
-            child = node_map[path_node_ids[i]]
-            expected_parent = path_node_ids[i - 1]
-            if child.get("parent_id") != expected_parent:
+        for parent, child in zip(path_node_ids, path_node_ids[1:], strict=False):
+            if node_map[child].get("parent_id") != parent:
                 raise InvalidReplayPathError(
-                    f"Node {path_node_ids[i]} is not a child of {expected_parent} — path is disconnected"
+                    f"Node {child} is not a child of {parent} — path is disconnected"
                 )
-
-    # -- Message extraction --
-
-    def _build_trajectory_messages(
-        self, created_nodes: list[NodeResponse]
-    ) -> list[dict[str, str]]:
-        """Build message list from the replay branch's own nodes."""
-        return [{"role": n.role, "content": n.content} for n in created_nodes]
-
-    # -- Node creation --
-
-    async def _create_replay_node(
-        self,
-        rhizome_id: str,
-        parent_id: str | None,
-        role: str,
-        content: str,
-        replay_id: str,
-    ) -> NodeResponse:
-        """Create a user message copy in the replay branch."""
-        node_id = str(uuid4())
-        payload = NodeCreatedPayload(
-            node_id=node_id,
-            parent_id=parent_id,
-            role=role,
-            content=content,
-            mode="chat",
-            generation_id=replay_id,
-        )
-        await self._events.emit(rhizome_id, "NodeCreated", payload, device_id="replay")
-
-        nodes = await self._projector.get_nodes(rhizome_id)
-        sibling_info = RhizomeService._compute_sibling_info(nodes)
-        node_row = next(n for n in nodes if n["node_id"] == node_id)
-        return RhizomeService._node_from_row(node_row, sibling_info=sibling_info)
-
-    async def _emit_replay_assistant(
-        self,
-        rhizome_id: str,
-        replay_id: str,
-        parent_id: str | None,
-        result: GenerationResult,
-        provider_name: str,
-        system_prompt: str | None,
-        sampling_params: SamplingParams,
-        model: str,
-    ) -> NodeResponse:
-        """Emit a generated assistant node in the replay branch."""
-        node_id = str(uuid4())
-        payload = NodeCreatedPayload(
-            node_id=node_id,
-            generation_id=replay_id,
-            parent_id=parent_id,
-            role="assistant",
-            content=result.content,
-            model=result.model or model,
-            provider=provider_name,
-            system_prompt=system_prompt,
-            sampling_params=sampling_params,
-            mode="chat",
-            usage=result.usage,
-            latency_ms=result.latency_ms,
-            finish_reason=result.finish_reason,
-            logprobs=result.logprobs,
-            thinking_content=result.thinking_content,
-        )
-        await self._events.emit(rhizome_id, "NodeCreated", payload, device_id="replay")
-
-        nodes = await self._projector.get_nodes(rhizome_id)
-        sibling_info = RhizomeService._compute_sibling_info(nodes)
-        node_row = next(n for n in nodes if n["node_id"] == node_id)
-        return RhizomeService._node_from_row(node_row, sibling_info=sibling_info)
-
-    async def _generate_with_context(
-        self,
-        provider: LLMProvider,
-        messages: list[dict[str, str]],
-        system_prompt: str | None,
-        model: str,
-        params: SamplingParams,
-        metadata: dict,
-    ) -> GenerationResult:
-        """Generate a response with explicit messages (bypassing normal context resolution)."""
-        # Handle completion mode per-provider
-        prompt_text, resolved_params, mode_hint = GenerationService._prepare_completion_mode(
-            provider, messages, system_prompt, params, metadata, model=model,
-        )
-
-        request = GenerationRequest(
-            model=model,
-            messages=messages,
-            system_prompt=system_prompt,
-            sampling_params=resolved_params,
-            prompt_text=prompt_text,
-        )
-        return await provider.generate(request)
+        return [node_map[nid] for nid in path_node_ids if node_map[nid]["role"] == "assistant"]

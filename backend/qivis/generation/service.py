@@ -1,7 +1,22 @@
-"""Generation service: orchestrates LLM calls and event emission."""
+"""Generation service: orchestrates LLM calls and event emission.
+
+Every generation -- single, n>1, cross-model, replay, perturbation -- goes
+through the same three steps:
+
+  load     the rhizome state a generation depends on (path, exclusions,
+           settings), as a LoadedContext that callers may adjust
+  prepare  one Prepared request per target: its mode, context, rendered
+           prompt, and everything the node will record
+  run      complete() or stream() a Prepared, which persists the node
+
+so what each node records is exactly what its model was sent.
+"""
 
 import asyncio
+import dataclasses
+import logging
 from collections.abc import AsyncIterator
+from dataclasses import dataclass
 from uuid import uuid4
 
 from qivis.events.log import EventLog
@@ -30,6 +45,10 @@ from qivis.providers.registry import get_provider
 from qivis.rhizomes.schemas import NodeResponse
 from qivis.rhizomes.service import RhizomeService
 from qivis.utils.json import parse_json_field
+
+logger = logging.getLogger(__name__)
+
+FALLBACK_MODEL = "claude-sonnet-4-5-20250929"
 
 
 def merge_sampling_params(
@@ -70,13 +89,70 @@ def merge_sampling_params(
     return base
 
 
-def _apply_debug_context_limit(rhizome: dict, context_limit: int) -> int:
-    """Override context limit with debug value from rhizome metadata, if set."""
-    metadata = parse_json_field(rhizome.get("metadata")) or {}
-    debug_limit = metadata.get("debug_context_limit")
-    if isinstance(debug_limit, int) and debug_limit > 0:
-        return debug_limit
-    return context_limit
+@dataclass
+class Target:
+    """Who generates: a provider, a model (None: the rhizome's default), and
+    an explicit mode (None: the model's own, else the rhizome's)."""
+
+    provider: LLMProvider
+    model: str | None = None
+    mode: str | None = None
+
+
+@dataclass
+class LoadedContext:
+    """The rhizome state a generation depends on, before any messages are built.
+
+    Callers may adjust a copy (dataclasses.replace) before preparing, as
+    perturbation experiments do.
+    """
+
+    rhizome_id: str
+    rhizome: dict
+    nodes: list[dict]
+    metadata: dict
+    parent_id: str | None  # the node being answered; None: the model speaks first
+    system_prompt: str | None
+    params: SamplingParams
+    include_timestamps: bool  # the rhizome's setting; only chat-mode generations use it
+    include_thinking: bool
+    excluded_ids: set[str]
+    digression_groups: dict
+    excluded_group_ids: set[str]
+    anchored_ids: set[str]
+    eviction: EvictionStrategy | None
+
+
+@dataclass
+class Prepared:
+    """One generation, ready to send; everything its node will record."""
+
+    rhizome_id: str
+    parent_id: str | None
+    generation_id: str
+    provider: LLMProvider
+    model: str
+    mode: str  # "chat" | "completion"
+    request: GenerationRequest
+    context_usage: ContextUsage
+    active_interventions: list[dict] | None
+    include_timestamps: bool
+    include_thinking: bool
+    prefill: str | None = None
+    device_id: str = "local"
+    completion_index: int | None = None
+
+    @property
+    def recorded_mode(self) -> str:
+        return "prefill" if self.prefill else self.mode
+
+
+@dataclass
+class _Built:
+    messages: list[dict[str, str]]
+    usage: ContextUsage
+    system_prompt: str | None
+    active_interventions: list[dict] | None
 
 
 class GenerationService:
@@ -94,6 +170,8 @@ class GenerationService:
         self._events = EventLog(store, projector)
         self._context_builder = ContextBuilder()
 
+    # -- Entry points --
+
     async def generate(
         self,
         rhizome_id: str,
@@ -107,73 +185,33 @@ class GenerationService:
         mode_override: str | None = None,
     ) -> NodeResponse:
         """Generate a non-streaming response and store as a new node."""
-        (rhizome, nodes, resolved_model, resolved_prompt, resolved_params,
-         include_ts, include_think, excl_ids, dg_map, excl_gids,
-         anchored_ids, eviction_strategy, metadata) = (
-            await self._resolve_context(rhizome_id, node_id, model, system_prompt, sampling_params)
+        p = await self._prepare_one(
+            rhizome_id, node_id, provider, model, system_prompt, sampling_params,
+            prefill_content, mode_override,
         )
-        context_limit = _apply_debug_context_limit(rhizome, await resolve_context_limit(
-            provider, resolved_model, resolved_params.max_tokens))
-        pipeline = self._resolve_interventions(metadata)
-        messages, context_usage, eviction_report, resolved_prompt, active_interventions = (
-            self._build_context_with_interventions(
-                nodes=nodes, node_id=node_id,
-                system_prompt=resolved_prompt, context_limit=context_limit,
-                include_timestamps=include_ts, include_thinking=include_think,
-                excluded_ids=excl_ids, digression_groups=dg_map,
-                excluded_group_ids=excl_gids, anchored_ids=anchored_ids,
-                eviction=eviction_strategy, pipeline=pipeline,
-                model=resolved_model, metadata=metadata,
-            )
+        await self._started(p)
+        return await self.complete(p)
+
+    async def generate_stream(
+        self,
+        rhizome_id: str,
+        node_id: str | None,
+        provider: LLMProvider,
+        *,
+        model: str | None = None,
+        system_prompt: str | None = None,
+        sampling_params: SamplingParams | None = None,
+        prefill_content: str | None = None,
+        mode_override: str | None = None,
+    ) -> AsyncIterator[StreamChunk]:
+        """Generate a streaming response, yielding chunks."""
+        p = await self._prepare_one(
+            rhizome_id, node_id, provider, model, system_prompt, sampling_params,
+            prefill_content, mode_override,
         )
-        messages, context_usage = await self._maybe_inject_summary(
-            messages, context_usage, eviction_report,
-        )
-
-        # Completion mode: render prompt text from messages
-        prompt_text, resolved_params, mode_hint = self._prepare_completion_mode(
-            provider, messages, resolved_prompt, resolved_params, metadata,
-            mode_override=mode_override, model=resolved_model,
-        )
-
-        if prefill_content:
-            if prompt_text is not None:
-                # Completion + prefill: append prefill to prompt text
-                prompt_text += prefill_content
-            else:
-                messages.append({"role": "assistant", "content": prefill_content})
-
-        generation_id = str(uuid4())
-        mode = "prefill" if prefill_content else mode_hint
-
-        await self._emit_generation_started(
-            rhizome_id, generation_id, node_id,
-            resolved_model, provider.name, resolved_prompt, resolved_params,
-            mode=mode, prefill_content=prefill_content,
-        )
-
-        request = GenerationRequest(
-            model=resolved_model,
-            messages=messages,
-            system_prompt=resolved_prompt,
-            sampling_params=resolved_params,
-            prompt_text=prompt_text,
-        )
-        result = await provider.generate(request)
-
-        if prefill_content:
-            result.content = prefill_content + result.content
-
-        return await self._emit_node_created(
-            rhizome_id, generation_id, node_id, result,
-            provider.name, resolved_prompt, resolved_params,
-            context_usage=context_usage,
-            include_thinking_in_context=include_think,
-            include_timestamps=include_ts,
-            active_interventions=active_interventions,
-            mode=mode, prefill_content=prefill_content,
-            prompt_text=prompt_text,
-        )
+        await self._started(p)
+        async for chunk in self.stream(p):
+            yield chunk
 
     async def generate_n(
         self,
@@ -189,74 +227,12 @@ class GenerationService:
         mode_override: str | None = None,
     ) -> list[NodeResponse]:
         """Generate N responses in parallel and store as sibling nodes."""
-        (rhizome, nodes, resolved_model, resolved_prompt, resolved_params,
-         include_ts, include_think, excl_ids, dg_map, excl_gids,
-         anchored_ids, eviction_strategy, metadata) = (
-            await self._resolve_context(rhizome_id, node_id, model, system_prompt, sampling_params)
+        p = await self._prepare_one(
+            rhizome_id, node_id, provider, model, system_prompt, sampling_params,
+            prefill_content, mode_override,
         )
-        context_limit = _apply_debug_context_limit(rhizome, await resolve_context_limit(
-            provider, resolved_model, resolved_params.max_tokens))
-        pipeline = self._resolve_interventions(metadata)
-        messages, context_usage, eviction_report, resolved_prompt, active_interventions = (
-            self._build_context_with_interventions(
-                nodes=nodes, node_id=node_id,
-                system_prompt=resolved_prompt, context_limit=context_limit,
-                include_timestamps=include_ts, include_thinking=include_think,
-                excluded_ids=excl_ids, digression_groups=dg_map,
-                excluded_group_ids=excl_gids, anchored_ids=anchored_ids,
-                eviction=eviction_strategy, pipeline=pipeline,
-                model=resolved_model, metadata=metadata,
-            )
-        )
-        messages, context_usage = await self._maybe_inject_summary(
-            messages, context_usage, eviction_report,
-        )
-
-        prompt_text, resolved_params, mode_hint = self._prepare_completion_mode(
-            provider, messages, resolved_prompt, resolved_params, metadata,
-            mode_override=mode_override, model=resolved_model,
-        )
-
-        if prefill_content:
-            if prompt_text is not None:
-                prompt_text += prefill_content
-            else:
-                messages.append({"role": "assistant", "content": prefill_content})
-
-        generation_id = str(uuid4())
-        mode = "prefill" if prefill_content else mode_hint
-
-        await self._emit_generation_started(
-            rhizome_id, generation_id, node_id,
-            resolved_model, provider.name, resolved_prompt, resolved_params,
-            n=n, mode=mode, prefill_content=prefill_content,
-        )
-
-        request = GenerationRequest(
-            model=resolved_model,
-            messages=messages,
-            system_prompt=resolved_prompt,
-            sampling_params=resolved_params,
-            prompt_text=prompt_text,
-        )
-        results = await asyncio.gather(*[provider.generate(request) for _ in range(n)])
-
-        created: list[NodeResponse] = []
-        for result in results:
-            if prefill_content:
-                result.content = prefill_content + result.content
-            node = await self._emit_node_created(
-                rhizome_id, generation_id, node_id, result,
-                provider.name, resolved_prompt, resolved_params,
-                context_usage=context_usage,
-                include_thinking_in_context=include_think,
-                include_timestamps=include_ts,
-                active_interventions=active_interventions,
-                mode=mode, prefill_content=prefill_content,
-                prompt_text=prompt_text,
-            )
-            created.append(node)
-        return created
+        await self._started(p, n=n)
+        return await self._complete_all([p] * n)
 
     async def generate_n_stream(
         self,
@@ -271,139 +247,15 @@ class GenerationService:
         prefill_content: str | None = None,
         mode_override: str | None = None,
     ) -> AsyncIterator[StreamChunk]:
-        """Stream N responses simultaneously, yielding tagged chunks."""
-        (rhizome, nodes, resolved_model, resolved_prompt, resolved_params,
-         include_ts, include_think, excl_ids, dg_map, excl_gids,
-         anchored_ids, eviction_strategy, metadata) = (
-            await self._resolve_context(
-                rhizome_id, node_id, model, system_prompt, sampling_params
-            )
+        """Stream N responses simultaneously, yielding chunks tagged by completion_index."""
+        p = await self._prepare_one(
+            rhizome_id, node_id, provider, model, system_prompt, sampling_params,
+            prefill_content, mode_override,
         )
-        context_limit = _apply_debug_context_limit(rhizome, await resolve_context_limit(
-            provider, resolved_model, resolved_params.max_tokens))
-        pipeline = self._resolve_interventions(metadata)
-        messages, context_usage, eviction_report, resolved_prompt, active_interventions = (
-            self._build_context_with_interventions(
-                nodes=nodes, node_id=node_id,
-                system_prompt=resolved_prompt, context_limit=context_limit,
-                include_timestamps=include_ts, include_thinking=include_think,
-                excluded_ids=excl_ids, digression_groups=dg_map,
-                excluded_group_ids=excl_gids, anchored_ids=anchored_ids,
-                eviction=eviction_strategy, pipeline=pipeline,
-                model=resolved_model, metadata=metadata,
-            )
-        )
-        messages, context_usage = await self._maybe_inject_summary(
-            messages, context_usage, eviction_report,
-        )
-
-        prompt_text, resolved_params, mode_hint = self._prepare_completion_mode(
-            provider, messages, resolved_prompt, resolved_params, metadata,
-            mode_override=mode_override, model=resolved_model,
-        )
-
-        if prefill_content:
-            if prompt_text is not None:
-                prompt_text += prefill_content
-            else:
-                messages.append({"role": "assistant", "content": prefill_content})
-
-        generation_id = str(uuid4())
-        mode = "prefill" if prefill_content else mode_hint
-
-        await self._emit_generation_started(
-            rhizome_id, generation_id, node_id,
-            resolved_model, provider.name,
-            resolved_prompt, resolved_params,
-            n=n, mode=mode, prefill_content=prefill_content,
-        )
-
-        request = GenerationRequest(
-            model=resolved_model,
-            messages=messages,
-            system_prompt=resolved_prompt,
-            sampling_params=resolved_params,
-            prompt_text=prompt_text,
-        )
-
-        queue: asyncio.Queue[tuple[int, StreamChunk] | None] = (
-            asyncio.Queue()
-        )
-        remaining = n
-
-        async def _run_stream(index: int) -> None:
-            nonlocal remaining
-            try:
-                async for chunk in provider.generate_stream(request):
-                    if chunk.is_final and chunk.result is not None:
-                        if prefill_content:
-                            chunk.result.content = prefill_content + chunk.result.content
-                        node = await self._emit_node_created(
-                            rhizome_id, generation_id, node_id,
-                            chunk.result, provider.name,
-                            resolved_prompt, resolved_params,
-                            context_usage=context_usage,
-                            include_thinking_in_context=include_think,
-                            include_timestamps=include_ts,
-                            active_interventions=active_interventions,
-                            mode=mode, prefill_content=prefill_content,
-                            prompt_text=prompt_text,
-                        )
-                        tagged = StreamChunk(
-                            type=chunk.type,
-                            text=chunk.text,
-                            is_final=True,
-                            completion_index=index,
-                            result=GenerationResult(
-                                content=chunk.result.content,
-                                model=chunk.result.model,
-                                finish_reason=chunk.result.finish_reason,
-                                usage=chunk.result.usage,
-                                latency_ms=chunk.result.latency_ms,
-                                logprobs=chunk.result.logprobs,
-                                raw_response={
-                                    "node_id": node.node_id,
-                                },
-                            ),
-                        )
-                        await queue.put((index, tagged))
-                    else:
-                        tagged = StreamChunk(
-                            type=chunk.type,
-                            text=chunk.text,
-                            completion_index=index,
-                        )
-                        await queue.put((index, tagged))
-            except Exception as e:
-                error_chunk = StreamChunk(
-                    type="error",
-                    text=str(e),
-                    completion_index=index,
-                )
-                await queue.put((index, error_chunk))
-            finally:
-                remaining -= 1
-                if remaining == 0:
-                    await queue.put(None)
-
-        tasks = [
-            asyncio.create_task(_run_stream(i)) for i in range(n)
-        ]
-
-        try:
-            while True:
-                item = await queue.get()
-                if item is None:
-                    break
-                _index, chunk = item
-                yield chunk
-
-            yield StreamChunk(type="generation_complete")
-        finally:
-            for task in tasks:
-                if not task.done():
-                    task.cancel()
-            await asyncio.gather(*tasks, return_exceptions=True)
+        await self._started(p, n=n)
+        runs = [dataclasses.replace(p, completion_index=i) for i in range(n)]
+        async for chunk in self.fan_out(runs):
+            yield chunk
 
     async def generate_cross(
         self,
@@ -414,75 +266,14 @@ class GenerationService:
         system_prompt: str | None = None,
         sampling_params: SamplingParams | None = None,
     ) -> list[NodeResponse]:
-        """Generate responses from multiple providers and store as sibling nodes.
+        """Generate from several models and store as sibling nodes.
 
-        Each target is a dict with 'provider' and 'model' keys.
-        Context is resolved once and shared across all targets.
+        Each target is a dict with 'provider', 'model' and optional 'mode' keys.
         """
-        (rhizome, nodes, _, resolved_prompt, resolved_params,
-         include_ts, include_think, excl_ids, dg_map, excl_gids,
-         anchored_ids, eviction_strategy, metadata) = (
-            await self._resolve_context(
-                rhizome_id, node_id, None, system_prompt, sampling_params,
-            )
+        prepared = await self._prepare_cross(
+            rhizome_id, node_id, targets, system_prompt, sampling_params,
         )
-        first_model = targets[0]["model"]
-        # Shared context must fit every target, so use the tightest limit
-        context_limit = _apply_debug_context_limit(rhizome, min([
-            await resolve_context_limit(
-                get_provider(t["provider"]), t["model"], resolved_params.max_tokens)
-            for t in targets
-        ]))
-        pipeline = self._resolve_interventions(metadata)
-        messages, context_usage, eviction_report, resolved_prompt, active_interventions = (
-            self._build_context_with_interventions(
-                nodes=nodes, node_id=node_id,
-                system_prompt=resolved_prompt, context_limit=context_limit,
-                include_timestamps=include_ts, include_thinking=include_think,
-                excluded_ids=excl_ids, digression_groups=dg_map,
-                excluded_group_ids=excl_gids, anchored_ids=anchored_ids,
-                eviction=eviction_strategy, pipeline=pipeline,
-                model=first_model, metadata=metadata,
-            )
-        )
-        messages, context_usage = await self._maybe_inject_summary(
-            messages, context_usage, eviction_report,
-        )
-
-        generation_id = str(uuid4())
-
-        async def _generate_one(target: dict) -> NodeResponse:
-            provider = get_provider(target["provider"])
-            target_model = target["model"]
-
-            msgs_copy = [m.copy() for m in messages]
-            prompt_text, params, mode_hint = self._prepare_completion_mode(
-                provider, msgs_copy, resolved_prompt, resolved_params, metadata,
-                mode_override=target.get("mode"), model=target_model,
-            )
-
-            request = GenerationRequest(
-                model=target_model,
-                messages=msgs_copy,
-                system_prompt=resolved_prompt,
-                sampling_params=params,
-                prompt_text=prompt_text,
-            )
-            result = await provider.generate(request)
-
-            return await self._emit_node_created(
-                rhizome_id, generation_id, node_id, result,
-                provider.name, resolved_prompt, params,
-                context_usage=context_usage,
-                include_thinking_in_context=include_think,
-                include_timestamps=include_ts,
-                active_interventions=active_interventions,
-                mode=mode_hint,
-                prompt_text=prompt_text,
-            )
-
-        results = await asyncio.gather(*[_generate_one(t) for t in targets])
-        return list(results)
+        return await self._complete_all(prepared)
 
     async def generate_cross_stream(
         self,
@@ -493,223 +284,291 @@ class GenerationService:
         system_prompt: str | None = None,
         sampling_params: SamplingParams | None = None,
     ) -> AsyncIterator[StreamChunk]:
-        """Stream responses from multiple providers simultaneously."""
-        (rhizome, nodes, _, resolved_prompt, resolved_params,
-         include_ts, include_think, excl_ids, dg_map, excl_gids,
-         anchored_ids, eviction_strategy, metadata) = (
-            await self._resolve_context(
-                rhizome_id, node_id, None, system_prompt, sampling_params,
-            )
+        """Stream from several models simultaneously."""
+        prepared = await self._prepare_cross(
+            rhizome_id, node_id, targets, system_prompt, sampling_params,
         )
-        first_model = targets[0]["model"]
-        # Shared context must fit every target, so use the tightest limit
-        context_limit = _apply_debug_context_limit(rhizome, min([
-            await resolve_context_limit(
-                get_provider(t["provider"]), t["model"], resolved_params.max_tokens)
-            for t in targets
-        ]))
-        pipeline = self._resolve_interventions(metadata)
-        messages, context_usage, eviction_report, resolved_prompt, active_interventions = (
-            self._build_context_with_interventions(
-                nodes=nodes, node_id=node_id,
-                system_prompt=resolved_prompt, context_limit=context_limit,
-                include_timestamps=include_ts, include_thinking=include_think,
-                excluded_ids=excl_ids, digression_groups=dg_map,
-                excluded_group_ids=excl_gids, anchored_ids=anchored_ids,
-                eviction=eviction_strategy, pipeline=pipeline,
-                model=first_model, metadata=metadata,
-            )
+        async for chunk in self.fan_out(prepared):
+            yield chunk
+
+    # -- Load --
+
+    async def load(
+        self,
+        rhizome_id: str,
+        parent_id: str | None,
+        *,
+        system_prompt: str | None = None,
+        sampling_params: SamplingParams | None = None,
+    ) -> LoadedContext:
+        """Read what a generation answering parent_id depends on."""
+        rhizome = await self._projector.get_rhizome(rhizome_id)
+        if rhizome is None:
+            raise RhizomeNotFoundForGenerationError(rhizome_id)
+
+        nodes = await self._projector.get_nodes(rhizome_id)
+        if parent_id is not None and not any(n["node_id"] == parent_id for n in nodes):
+            raise NodeNotFoundForGenerationError(parent_id)
+
+        metadata = parse_json_field(rhizome.get("metadata")) or {}
+
+        # Exclusions apply when scoped to a node on this path
+        exclusion_rows = await self._projector.get_node_exclusions(rhizome_id)
+        path_ids = self._get_path_node_ids(nodes, parent_id)
+        groups = await self._projector.get_digression_groups(rhizome_id)
+
+        eviction_raw = metadata.get("eviction_strategy")
+        eviction = (
+            EvictionStrategy.model_validate(eviction_raw)
+            if eviction_raw and isinstance(eviction_raw, dict) else None
         )
-        messages, context_usage = await self._maybe_inject_summary(
-            messages, context_usage, eviction_report,
+
+        return LoadedContext(
+            rhizome_id=rhizome_id,
+            rhizome=rhizome,
+            nodes=nodes,
+            metadata=metadata,
+            parent_id=parent_id,
+            system_prompt=(
+                system_prompt if system_prompt is not None
+                else rhizome.get("default_system_prompt")
+            ),
+            params=merge_sampling_params(
+                sampling_params, rhizome.get("default_sampling_params"), metadata=metadata,
+            ),
+            include_timestamps=bool(metadata.get("include_timestamps", False)),
+            include_thinking=bool(metadata.get("include_thinking_in_context", False)),
+            excluded_ids={
+                r["node_id"] for r in exclusion_rows if r["scope_node_id"] in path_ids
+            },
+            digression_groups={g["group_id"]: g["node_ids"] for g in groups},
+            excluded_group_ids={g["group_id"] for g in groups if not g["included"]},
+            anchored_ids=await self._projector.get_anchored_ids(rhizome_id),
+            eviction=eviction,
         )
 
-        generation_id = str(uuid4())
-        n = len(targets)
+    # -- Prepare --
 
-        queue: asyncio.Queue[tuple[int, StreamChunk] | None] = asyncio.Queue()
-        remaining = n
+    async def prepare(
+        self,
+        ctx: LoadedContext,
+        targets: list[Target],
+        *,
+        prefill: str | None = None,
+        generation_id: str | None = None,
+        device_id: str = "local",
+    ) -> list[Prepared]:
+        """One Prepared per target.
 
-        async def _run_stream(index: int) -> None:
-            nonlocal remaining
-            try:
-                target = targets[index]
-                provider = get_provider(target["provider"])
-                target_model = target["model"]
+        Each target runs in its own mode. Targets share context building where
+        they can: one build per mode (timestamps are chat-only), sized to the
+        tightest window among them so every target sees the same turns.
+        """
+        generation_id = generation_id or str(uuid4())
+        default_model = ctx.rhizome.get("default_model") or FALLBACK_MODEL
+        models = [t.model or default_model for t in targets]
+        modes = [
+            self._mode_for(t.provider, m, ctx.metadata, t.mode)
+            for t, m in zip(targets, models, strict=True)
+        ]
+        limits = [
+            await resolve_context_limit(t.provider, m, ctx.params.max_tokens)
+            for t, m in zip(targets, models, strict=True)
+        ]
+        context_limit = self._debug_context_limit(ctx.metadata) or min(limits)
 
-                msgs_copy = [m.copy() for m in messages]
-                prompt_text, params, mode_hint = self._prepare_completion_mode(
-                    provider, msgs_copy, resolved_prompt, resolved_params, metadata,
-                    mode_override=target.get("mode"), model=target_model,
+        builds: dict[str, _Built] = {}
+        prepared: list[Prepared] = []
+        for index, (target, model, mode) in enumerate(zip(targets, models, modes, strict=True)):
+            if mode not in builds:
+                builds[mode] = await self._build(ctx, context_limit, mode, model)
+            built = builds[mode]
+
+            messages = [m.copy() for m in built.messages]
+            params = ctx.params
+            prompt_text = None
+            if mode == "completion":
+                prompt_text, params = self._render_completion(
+                    model, messages, built.system_prompt, params, ctx.metadata,
                 )
+            if prefill:
+                if prompt_text is not None:
+                    prompt_text += prefill
+                else:
+                    messages.append({"role": "assistant", "content": prefill})
 
-                request = GenerationRequest(
-                    model=target_model,
-                    messages=msgs_copy,
-                    system_prompt=resolved_prompt,
+            prepared.append(Prepared(
+                rhizome_id=ctx.rhizome_id,
+                parent_id=ctx.parent_id,
+                generation_id=generation_id,
+                provider=target.provider,
+                model=model,
+                mode=mode,
+                request=GenerationRequest(
+                    model=model,
+                    messages=messages,
+                    system_prompt=built.system_prompt,
                     sampling_params=params,
                     prompt_text=prompt_text,
-                )
+                ),
+                context_usage=built.usage,
+                active_interventions=built.active_interventions,
+                include_timestamps=ctx.include_timestamps and mode == "chat",
+                include_thinking=ctx.include_thinking,
+                prefill=prefill,
+                device_id=device_id,
+                completion_index=index if len(targets) > 1 else None,
+            ))
+        return prepared
 
-                async for chunk in provider.generate_stream(request):
-                    if chunk.is_final and chunk.result is not None:
-                        node = await self._emit_node_created(
-                            rhizome_id, generation_id, node_id,
-                            chunk.result, provider.name,
-                            resolved_prompt, params,
-                            context_usage=context_usage,
-                            include_thinking_in_context=include_think,
-                            include_timestamps=include_ts,
-                            active_interventions=active_interventions,
-                            mode=mode_hint,
-                            prompt_text=prompt_text,
-                        )
-                        tagged = StreamChunk(
-                            type=chunk.type,
-                            text=chunk.text,
-                            is_final=True,
-                            completion_index=index,
-                            result=GenerationResult(
-                                content=chunk.result.content,
-                                model=chunk.result.model,
-                                finish_reason=chunk.result.finish_reason,
-                                usage=chunk.result.usage,
-                                latency_ms=chunk.result.latency_ms,
-                                logprobs=chunk.result.logprobs,
-                                raw_response={"node_id": node.node_id},
-                            ),
-                        )
-                        await queue.put((index, tagged))
-                    else:
-                        tagged = StreamChunk(
-                            type=chunk.type,
-                            text=chunk.text,
-                            completion_index=index,
-                        )
-                        await queue.put((index, tagged))
-            except Exception as e:
-                error_chunk = StreamChunk(
-                    type="error",
-                    text=str(e),
-                    completion_index=index,
-                )
-                await queue.put((index, error_chunk))
-            finally:
-                remaining -= 1
-                if remaining == 0:
-                    await queue.put(None)
-
-        tasks = [asyncio.create_task(_run_stream(i)) for i in range(n)]
-
-        try:
-            while True:
-                item = await queue.get()
-                if item is None:
-                    break
-                _index, chunk = item
-                yield chunk
-
-            yield StreamChunk(type="generation_complete")
-        finally:
-            for task in tasks:
-                if not task.done():
-                    task.cancel()
-            await asyncio.gather(*tasks, return_exceptions=True)
-
-    async def generate_stream(
+    async def _prepare_one(
         self,
         rhizome_id: str,
         node_id: str | None,
         provider: LLMProvider,
-        *,
-        model: str | None = None,
-        system_prompt: str | None = None,
-        sampling_params: SamplingParams | None = None,
-        prefill_content: str | None = None,
-        mode_override: str | None = None,
-    ) -> AsyncIterator[StreamChunk]:
-        """Generate a streaming response, yielding chunks."""
-        (rhizome, nodes, resolved_model, resolved_prompt, resolved_params,
-         include_ts, include_think, excl_ids, dg_map, excl_gids,
-         anchored_ids, eviction_strategy, metadata) = (
-            await self._resolve_context(rhizome_id, node_id, model, system_prompt, sampling_params)
+        model: str | None,
+        system_prompt: str | None,
+        sampling_params: SamplingParams | None,
+        prefill: str | None,
+        mode_override: str | None,
+    ) -> Prepared:
+        ctx = await self.load(
+            rhizome_id, node_id, system_prompt=system_prompt, sampling_params=sampling_params,
         )
-        context_limit = _apply_debug_context_limit(rhizome, await resolve_context_limit(
-            provider, resolved_model, resolved_params.max_tokens))
-        pipeline = self._resolve_interventions(metadata)
-        messages, context_usage, eviction_report, resolved_prompt, active_interventions = (
-            self._build_context_with_interventions(
-                nodes=nodes, node_id=node_id,
-                system_prompt=resolved_prompt, context_limit=context_limit,
-                include_timestamps=include_ts, include_thinking=include_think,
-                excluded_ids=excl_ids, digression_groups=dg_map,
-                excluded_group_ids=excl_gids, anchored_ids=anchored_ids,
-                eviction=eviction_strategy, pipeline=pipeline,
-                model=resolved_model, metadata=metadata,
+        [p] = await self.prepare(ctx, [Target(provider, model, mode_override)], prefill=prefill)
+        return p
+
+    async def _prepare_cross(
+        self,
+        rhizome_id: str,
+        node_id: str,
+        targets: list[dict],
+        system_prompt: str | None,
+        sampling_params: SamplingParams | None,
+    ) -> list[Prepared]:
+        ctx = await self.load(
+            rhizome_id, node_id, system_prompt=system_prompt, sampling_params=sampling_params,
+        )
+        return await self.prepare(ctx, [
+            Target(get_provider(t["provider"]), t["model"], t.get("mode")) for t in targets
+        ])
+
+    @staticmethod
+    def _mode_for(
+        provider: LLMProvider, model: str, metadata: dict, override: str | None,
+    ) -> str:
+        """The mode a generation runs in.
+
+        Single-mode providers decide for themselves. For dual-mode providers:
+        an explicit override, else the model's own profile, else the rhizome's
+        generation_mode, else chat.
+        """
+        if "completion" not in provider.supported_modes:
+            return "chat"
+        if "chat" not in provider.supported_modes:
+            return "completion"
+        if override in ("chat", "completion"):
+            return override
+        profile_mode = (get_catalog().profile(model) or {}).get("generation_mode")
+        if profile_mode in ("chat", "completion"):
+            return profile_mode
+        return "completion" if metadata.get("generation_mode") == "completion" else "chat"
+
+    @staticmethod
+    def _render_completion(
+        model: str,
+        messages: list[dict[str, str]],
+        system_prompt: str | None,
+        params: SamplingParams,
+        metadata: dict,
+    ) -> tuple[str, SamplingParams]:
+        """Render the prompt text; the template's stop tokens join the sampling params.
+
+        The template is the rhizome's, unless unset or "auto": then the model's
+        own (its profile), else raw.
+        """
+        template_name = metadata.get("prompt_template")
+        if not template_name or template_name == "auto":
+            template_name = (get_catalog().profile(model) or {}).get("prompt_template") or "raw"
+        prompt_text, stop_tokens = render_prompt(template_name, messages, system_prompt)
+        stops = list(params.stop_sequences or [])
+        stops += [t for t in stop_tokens if t not in stops]
+        return prompt_text, params.model_copy(update={"stop_sequences": stops})
+
+    @staticmethod
+    def _debug_context_limit(metadata: dict) -> int | None:
+        limit = metadata.get("debug_context_limit")
+        return limit if isinstance(limit, int) and limit > 0 else None
+
+    async def _build(
+        self, ctx: LoadedContext, context_limit: int, mode: str, model: str,
+    ) -> _Built:
+        """Messages for the path to ctx.parent_id: exclusions, interventions,
+        eviction, and an eviction summary if the strategy asks for one."""
+        pipeline = self._resolve_interventions(ctx.metadata)
+        include_timestamps = ctx.include_timestamps and mode == "chat"
+
+        if pipeline.is_empty:
+            messages, usage, report = self._context_builder.build(
+                nodes=ctx.nodes,
+                target_node_id=ctx.parent_id,
+                system_prompt=ctx.system_prompt,
+                model_context_limit=context_limit,
+                include_timestamps=include_timestamps,
+                include_thinking=ctx.include_thinking,
+                excluded_ids=ctx.excluded_ids,
+                digression_groups=ctx.digression_groups,
+                excluded_group_ids=ctx.excluded_group_ids,
+                anchored_ids=ctx.anchored_ids,
+                eviction=ctx.eviction,
             )
-        )
-        messages, context_usage = await self._maybe_inject_summary(
-            messages, context_usage, eviction_report,
-        )
+            system_prompt, active = ctx.system_prompt, None
+        else:
+            # build_messages -> pre_eviction -> count_and_evict -> post_eviction
+            messages, node_ids, created_ats, excluded = self._context_builder.build_messages(
+                nodes=ctx.nodes,
+                target_node_id=ctx.parent_id,
+                include_timestamps=include_timestamps,
+                include_thinking=ctx.include_thinking,
+                excluded_ids=ctx.excluded_ids,
+                digression_groups=ctx.digression_groups,
+                excluded_group_ids=ctx.excluded_group_ids,
+            )
+            ictx = pipeline.run_pre_eviction(InterventionContext(
+                messages=messages,
+                system_prompt=ctx.system_prompt,
+                node_ids=node_ids,
+                model=model,
+                metadata=ctx.metadata,
+                mode=mode,
+                created_ats=created_ats,
+            ))
+            ictx.messages, usage, report = self._context_builder.count_and_evict(
+                messages=ictx.messages,
+                node_ids=ictx.node_ids,
+                system_prompt=ictx.system_prompt,
+                model_context_limit=context_limit,
+                excluded_token_total=excluded["excluded_tokens"],
+                excluded_node_count=excluded["excluded_count"],
+                excluded_node_ids=excluded["excluded_node_ids"],
+                anchored_ids=ctx.anchored_ids,
+                eviction=ctx.eviction,
+            )
+            ictx = pipeline.run_post_eviction(ictx)
+            messages, system_prompt = ictx.messages, ictx.system_prompt
+            active = pipeline.get_active_configs()
 
-        prompt_text, resolved_params, mode_hint = self._prepare_completion_mode(
-            provider, messages, resolved_prompt, resolved_params, metadata,
-            mode_override=mode_override, model=resolved_model,
-        )
+        messages, usage = await self._maybe_inject_summary(messages, usage, report)
+        return _Built(messages, usage, system_prompt, active)
 
-        if prefill_content:
-            if prompt_text is not None:
-                prompt_text += prefill_content
-            else:
-                messages.append({"role": "assistant", "content": prefill_content})
-
-        generation_id = str(uuid4())
-        mode = "prefill" if prefill_content else mode_hint
-
-        await self._emit_generation_started(
-            rhizome_id, generation_id, node_id,
-            resolved_model, provider.name, resolved_prompt, resolved_params,
-            mode=mode, prefill_content=prefill_content,
-        )
-
-        request = GenerationRequest(
-            model=resolved_model,
-            messages=messages,
-            system_prompt=resolved_prompt,
-            sampling_params=resolved_params,
-            prompt_text=prompt_text,
-        )
-
-        async for chunk in provider.generate_stream(request):
-            if chunk.is_final and chunk.result is not None:
-                if prefill_content:
-                    chunk.result.content = prefill_content + chunk.result.content
-                node = await self._emit_node_created(
-                    rhizome_id, generation_id, node_id, chunk.result,
-                    provider.name, resolved_prompt, resolved_params,
-                    context_usage=context_usage,
-                    include_thinking_in_context=include_think,
-                    include_timestamps=include_ts,
-                    active_interventions=active_interventions,
-                    mode=mode, prefill_content=prefill_content,
-                    prompt_text=prompt_text,
-                )
-                # Attach node_id to the final chunk for the SSE handler
-                chunk = StreamChunk(
-                    type=chunk.type,
-                    text=chunk.text,
-                    is_final=True,
-                    result=GenerationResult(
-                        content=chunk.result.content,
-                        model=chunk.result.model,
-                        finish_reason=chunk.result.finish_reason,
-                        usage=chunk.result.usage,
-                        latency_ms=chunk.result.latency_ms,
-                        logprobs=chunk.result.logprobs,
-                        raw_response={"node_id": node.node_id},
-                    ),
-                )
-            yield chunk
+    @staticmethod
+    def _resolve_interventions(metadata: dict) -> InterventionPipeline:
+        """Build an intervention pipeline from rhizome metadata."""
+        raw_configs = metadata.get("context_interventions")
+        if not raw_configs or not isinstance(raw_configs, list):
+            return InterventionPipeline([])
+        configs = [InterventionConfig.model_validate(c) for c in raw_configs]
+        return default_registry.create_pipeline(configs)
 
     async def _maybe_inject_summary(
         self,
@@ -737,251 +596,19 @@ class GenerationService:
             "content": f"[Context summary of {len(report.evicted_node_ids)} "
                        f"earlier messages: {summary}]",
         }
-
-        # Insert after the first protected block
         insert_pos = min(report.keep_first_turns, len(messages))
-
         messages = messages[:insert_pos] + [summary_msg] + messages[insert_pos:]
-
         report.summary_inserted = True
 
-        # Update context_usage with the summary tokens
         summary_tokens = ApproximateTokenCounter().count(summary_msg["content"])
-        updated_usage = ContextUsage(
-            total_tokens=context_usage.total_tokens + summary_tokens,
-            max_tokens=context_usage.max_tokens,
-            breakdown={
+        updated_usage = context_usage.model_copy(update={
+            "total_tokens": context_usage.total_tokens + summary_tokens,
+            "breakdown": {
                 **context_usage.breakdown,
                 "user": context_usage.breakdown.get("user", 0) + summary_tokens,
             },
-            excluded_tokens=context_usage.excluded_tokens,
-            excluded_count=context_usage.excluded_count,
-            excluded_node_ids=context_usage.excluded_node_ids,
-            evicted_node_ids=context_usage.evicted_node_ids,
-        )
-
+        })
         return messages, updated_usage
-
-    async def _resolve_context(
-        self,
-        rhizome_id: str,
-        node_id: str | None,
-        model: str | None,
-        system_prompt: str | None,
-        sampling_params: SamplingParams | None,
-    ) -> tuple[
-        dict, list[dict], str, str | None, SamplingParams, bool, bool,
-        set[str], dict, set[str], set[str], EvictionStrategy | None, dict,
-    ]:
-        """Validate rhizome/node and resolve parameters from request or rhizome defaults.
-
-        Returns: (rhizome, nodes, resolved_model, resolved_prompt, resolved_params,
-                  include_timestamps, include_thinking,
-                  excluded_ids, digression_groups_map, excluded_group_ids,
-                  anchored_ids, eviction_strategy, metadata)
-        """
-        rhizome = await self._projector.get_rhizome(rhizome_id)
-        if rhizome is None:
-            raise RhizomeNotFoundForGenerationError(rhizome_id)
-
-        nodes = await self._projector.get_nodes(rhizome_id)
-        # node_id=None is a root generation: the model speaks with no prior turns
-        node_ids = {n["node_id"] for n in nodes}
-        if node_id is not None and node_id not in node_ids:
-            raise NodeNotFoundForGenerationError(node_id)
-
-        resolved_model = model or rhizome.get("default_model") or "claude-sonnet-4-5-20250929"
-        resolved_prompt = system_prompt if system_prompt is not None else rhizome.get(
-            "default_system_prompt"
-        )
-
-        # Parse metadata
-        metadata = parse_json_field(rhizome.get("metadata")) or {}
-
-        # Three-layer merge: request > rhizome defaults > base
-        resolved_params = merge_sampling_params(
-            sampling_params,
-            rhizome.get("default_sampling_params"),
-            metadata=metadata,
-        )
-
-        # Rhizome-level settings from metadata
-        # Completion mode never uses timestamps — they're chat context, not prompt text
-        is_completion = metadata.get("generation_mode") == "completion"
-        include_timestamps = False if is_completion else bool(metadata.get("include_timestamps", False))
-        include_thinking = bool(metadata.get("include_thinking_in_context", False))
-
-        # Context exclusion data
-        exclusion_rows = await self._projector.get_node_exclusions(rhizome_id)
-        path_ids = self._get_path_node_ids(nodes, node_id)
-        excluded_ids = {r["node_id"] for r in exclusion_rows if r["scope_node_id"] in path_ids}
-
-        groups = await self._projector.get_digression_groups(rhizome_id)
-        excluded_group_ids = {g["group_id"] for g in groups if not g["included"]}
-        digression_groups_map = {g["group_id"]: g["node_ids"] for g in groups}
-
-        # Anchored node IDs
-        anchor_rows = await self._projector._db.fetchall(
-            "SELECT DISTINCT node_id FROM node_anchors WHERE rhizome_id = ?",
-            (rhizome_id,),
-        )
-        anchored_ids = {r["node_id"] for r in anchor_rows}
-
-        # Eviction strategy from rhizome metadata
-        eviction_raw = metadata.get("eviction_strategy")
-        eviction: EvictionStrategy | None = None
-        if eviction_raw and isinstance(eviction_raw, dict):
-            eviction = EvictionStrategy.model_validate(eviction_raw)
-
-        return (rhizome, nodes, resolved_model, resolved_prompt, resolved_params,
-                include_timestamps, include_thinking,
-                excluded_ids, digression_groups_map, excluded_group_ids,
-                anchored_ids, eviction, metadata)
-
-    @staticmethod
-    def _resolve_interventions(metadata: dict) -> InterventionPipeline:
-        """Build an intervention pipeline from rhizome metadata."""
-        raw_configs = metadata.get("context_interventions")
-        if not raw_configs or not isinstance(raw_configs, list):
-            return InterventionPipeline([])
-        configs = [InterventionConfig.model_validate(c) for c in raw_configs]
-        return default_registry.create_pipeline(configs)
-
-    def _build_context_with_interventions(
-        self,
-        nodes: list[dict],
-        node_id: str | None,
-        system_prompt: str | None,
-        context_limit: int,
-        *,
-        include_timestamps: bool = False,
-        include_thinking: bool = False,
-        excluded_ids: set[str] | None = None,
-        digression_groups: dict | None = None,
-        excluded_group_ids: set[str] | None = None,
-        anchored_ids: set[str] | None = None,
-        eviction: EvictionStrategy | None = None,
-        pipeline: InterventionPipeline,
-        model: str,
-        metadata: dict,
-        mode: str = "chat",
-    ) -> tuple[list[dict[str, str]], ContextUsage, EvictionReport, str | None, list[dict] | None]:
-        """Build context with intervention pipeline.
-
-        Returns (messages, context_usage, eviction_report, system_prompt, active_interventions).
-        When the pipeline is empty, falls back to the monolithic build().
-        """
-        if pipeline.is_empty:
-            messages, usage, report = self._context_builder.build(
-                nodes=nodes,
-                target_node_id=node_id,
-                system_prompt=system_prompt,
-                model_context_limit=context_limit,
-                include_timestamps=include_timestamps,
-                include_thinking=include_thinking,
-                excluded_ids=excluded_ids,
-                digression_groups=digression_groups,
-                excluded_group_ids=excluded_group_ids,
-                anchored_ids=anchored_ids,
-                eviction=eviction,
-            )
-            return messages, usage, report, system_prompt, None
-
-        # Split path: build_messages → pre_eviction → count_and_evict → post_eviction
-        messages, msg_node_ids, created_ats, excluded_info = self._context_builder.build_messages(
-            nodes=nodes,
-            target_node_id=node_id,
-            include_timestamps=include_timestamps,
-            include_thinking=include_thinking,
-            excluded_ids=excluded_ids,
-            digression_groups=digression_groups,
-            excluded_group_ids=excluded_group_ids,
-        )
-
-        ctx = InterventionContext(
-            messages=messages,
-            system_prompt=system_prompt,
-            node_ids=msg_node_ids,
-            model=model,
-            metadata=metadata,
-            mode=mode,
-            created_ats=created_ats,
-        )
-        ctx = pipeline.run_pre_eviction(ctx)
-
-        result_msgs, usage, report = self._context_builder.count_and_evict(
-            messages=ctx.messages,
-            node_ids=ctx.node_ids,
-            system_prompt=ctx.system_prompt,
-            model_context_limit=context_limit,
-            excluded_token_total=excluded_info["excluded_tokens"],
-            excluded_node_count=excluded_info["excluded_count"],
-            excluded_node_ids=excluded_info["excluded_node_ids"],
-            anchored_ids=anchored_ids,
-            eviction=eviction,
-        )
-
-        ctx.messages = result_msgs
-        ctx = pipeline.run_post_eviction(ctx)
-
-        active_configs = pipeline.get_active_configs()
-        return ctx.messages, usage, report, ctx.system_prompt, active_configs
-
-    @staticmethod
-    def _prepare_completion_mode(
-        provider: LLMProvider,
-        messages: list[dict[str, str]],
-        system_prompt: str | None,
-        sampling_params: SamplingParams,
-        metadata: dict,
-        mode_override: str | None = None,
-        model: str | None = None,
-    ) -> tuple[str | None, SamplingParams, str]:
-        """Prepare completion mode if the provider supports it.
-
-        Returns (prompt_text, updated_params, mode_hint).
-        mode_hint is "completion" if prompt was rendered, "chat" otherwise.
-
-        Completion mode activates when:
-        - mode_override is "completion" (caller has checked provider support), OR
-        - Provider is completion-only (e.g. LlamaCpp), OR
-        - Provider supports both modes AND metadata.generation_mode == "completion"
-
-        Dual-mode providers (OpenRouter, OpenAI, etc.) default to chat mode.
-        mode_override "chat" forces chat on a dual-mode provider.
-
-        The generating model's profile (model catalog) supplies its own mode
-        and template: its mode beats the rhizome's (not an explicit override),
-        and its template is used when the rhizome's is unset or "auto".
-        """
-        if "completion" not in provider.supported_modes:
-            return None, sampling_params, "chat"
-
-        profile = get_catalog().profile(model) or {}
-        # Dual-mode providers require explicit opt-in
-        is_completion_only = "chat" not in provider.supported_modes
-        explicit_completion = metadata.get("generation_mode") == "completion"
-        if profile.get("generation_mode") in ("chat", "completion"):
-            explicit_completion = profile["generation_mode"] == "completion"
-        if mode_override is not None and not is_completion_only:
-            explicit_completion = mode_override == "completion"
-
-        if not is_completion_only and not explicit_completion:
-            return None, sampling_params, "chat"
-
-        template_name = metadata.get("prompt_template")
-        if not template_name or template_name == "auto":
-            template_name = profile.get("prompt_template") or "raw"
-        prompt_text, stop_tokens = render_prompt(template_name, messages, system_prompt)
-
-        # Merge template stop tokens into sampling params
-        existing_stops = list(sampling_params.stop_sequences or [])
-        for token in stop_tokens:
-            if token not in existing_stops:
-                existing_stops.append(token)
-
-        updated = sampling_params.model_copy(update={"stop_sequences": existing_stops})
-        return prompt_text, updated, "completion"
 
     @staticmethod
     def _get_path_node_ids(nodes: list[dict], target_node_id: str | None) -> set[str]:
@@ -997,89 +624,134 @@ class GenerationService:
             current_id = node.get("parent_id")
         return path_ids
 
-    async def _emit_generation_started(
-        self,
-        rhizome_id: str,
-        generation_id: str,
-        parent_node_id: str | None,
-        model: str,
-        provider_name: str,
-        system_prompt: str | None,
-        sampling_params: SamplingParams,
-        *,
-        n: int = 1,
-        mode: str = "chat",
-        prefill_content: str | None = None,
-    ) -> None:
-        payload = GenerationStartedPayload(
-            generation_id=generation_id,
-            parent_node_id=parent_node_id,
-            model=model,
-            provider=provider_name,
-            system_prompt=system_prompt,
-            sampling_params=sampling_params,
-            n=n,
-            mode=mode,
-            prefill_content=prefill_content,
-        )
-        await self._events.emit(rhizome_id, "GenerationStarted", payload)
+    # -- Run --
 
-    async def _emit_node_created(
-        self,
-        rhizome_id: str,
-        generation_id: str,
-        parent_id: str | None,
-        result: GenerationResult,
-        provider_name: str,
-        system_prompt: str | None,
-        sampling_params: SamplingParams,
-        *,
-        context_usage: ContextUsage | None = None,
-        include_thinking_in_context: bool = False,
-        include_timestamps: bool = False,
-        active_interventions: list[dict] | None = None,
-        mode: str = "chat",
-        prefill_content: str | None = None,
-        prompt_text: str | None = None,
-    ) -> NodeResponse:
-        node_id = str(uuid4())
-        if result.effective_prompt_text is not None:
-            prompt_text = result.effective_prompt_text
+    async def complete(self, p: Prepared) -> NodeResponse:
+        """Send a prepared request and store the reply."""
+        return await self.persist(p, self._with_prefill(p, await p.provider.generate(p.request)))
+
+    async def stream(self, p: Prepared) -> AsyncIterator[StreamChunk]:
+        """Stream a prepared request; the final chunk carries the stored node's id."""
+        async for chunk in p.provider.generate_stream(p.request):
+            if chunk.is_final and chunk.result is not None:
+                result = self._with_prefill(p, chunk.result)
+                node = await self.persist(p, result)
+                yield StreamChunk(
+                    type="message_stop", is_final=True, result=result,
+                    completion_index=p.completion_index, node_id=node.node_id,
+                )
+                return
+            yield chunk.model_copy(update={"completion_index": p.completion_index})
+        raise RuntimeError(f"{p.provider.name} stream ended without a result")
+
+    async def fan_out(self, prepared: list[Prepared]) -> AsyncIterator[StreamChunk]:
+        """Stream several prepared requests at once, interleaved as chunks arrive.
+
+        A failure is an error chunk for that completion; the others go on.
+        Ends with generation_complete.
+        """
+        queue: asyncio.Queue[StreamChunk | None] = asyncio.Queue()
+
+        async def pump(p: Prepared) -> None:
+            try:
+                async for chunk in self.stream(p):
+                    await queue.put(chunk)
+            except Exception as e:
+                logger.exception("Generation %s failed", p.completion_index)
+                await queue.put(StreamChunk(
+                    type="error", text=str(e) or type(e).__name__,
+                    completion_index=p.completion_index,
+                ))
+            finally:
+                await queue.put(None)
+
+        tasks = [asyncio.create_task(pump(p)) for p in prepared]
+        try:
+            remaining = len(tasks)
+            while remaining:
+                chunk = await queue.get()
+                if chunk is None:
+                    remaining -= 1
+                else:
+                    yield chunk
+            yield StreamChunk(type="generation_complete")
+        finally:
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+    async def _complete_all(self, prepared: list[Prepared]) -> list[NodeResponse]:
+        """Run several at once; keep every reply that succeeds.
+
+        Raises only if all of them fail (the others are logged).
+        """
+        results = await asyncio.gather(
+            *[self.complete(p) for p in prepared], return_exceptions=True,
+        )
+        nodes = [r for r in results if isinstance(r, NodeResponse)]
+        errors = [r for r in results if isinstance(r, BaseException)]
+        for e in errors:
+            logger.error("Generation failed: %s", e, exc_info=e)
+        if not nodes and errors:
+            raise errors[0]
+        return nodes
+
+    # -- Record --
+
+    async def _started(self, p: Prepared, *, n: int = 1) -> None:
+        await self._events.emit(p.rhizome_id, "GenerationStarted", GenerationStartedPayload(
+            generation_id=p.generation_id,
+            parent_node_id=p.parent_id,
+            model=p.model,
+            provider=p.provider.name,
+            system_prompt=p.request.system_prompt,
+            sampling_params=p.request.sampling_params,
+            n=n,
+            mode=p.recorded_mode,
+            prefill_content=p.prefill,
+        ), device_id=p.device_id)
+
+    @staticmethod
+    def _with_prefill(p: Prepared, result: GenerationResult) -> GenerationResult:
+        """The whole reply: a prefilled start is part of what the model said."""
+        if not p.prefill:
+            return result
+        return result.model_copy(update={"content": p.prefill + result.content})
+
+    async def persist(self, p: Prepared, result: GenerationResult) -> NodeResponse:
+        """Store a reply as a node, recording exactly what produced it."""
+        sampling_params = p.request.sampling_params
         if result.applied_sampling_params:
+            # What the provider applied beyond the request (e.g. a model's logit bias)
             sampling_params = sampling_params.model_copy(update=SamplingParams.model_validate(
                 {**sampling_params.model_dump(), **result.applied_sampling_params}
             ).model_dump(include=set(result.applied_sampling_params)))
-        payload = NodeCreatedPayload(
+        node_id = str(uuid4())
+        await self._events.emit(p.rhizome_id, "NodeCreated", NodeCreatedPayload(
             node_id=node_id,
-            generation_id=generation_id,
-            parent_id=parent_id,
+            generation_id=p.generation_id,
+            parent_id=p.parent_id,
             role="assistant",
             content=result.content,
-            model=result.model,
-            provider=provider_name,
-            system_prompt=system_prompt,
+            model=result.model or p.model,
+            provider=p.provider.name,
+            system_prompt=p.request.system_prompt,
             sampling_params=sampling_params,
-            mode=mode,
-            prefill_content=prefill_content,
-            prompt_text=prompt_text,
+            mode=p.recorded_mode,
+            prefill_content=p.prefill,
+            prompt_text=result.effective_prompt_text or p.request.prompt_text,
             usage=result.usage,
             latency_ms=result.latency_ms,
             finish_reason=result.finish_reason,
             logprobs=result.logprobs,
             thinking_content=result.thinking_content,
-            include_thinking_in_context=include_thinking_in_context,
-            include_timestamps=include_timestamps,
-            active_interventions=active_interventions,
-            context_usage=context_usage,
+            include_thinking_in_context=p.include_thinking,
+            include_timestamps=p.include_timestamps,
+            active_interventions=p.active_interventions,
+            context_usage=p.context_usage,
             raw_response=result.raw_response,
-        )
-        await self._events.emit(rhizome_id, "NodeCreated", payload)
-
-        # Read back the projected node with sibling info
-        nodes = await self._projector.get_nodes(rhizome_id)
-        sibling_info = RhizomeService._compute_sibling_info(nodes)
-        node_row = next(n for n in nodes if n["node_id"] == node_id)
-        return RhizomeService._node_from_row(node_row, sibling_info=sibling_info)
+        ), device_id=p.device_id)
+        return await self._rhizome_service.node_response(p.rhizome_id, node_id)
 
 
 class RhizomeNotFoundForGenerationError(Exception):

@@ -16,7 +16,7 @@ from qivis.generation.replay import (
     ReplayService,
 )
 from qivis.generation.service import GenerationService
-from qivis.models import LogprobData, SamplingParams, TokenLogprob
+from qivis.models import LogprobData, TokenLogprob
 from qivis.providers.base import (
     GenerationRequest,
     GenerationResult,
@@ -26,7 +26,6 @@ from qivis.providers.base import (
 from qivis.providers.registry import clear_providers, register_provider
 from qivis.rhizomes.schemas import CreateNodeRequest, CreateRhizomeRequest
 from qivis.rhizomes.service import RhizomeService
-
 
 # -- Mock providers --
 
@@ -136,8 +135,9 @@ async def conversation(services):
     ))
     # For assistant nodes, emit directly through events to have proper generation metadata
     asst1_id = str(uuid4())
-    from qivis.models import EventEnvelope, NodeCreatedPayload
     from datetime import UTC, datetime
+
+    from qivis.models import EventEnvelope, NodeCreatedPayload
 
     asst1_event = EventEnvelope(
         event_id=str(uuid4()),
@@ -193,132 +193,6 @@ async def conversation(services):
 
 
 # ---------------------------------------------------------------------------
-# ReplayService: tree structure tests
-# ---------------------------------------------------------------------------
-
-
-class TestReplayTreeStructure:
-    # Trajectory mode copies user turns into a new branch. (Context-faithful
-    # replay creates siblings instead; see TestFaithfulReplaySiblings.)
-    """Tests that replay creates the correct node tree topology."""
-
-    async def test_replay_creates_alternating_user_assistant_nodes(self, services, conversation):
-        """Replay of a 4-message path creates 4 new nodes: 2 user copies + 2 assistant generations."""
-        replay_svc = services["replay_svc"]
-        provider_b = services["provider_b"]
-
-        created = await replay_svc.replay_path(
-            conversation["rhizome_id"],
-            conversation["path_node_ids"],
-            provider_b,
-            mode="trajectory",
-            model="b-model",
-        )
-
-        assert len(created) == 4
-        # Alternating roles
-        assert created[0].role == "user"
-        assert created[1].role == "assistant"
-        assert created[2].role == "user"
-        assert created[3].role == "assistant"
-
-    async def test_replayed_user_messages_have_identical_content(self, services, conversation):
-        """User messages in the replay branch have the same text as originals."""
-        replay_svc = services["replay_svc"]
-        provider_b = services["provider_b"]
-
-        created = await replay_svc.replay_path(
-            conversation["rhizome_id"],
-            conversation["path_node_ids"],
-            provider_b,
-            mode="trajectory",
-            model="b-model",
-        )
-
-        assert created[0].content == "What's your favorite animal?"
-        assert created[2].content == "Oh, why do you like octopuses?"
-
-    async def test_replay_nodes_use_replay_device_id(self, services, conversation):
-        """All replay nodes are tagged with device_id='replay'."""
-        replay_svc = services["replay_svc"]
-        store = services["store"]
-        provider_b = services["provider_b"]
-
-        await replay_svc.replay_path(
-            conversation["rhizome_id"],
-            conversation["path_node_ids"],
-            provider_b,
-            mode="trajectory",
-            model="b-model",
-        )
-
-        # Check events in the store
-        events = await store.get_events(conversation["rhizome_id"])
-        replay_events = [
-            e for e in events
-            if e.device_id == "replay"
-        ]
-        # 4 new nodes (2 user copies + 2 assistant generations)
-        # Plus generation_started events
-        assert len([e for e in replay_events if e.event_type == "NodeCreated"]) == 4
-
-    async def test_replay_nodes_share_generation_id(self, services, conversation):
-        """All nodes in a single replay share the same generation_id."""
-        replay_svc = services["replay_svc"]
-        store = services["store"]
-        provider_b = services["provider_b"]
-
-        await replay_svc.replay_path(
-            conversation["rhizome_id"],
-            conversation["path_node_ids"],
-            provider_b,
-            mode="trajectory",
-            model="b-model",
-        )
-
-        events = await store.get_events(conversation["rhizome_id"])
-        replay_node_events = [
-            e for e in events
-            if e.device_id == "replay" and e.event_type == "NodeCreated"
-        ]
-        gen_ids = {e.payload.get("generation_id") for e in replay_node_events}
-        # All should share one generation_id (or at most one per generation step)
-        # User copies don't have generation_id, but assistant nodes do
-        assistant_gen_ids = {
-            e.payload.get("generation_id")
-            for e in replay_node_events
-            if e.payload.get("role") == "assistant"
-        }
-        # All assistant nodes in one replay share a replay_id
-        assert len(assistant_gen_ids) >= 1
-        assert None not in assistant_gen_ids
-
-    async def test_replay_branch_structure_is_chain(self, services, conversation):
-        """Replay creates a chain: user1' -> asst1' -> user2' -> asst2', branching from original root."""
-        replay_svc = services["replay_svc"]
-        provider_b = services["provider_b"]
-
-        created = await replay_svc.replay_path(
-            conversation["rhizome_id"],
-            conversation["path_node_ids"],
-            provider_b,
-            mode="trajectory",
-            model="b-model",
-        )
-
-        # First copied user message is a sibling of the original first user message
-        # (same parent — the root / None)
-        assert created[0].parent_id == None  # root node, like the original user1
-
-        # asst1' is child of user1'
-        assert created[1].parent_id == created[0].node_id
-        # user2' is child of asst1'
-        assert created[2].parent_id == created[1].node_id
-        # asst2' is child of user2'
-        assert created[3].parent_id == created[2].node_id
-
-
-# ---------------------------------------------------------------------------
 # ReplayService: path validation
 # ---------------------------------------------------------------------------
 
@@ -365,7 +239,7 @@ class TestReplayPathValidation:
 
 
 class TestReplayContextModes:
-    """Tests for context-faithful vs trajectory replay modes."""
+    """Context-faithful replay: the model answers what the original model saw."""
 
     async def test_context_faithful_uses_original_assistant_messages(self, services, conversation):
         """In context-faithful mode, the model sees original assistant messages at each step."""
@@ -377,7 +251,6 @@ class TestReplayContextModes:
             conversation["path_node_ids"],
             provider_b,
             model="b-model",
-            mode="context_faithful",
         )
 
         # Provider B should have been called twice (once per assistant message to generate)
@@ -390,29 +263,6 @@ class TestReplayContextModes:
         assistant_msgs = [m for m in messages if m["role"] == "assistant"]
         assert len(assistant_msgs) >= 1
         assert "octopuses" in assistant_msgs[0]["content"]  # original content
-
-    async def test_trajectory_uses_replayed_assistant_messages(self, services, conversation):
-        """In trajectory mode, the model sees its own prior responses at each step."""
-        replay_svc = services["replay_svc"]
-        provider_b = services["provider_b"]
-
-        await replay_svc.replay_path(
-            conversation["rhizome_id"],
-            conversation["path_node_ids"],
-            provider_b,
-            model="b-model",
-            mode="trajectory",
-        )
-
-        assert len(provider_b.calls) == 2
-
-        # Second call's context should include B's OWN asst1' response, not the original
-        second_call = provider_b.calls[1]
-        messages = second_call.messages
-        assistant_msgs = [m for m in messages if m["role"] == "assistant"]
-        assert len(assistant_msgs) >= 1
-        # Provider B responses start with "B: response to..."
-        assert assistant_msgs[0]["content"].startswith("B:")
 
     async def test_replay_preserves_system_prompt_override(self, services, conversation):
         """A system prompt override is passed through to each generation step."""

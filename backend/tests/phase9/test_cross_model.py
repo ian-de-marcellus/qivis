@@ -14,6 +14,7 @@ from qivis.events.projector import StateProjector
 from qivis.events.store import EventStore
 from qivis.generation.replay import ReplayService
 from qivis.generation.service import GenerationService
+from qivis.main import app
 from qivis.models import LogprobData, TokenLogprob
 from qivis.providers.base import (
     GenerationRequest,
@@ -22,11 +23,9 @@ from qivis.providers.base import (
     StreamChunk,
 )
 from qivis.providers.registry import clear_providers, register_provider
-from qivis.main import app
 from qivis.rhizomes.router import get_generation_service, get_replay_service, get_rhizome_service
 from qivis.rhizomes.service import RhizomeService
 from tests.fixtures import create_rhizome_with_messages
-
 
 # -- Mock providers --
 
@@ -249,33 +248,6 @@ class TestReplayEndpoint:
         # Original assistant content is "Message 2" (from create_rhizome_with_messages)
         assert any("Message 2" in m["content"] for m in assistant_msgs)
 
-    async def test_replay_trajectory_endpoint(self, api_client):
-        """Trajectory replay gives the model its own prior responses in context."""
-        client, providers = api_client
-        conv = await _create_conversation(client)
-
-        resp = await client.post(
-            f"/api/rhizomes/{conv['rhizome_id']}/replay",
-            json={
-                "path_node_ids": conv["node_ids"],
-                "provider": "provider-x",
-                "model": "x-model",
-                "mode": "trajectory",
-                "stream": False,
-            },
-        )
-
-        assert resp.status_code == 200
-
-        provider_x = providers["provider_x"]
-        assert len(provider_x.calls) == 2
-
-        # Second call should contain provider_x's OWN first response, not the original
-        second_call = provider_x.calls[1]
-        assistant_msgs = [m for m in second_call.messages if m["role"] == "assistant"]
-        # Provider X's responses start with "X:"
-        assert any("X:" in m["content"] for m in assistant_msgs)
-
     async def test_replay_invalid_path_returns_400(self, api_client):
         """Replay with empty or invalid path returns 400."""
         client, _ = api_client
@@ -392,13 +364,3 @@ class TestFaithfulReplaySiblings:
         assert len(complete) == 1
         assert complete[0]["created_node_ids"] == [s["node_id"] for s in stops]
         assert len(stops) == 2
-
-    async def test_trajectory_replay_complete_is_valid_json(self, api_client):
-        client, _ = api_client
-        conv = await _create_conversation(client)
-        resp = await client.post(f"/api/rhizomes/{conv['rhizome_id']}/replay", json={
-            "path_node_ids": conv["node_ids"], "provider": "provider-y",
-            "model": "y-model", "mode": "trajectory", "stream": True,
-        })
-        complete = [d for e, d in _sse(resp.text) if e == "replay_complete"]
-        assert len(complete) == 1 and len(complete[0]["created_node_ids"]) == 4

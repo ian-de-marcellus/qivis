@@ -606,7 +606,7 @@ export async function perturbStream(
           data.label as string,
         )
       } else if (event === 'text_delta' && typeof data.text === 'string') {
-        onDelta(data.text, data.step_index as number)
+        onDelta(data.text, data.completion_index as number)
       } else if (event === 'message_stop') {
         onStepComplete(data as unknown as MessageStopEvent)
       } else if (event === 'perturbation_complete') {

@@ -190,7 +190,6 @@ interface RhizomeStore {
     pathNodeIds: string[],
     provider: string,
     model: string | undefined,
-    mode: 'context_faithful' | 'trajectory',
     systemPrompt?: string,
     samplingParams?: SamplingParams,
     generationMode?: 'chat' | 'completion',
@@ -1665,7 +1664,7 @@ export const useRhizomeStore = create<RhizomeStore>((set, get) => ({
     }
   },
 
-  startReplay: async (pathNodeIds, provider, model, mode, systemPrompt, samplingParams, generationMode) => {
+  startReplay: async (pathNodeIds, provider, model, systemPrompt, samplingParams, generationMode) => {
     const { currentRhizome } = get()
     if (!currentRhizome) return
 
@@ -1690,7 +1689,6 @@ export const useRhizomeStore = create<RhizomeStore>((set, get) => ({
           path_node_ids: pathNodeIds,
           provider,
           model,
-          mode,
           system_prompt: systemPrompt,
           sampling_params: samplingParams,
           generation_mode: generationMode,

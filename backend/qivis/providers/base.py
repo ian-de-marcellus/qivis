@@ -44,12 +44,15 @@ class GenerationResult(BaseModel):
 class StreamChunk(BaseModel):
     """A single delta in a streaming response."""
 
-    type: str  # "text_delta", "thinking_delta", "message_stop", "generation_complete"
+    type: str  # "text_delta", "thinking_delta", "message_stop", "generation_complete", "error", ...
     text: str = ""
     thinking: str = ""
     is_final: bool = False
     result: GenerationResult | None = None
     completion_index: int | None = None
+    # Set by the generation service, not providers:
+    node_id: str | None = None  # the node a final chunk's result was stored as
+    data: dict[str, Any] | None = None  # payload of a service event (replay_step, ...)
 
 
 class LLMProvider(ABC):

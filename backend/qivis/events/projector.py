@@ -96,6 +96,26 @@ class StateProjector:
             return None
         return dict(row)
 
+    async def get_node(self, rhizome_id: str, node_id: str) -> dict | None:
+        row = await self._db.fetchone(
+            "SELECT * FROM nodes WHERE rhizome_id = ? AND node_id = ?", (rhizome_id, node_id),
+        )
+        return dict(row) if row else None
+
+    async def get_children(self, rhizome_id: str, parent_id: str | None) -> list[dict]:
+        """Nodes with this parent (None: the roots), ordered by creation time."""
+        rows = await self._db.fetchall(
+            "SELECT * FROM nodes WHERE rhizome_id = ? AND parent_id IS ? ORDER BY created_at",
+            (rhizome_id, parent_id),
+        )
+        return [dict(row) for row in rows]
+
+    async def get_anchored_ids(self, rhizome_id: str) -> set[str]:
+        rows = await self._db.fetchall(
+            "SELECT DISTINCT node_id FROM node_anchors WHERE rhizome_id = ?", (rhizome_id,),
+        )
+        return {r["node_id"] for r in rows}
+
     async def get_nodes(self, rhizome_id: str) -> list[dict]:
         """Read projected nodes for a rhizome, ordered by creation time."""
         rows = await self._db.fetchall(

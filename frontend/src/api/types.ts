@@ -284,7 +284,7 @@ export interface ReplayRequest {
   path_node_ids: string[]
   provider: string
   model?: string
-  mode?: 'context_faithful' | 'trajectory'
+  mode?: 'context_faithful'
   system_prompt?: string
   sampling_params?: SamplingParams
   stream?: boolean

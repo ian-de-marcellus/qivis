@@ -37,8 +37,7 @@ export function ReplayPanel({
     model: defaults.model ?? '',
   }))
   const { provider, model } = choice
-  // Context-faithful only: trajectory replay is parked (the user turns stop
-  // making sense once the new model's replies diverge from the original's).
+  // Context-faithful: each assistant turn is answered again from the same context
   const [generationMode, setGenerationMode] = useState<GenerationModeChoice>('')
   const [systemPrompt, setSystemPrompt] = useState(defaults.systemPrompt ?? '')
 
@@ -70,7 +69,6 @@ export function ReplayPanel({
       pathNodeIds,
       provider,
       model || undefined,
-      'context_faithful',
       systemPrompt || undefined,
       samplingParams,
       // The user's choice, else the replaying model's own mode

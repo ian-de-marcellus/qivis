@@ -64,7 +64,8 @@ class ReplayRequest(BaseModel):
     path_node_ids: list[str]
     provider: str
     model: str | None = None
-    mode: Literal["context_faithful", "trajectory"] = "context_faithful"
+    # Only context-faithful replay exists now (trajectory was removed)
+    mode: Literal["context_faithful"] = "context_faithful"
     system_prompt: str | None = None
     sampling_params: SamplingParams | None = None
     stream: bool = False
