@@ -649,7 +649,8 @@ async def _dispatch_generate(
         raise HTTPException(status_code=404, detail=f"Rhizome not found: {rhizome_id}")
     except NodeNotFoundForGenerationError:
         raise HTTPException(status_code=404, detail=f"Node not found: {node_id}")
-    except (RuntimeError, Exception) as e:
+    except Exception as e:
+        logger.exception("Generation error")
         raise HTTPException(status_code=502, detail=str(e))
 
 
@@ -846,6 +847,7 @@ async def replay(
             status_code=404, detail=f"Rhizome not found: {rhizome_id}",
         )
     except Exception as e:
+        logger.exception("Replay error")
         raise HTTPException(status_code=502, detail=str(e))
 
 
@@ -970,6 +972,7 @@ async def generate_cross(
             status_code=404, detail=f"Node not found: {node_id}",
         )
     except Exception as e:
+        logger.exception("Cross-model error")
         raise HTTPException(status_code=502, detail=str(e))
 
 
@@ -1091,6 +1094,7 @@ async def perturb(
             status_code=404, detail=f"Node not found: {node_id}",
         )
     except Exception as e:
+        logger.exception("Perturbation error")
         raise HTTPException(status_code=502, detail=str(e))
 
 
