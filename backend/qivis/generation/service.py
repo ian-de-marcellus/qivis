@@ -145,9 +145,12 @@ class Prepared:
     prefill: str | None = None
     device_id: str = "local"
     completion_index: int | None = None
+    steered: bool = False  # token by token, by a researcher (qivis.steering)
 
     @property
-    def recorded_mode(self) -> Literal["chat", "completion", "prefill"]:
+    def recorded_mode(self) -> Literal["chat", "completion", "prefill", "steered"]:
+        if self.steered:
+            return "steered"
         return "prefill" if self.prefill else self.mode
 
 

@@ -42,6 +42,11 @@ class TokenLogprob(BaseModel):
     logprob: float  # ALWAYS natural log (base e)
     linear_prob: float  # exp(logprob), precomputed for UI
     top_alternatives: list[AlternativeToken]
+    # Steered generation: who picked this token. "model" when it flowed
+    # through on its own (above the auto-advance threshold), "researcher"
+    # when steered to or typed. None for ordinary sampling.
+    chosen_by: Literal["model", "researcher"] | None = None
+    token_id: int | None = None
 
 
 class LogprobData(BaseModel):
@@ -132,7 +137,7 @@ class GenerationStartedPayload(BaseModel):
     provider: str
     system_prompt: str | None = None
     sampling_params: SamplingParams = Field(default_factory=SamplingParams)
-    mode: Literal["chat", "completion", "prefill"] = "chat"
+    mode: Literal["chat", "completion", "prefill", "steered"] = "chat"
     prefill_content: str | None = None
     n: int = 1
     participant_id: str | None = None
@@ -150,7 +155,7 @@ class NodeCreatedPayload(BaseModel):
     provider: str | None = None
     system_prompt: str | None = None
     sampling_params: SamplingParams | None = None
-    mode: Literal["chat", "completion", "manual", "prefill"] = "chat"
+    mode: Literal["chat", "completion", "manual", "prefill", "steered"] = "chat"
     prompt_text: str | None = None
     prefill_content: str | None = None
 

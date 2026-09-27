@@ -1,5 +1,6 @@
 """Provider registry: stores configured LLM provider instances."""
 
+from qivis.errors import InvalidRequestError
 from qivis.providers.base import LLMProvider
 
 _providers: dict[str, LLMProvider] = {}
@@ -36,5 +37,5 @@ def clear_providers() -> None:
     _providers.clear()
 
 
-class ProviderNotFoundError(Exception):
+class ProviderNotFoundError(InvalidRequestError):
     pass

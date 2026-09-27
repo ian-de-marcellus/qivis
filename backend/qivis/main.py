@@ -43,6 +43,9 @@ from qivis.rhizomes.service import RhizomeService
 from qivis.search.router import get_search_service
 from qivis.search.router import router as search_router
 from qivis.search.service import SearchService
+from qivis.steering.router import get_steering_service
+from qivis.steering.router import router as steering_router
+from qivis.steering.service import SteeringService
 
 
 @asynccontextmanager
@@ -112,6 +115,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     gen_service = GenerationService(service, store, projector)
     app.dependency_overrides[get_generation_service] = lambda: gen_service
 
+    # Steering (token-by-token) sessions
+    steering_service = SteeringService(gen_service)
+    app.dependency_overrides[get_steering_service] = lambda: steering_service
+
     # Replay service
     replay_service = ReplayService(service, gen_service, store, projector)
     app.dependency_overrides[get_replay_service] = lambda: replay_service
@@ -173,6 +180,7 @@ app.include_router(export_router)
 app.include_router(search_router)
 app.include_router(import_router)
 app.include_router(merge_router)
+app.include_router(steering_router)
 
 
 @app.get("/api/health")

@@ -550,6 +550,48 @@ class LlamaCppProvider(LLMProvider):
                 len(self._extra_stops),
             )
 
+    async def next_tokens(
+        self, request: GenerationRequest, continuation: list[int], k: int,
+    ) -> dict[str, Any]:
+        """The top-k next tokens after the prompt plus `continuation` (token ids).
+
+        Probabilities are the distribution sampling would draw from: the
+        model's logit bias applied, no truncation, temperature 1. Returns
+        {"candidates": [{id, token, bytes, prob}], "logit_bias", "effective_prompt"}.
+        """
+        served = await self._served_model() if self._model_defaults else None
+        applied = self._effective_logit_bias(request, served)
+        body = self._build_request_body(request, applied)
+        prompt = body["prompt"]
+        effective_prompt = None
+        if isinstance(prompt, str):
+            prompt, effective_prompt = await self._prompt_for_bos_count(prompt, served)
+        body.update({
+            # Text first (the server adds its BOS as for a string prompt), then ids
+            "prompt": [prompt, *continuation] if prompt else list(continuation),
+            "n_predict": 1,
+            "n_probs": k,
+            "post_sampling_probs": True,
+            "temperature": 1.0, "top_k": 0, "top_p": 1.0, "min_p": 0.0,
+            "cache_prompt": True,
+        })
+        body.pop("stop", None)
+        resp = await self._client.post(f"{self._base_url}/completion", json=body)
+        resp.raise_for_status()
+        probs = (resp.json().get("completion_probabilities") or [{}])[0]
+        candidates = [
+            {"id": c["id"], "token": c["token"], "bytes": c.get("bytes"), "prob": c["prob"]}
+            for c in probs.get("top_probs", [])
+        ]
+        return {
+            "candidates": candidates, "logit_bias": applied, "effective_prompt": effective_prompt,
+        }
+
+    async def detokenize(self, ids: list[int]) -> str:
+        resp = await self._client.post(f"{self._base_url}/detokenize", json={"tokens": ids})
+        resp.raise_for_status()
+        return resp.json().get("content", "")
+
     async def discover_models(self) -> list[str]:
         """Discover loaded model via GET /props."""
         try:
