@@ -107,6 +107,7 @@ export function ConversationEnd({ view, showFirstTurn = true }: { view: View; sh
   const setActiveStreamIndex = useRhizomeStore(s => s.setActiveStreamIndex)
   const regenerate = useRhizomeStore(s => s.regenerate)
   const clearGenerationError = useRhizomeStore(s => s.clearGenerationError)
+  const openSteer = useRhizomeStore(s => s.openSteer)
   const { forkTarget, setForkTarget } = view.fork
 
   return (
@@ -115,6 +116,7 @@ export function ConversationEnd({ view, showFirstTurn = true }: { view: View; sh
         <FirstTurnAction
           open={forkTarget?.parentId === ''}
           onOpen={() => setForkTarget({ parentId: '', mode: 'generate' })}
+          onSteer={() => openSteer('')}
           panel={<ForkPanelFor view={view} mode={forkTarget?.mode ?? 'generate'} />}
         />
       )}

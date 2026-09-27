@@ -67,6 +67,12 @@ export function SteerView({
     paused: true, cruise: false, speed: 1.2, threshold: 0.99, ended: false,
     stops: [] as string[],
     sessionId: null as string | null,
+    // Columns: the current column's left edge on screen (eased), each depth's
+    // label width from the last frame, and the widths of columns passed through
+    colX: 0,
+    colWidths: [] as number[],
+    passed: [] as number[],
+    height: 600,
   })
   useEffect(() => {
     Object.assign(live.current, { paused, cruise, speed, threshold, ended })
@@ -109,7 +115,13 @@ export function SteerView({
 
   const choose = useCallback((box: Box, chosenBy: Chosen['chosenBy']) => {
     const L = live.current
+    // The next column is already on screen, just right of this one: it stays put
+    const width = L.colWidths[0] ?? 80
+    L.passed.push(width)
+    L.colX += width
     L.view = enter(L.view, box)
+    // Taking a small box directly (keyboard, typing) starts the new column at rest
+    if (L.view.s < L.height * 0.6) L.view = { c: 0.5, s: L.height * 0.9 }
     L.tokens.push({ id: box.id, token: box.token, prob: box.prob, chosenBy })
     if (L.stops.includes(box.token)) {
       L.ended = true
@@ -127,6 +139,7 @@ export function SteerView({
     const parent = L.cache.get(keyOf(L.tokens.map((t) => t.id)))
     const box = parent && layout(parent).find((b) => b.id === last.id)
     L.view = box ? exit(L.view, box) : { c: 0.5, s: L.view.s }
+    L.colX -= L.passed.pop() ?? 80
     L.ended = false
     setEnded(false)
     publish()
@@ -215,24 +228,29 @@ export function SteerView({
     const ctx = canvas.getContext('2d')
     if (!ctx) return
     const L = live.current
+    L.height = canvas.clientHeight
     L.view = { c: 0.5, s: canvas.clientHeight * 0.9 }
+    L.colX = canvas.clientWidth
     fetchDist([])
 
     let frame = 0
     let last = performance.now()
     const loop = (now: number) => {
-      const dt = Math.min(0.05, (now - last) / 1000)
+      const dt = Math.min(0.1, (now - last) / 1000)
       last = now
       const W = canvas.clientWidth
       const H = canvas.clientHeight
+      L.height = H
       const dpr = window.devicePixelRatio || 1
       if (canvas.width !== Math.round(W * dpr) || canvas.height !== Math.round(H * dpr)) {
         canvas.width = Math.round(W * dpr)
         canvas.height = Math.round(H * dpr)
       }
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-      const crossX = W * 0.28
+      const crossX = W * 0.18
       const crossY = H / 2
+      // An option is passed into when it's grown this tall; its column meets the line then
+      const enterH = H * 0.72
 
       const ids = L.tokens.map((t) => t.id)
       const dist = L.cache.get(keyOf(ids))
@@ -251,20 +269,30 @@ export function SteerView({
           L.view = advance(L.view, { targetY, rate, dt })
 
           const under = boxAt(boxes, L.view.c)
-          if (under && (under.b - under.a) * L.view.s >= W - crossX) {
+          if (under && (under.b - under.a) * L.view.s >= enterH) {
             choose(under, 'researcher')
-          } else if (L.view.s < H * 0.5) {
+          } else if (L.view.s < H * 0.45) {
             if (L.tokens.length > 0) undo()
-            else L.view = { ...L.view, s: H * 0.5 }
+            else L.view = { ...L.view, s: H * 0.45 }
           }
         }
       }
 
-      draw(ctx, W, H, crossX, crossY)
+      // The column slides toward the line as the option under the crosshair grows
+      const focus = dist ? boxAt(layout(dist), L.view.c) : undefined
+      const grown = focus ? Math.min(1, ((focus.b - focus.a) * L.view.s) / enterH) : 0
+      const restX = crossX + (W - crossX) * 0.22
+      const targetX = restX + (crossX - restX) * grown
+      L.colX += (targetX - L.colX) * Math.min(1, 8 * dt)
+
+      draw(ctx, W, H, crossX, crossY, focus?.id)
       frame = requestAnimationFrame(loop)
     }
 
-    const draw = (g: CanvasRenderingContext2D, W: number, H: number, crossX: number, crossY: number) => {
+    const draw = (
+      g: CanvasRenderingContext2D, W: number, H: number, crossX: number, crossY: number,
+      focusId?: number,
+    ) => {
       const css = getComputedStyle(canvas)
       const color = (name: string) => css.getPropertyValue(name).trim() || '#888'
       g.fillStyle = color('--bg-primary')
@@ -273,10 +301,11 @@ export function SteerView({
       const ids = L.tokens.map((t) => t.id)
       const dist = L.cache.get(keyOf(ids))
       const top = screenY(L.view, 0, crossY)
+      const x0 = L.colX
       if (!dist) {
         g.fillStyle = color('--text-tertiary')
         g.font = `14px ${color('--font-ui')}`
-        g.fillText('Asking the model…', crossX + 16, crossY)
+        g.fillText('Asking the model…', Math.max(x0, crossX) + 16, crossY)
       } else {
         const column = layout(dist)
         const listed = column.length ? column[column.length - 1].b : 0
@@ -285,14 +314,16 @@ export function SteerView({
         const restH = (1 - listed) * L.view.s
         if (restH > 1 && restTop < H) {
           g.fillStyle = color('--bg-secondary')
-          g.fillRect(W - Math.min(restH, W), restTop, Math.min(restH, W), restH)
+          g.fillRect(x0, restTop, W - x0, restH)
           if (restH > 16) {
             g.fillStyle = color('--text-tertiary')
             g.font = `11px ${color('--font-ui')}`
-            g.fillText('other tokens (type to choose)', W - Math.min(restH, W) + 8, restTop + 14)
+            g.fillText('other tokens (type to choose)', x0 + 8, restTop + 14)
           }
         }
-        drawColumn(g, column, ids, top, L.view.s, 0, W, W, H, color, boxAt(column, L.view.c)?.id)
+        const widths: number[] = []
+        drawColumn(g, column, ids, top, L.view.s, 0, x0, W, H, color, widths, focusId)
+        L.colWidths = widths
       }
 
       // The crosshair
@@ -312,19 +343,20 @@ export function SteerView({
       }
     }
 
-    // maxW: how wide a box in this column may be. Children stay right of their
-    // parent's label, so a near-certain continuation never hides the token it follows.
+    // One column of options, all starting at x so their labels line up; each
+    // option's own next tokens form the column to its right, inside it.
     const drawColumn = (
       g: CanvasRenderingContext2D, column: Box[], prefix: number[], top: number, height: number,
-      depth: number, maxW: number, W: number, H: number, color: (n: string) => string,
-      focusId?: number,
+      depth: number, x: number, W: number, H: number, color: (n: string) => string,
+      widths: number[], focusId?: number,
     ) => {
+      if (x >= W - 8) return
+      const crossY = H / 2
+      const childX = x + (L.colWidths[depth] ?? 80)
       for (const box of column) {
         const y = top + box.a * height
         const h = (box.b - box.a) * height
         if (y > H || y + h < 0 || h < 0.5) continue
-        const w = Math.min(h, maxW)
-        const x = W - w
         const isStop = L.stops.includes(box.token)
         const focused = depth === 0 && box.id === focusId
         g.fillStyle = isStop
@@ -332,44 +364,41 @@ export function SteerView({
           : focused ? color('--bg-selected')
             : (box.rank + depth) % 2 === 0 ? color('--bg-secondary') : color('--bg-hover')
         g.globalAlpha = isStop ? 0.35 : 1
-        g.fillRect(x, y, w, h)
+        g.fillRect(x, y, W - x, h)
         g.globalAlpha = 1
         g.strokeStyle = color('--border-subtle')
         g.lineWidth = 1
-        g.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1)
+        g.strokeRect(x + 0.5, y + 0.5, W - x - 1, h - 1)
 
-        let labelRight = x
         if (h > 11) {
           const size = Math.max(10, Math.min(26, h * 0.32))
-          g.fillStyle = focused ? color('--text-accent') : color('--text-primary')
           g.font = `${size}px ${color('--font-mono')}`
           g.textBaseline = 'middle'
           const label = isStop ? 'end of turn' : tokenLabel(box.token)
-          const labelY = h > 60 ? Math.max(y + size, Math.min(y + h - size / 2, H / 2)) : y + h / 2
-          const labelW = Math.min(g.measureText(label).width, Math.max(20, w - 12))
-          g.fillText(label, x + 6, labelY, Math.max(20, w - 12))
-          labelRight = x + 6 + labelW
-          if (h > 44) {
+          // Keep the label on screen, and level with the crosshair when the box spans it
+          const labelY = h > 60
+            ? Math.max(Math.max(y, 0) + size, Math.min(Math.min(y + h, H) - size, crossY))
+            : y + h / 2
+          g.fillStyle = focused ? color('--text-accent') : color('--text-primary')
+          g.fillText(label, x + 8, labelY, Math.max(20, W - x - 16))
+          let used = g.measureText(label).width
+          if (h > 34) {
             g.fillStyle = color('--text-tertiary')
             g.font = `11px ${color('--font-ui')}`
             const pct = `${(box.prob * 100).toFixed(box.prob < 0.01 ? 2 : 0)}%`
-            g.fillText(pct, x + 6, labelY + size * 0.9)
-            labelRight = Math.max(labelRight, x + 6 + g.measureText(pct).width)
+            g.fillText(pct, x + 8, labelY + size * 0.85)
+            used = Math.max(used, g.measureText(pct).width)
           }
+          widths[depth] = Math.max(widths[depth] ?? 56, used + 24)
           g.textBaseline = 'alphabetic'
         }
 
-        // What could come next inside this box, once it's big enough to read
-        if (depth < MAX_DEPTH && !isStop && h > 70) {
+        // What could come next after this option: the next column, inside it
+        if (depth < MAX_DEPTH && !isStop && h > 60) {
           const childIds = [...prefix, box.id]
           const children = L.cache.get(keyOf(childIds))
           if (!children) fetchDist(childIds)
-          else {
-            const childMaxW = W - labelRight - 10
-            if (childMaxW > 24) {
-              drawColumn(g, layout(children), childIds, y, h, depth + 1, childMaxW, W, H, color)
-            }
-          }
+          else drawColumn(g, layout(children), childIds, y, h, depth + 1, childX, W, H, color, widths)
         }
       }
     }
