@@ -105,7 +105,8 @@ export const MessageRow = memo(function MessageRow({
 
   const roleLabel = node.role === 'researcher_note'
     ? 'Researcher Note'
-    : node.role.charAt(0).toUpperCase() + node.role.slice(1)
+    : node.participant_name
+      ?? node.role.charAt(0).toUpperCase() + node.role.slice(1)
 
   const logprobs: LogprobData | null = node.logprobs
   const avgCertainty = logprobs ? averageCertainty(logprobs) : null

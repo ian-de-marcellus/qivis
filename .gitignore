@@ -54,3 +54,6 @@ local/
 
 # Local per-model sampling defaults (see backend/model_defaults.example.json)
 backend/model_defaults.json
+
+# Guest portal config: guests, invite hashes, session secret (see qivis.guest.cli)
+backend/guest_config.json

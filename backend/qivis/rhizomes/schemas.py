@@ -33,6 +33,8 @@ class CreateNodeRequest(BaseModel):
     role: Literal["system", "user", "assistant", "tool", "researcher_note"] = "user"
     parent_id: str | None = None
     mode: Literal["chat", "completion", "manual"] = "chat"
+    # Who wrote this turn, when it isn't the researcher (e.g. a guest's name)
+    participant_name: str | None = None
 
 
 class PatchNodeContentRequest(BaseModel):

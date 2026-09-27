@@ -323,6 +323,7 @@ class RhizomeService:
             role=request.role,
             content=request.content,
             mode=request.mode,
+            participant_name=request.participant_name,
         )
 
         event = EventEnvelope(

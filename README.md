@@ -73,8 +73,36 @@ pnpm dev
 
 ```bash
 cd backend
+uv sync --extra dev   # test tools are an optional extra; plain `uv sync` removes them
 uv run pytest tests/ -v
 ```
+
+### Guest portal (optional)
+
+Let invited friends talk to chosen models (e.g. a local fine-tune) from their own
+devices. Each friend gets a personal invite link and their own conversations,
+which are recorded in Qivis (they're told so on the page) in a **Guests** folder.
+The guest server is the only thing exposed: Qivis and your model servers stay private.
+
+```bash
+cd backend
+uv run python -m qivis.guest.cli init                 # creates backend/guest_config.json (gitignored)
+uv run uvicorn --factory qivis.guest.app:create_app --host 127.0.0.1 --port 8100
+```
+
+Expose it with [Tailscale Funnel](https://tailscale.com/kb/1223/funnel) (enable
+Funnel for the machine in the Tailscale admin console first), then record the URL:
+
+```bash
+tailscale funnel --bg 8100
+uv run python -m qivis.guest.cli url https://<machine>.<tailnet>.ts.net
+uv run python -m qivis.guest.cli add "Alice"          # prints Alice's invite link (shown once)
+uv run python -m qivis.guest.cli revoke "Alice"       # takes effect immediately
+```
+
+Models guests can pick are listed in `guest_config.json` (`models`); per-model
+settings such as logit biases come from `model_defaults.json` as usual. The
+machine must be awake with Qivis and the model servers running.
 
 ## License
 
