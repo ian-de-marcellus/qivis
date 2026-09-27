@@ -1,12 +1,14 @@
 /**
  * Steer a reply token by token, Dasher-style.
  *
- * The model's likeliest next tokens stream toward a crosshair as boxes as
- * tall as their probability. Point up or down to steer; how far right of the
- * line you point sets the speed (left of it backs up). Fly into a box and its
- * token is chosen; its own next tokens open up inside it. A token at or above
- * the auto-advance threshold flows through on its own and is recorded as the
- * model's choice; everything else is the researcher's.
+ * The model's likeliest next tokens stand in a column, each as tall as its
+ * probability, with the tokens that could follow each one in the column to
+ * its right. Moving forward carries the column toward the line while the
+ * option you're pointing at grows to fill the screen; reach the line and it's
+ * chosen, and the next column is already in place. Every token takes the same
+ * travel, so a certain token is just one big box you pass through; likelihood
+ * shows as size (easy or hard to stay on), not speed. Point left of the line
+ * to back up. Every token in a steered reply is the researcher's choice.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -17,6 +19,8 @@ import { advance, type Box, boxAt, enter, exit, layout, screenY, tokenLabel, typ
 import './SteerView.css'
 
 const K = 20
+/** A column at rest fills this much of the canvas height */
+const REST = 0.9
 const MAX_DEPTH = 3
 
 interface Chosen {
@@ -51,7 +55,6 @@ export function SteerView({
   const [paused, setPaused] = useState(true)
   const [cruise, setCruise] = useState(false)
   const [speed, setSpeed] = useState(1.2)
-  const [threshold, setThreshold] = useState(0.99)
   const [ended, setEnded] = useState(false)
   const [typed, setTyped] = useState('')
   const [saving, setSaving] = useState(false)
@@ -64,7 +67,9 @@ export function SteerView({
     cache: new Map<string, TokenCandidate[]>(),
     inflight: new Set<string>(),
     pointer: { x: 0, y: 0, inside: false },
-    paused: true, cruise: false, speed: 1.2, threshold: 0.99, ended: false,
+    paused: true, cruise: false, speed: 1.2, ended: false,
+    // How far the current column has traveled toward the line, 0..1
+    progress: 0,
     stops: [] as string[],
     sessionId: null as string | null,
     // Columns: the current column's left edge on screen (eased), each depth's
@@ -75,8 +80,8 @@ export function SteerView({
     height: 600,
   })
   useEffect(() => {
-    Object.assign(live.current, { paused, cruise, speed, threshold, ended })
-  }, [paused, cruise, speed, threshold, ended])
+    Object.assign(live.current, { paused, cruise, speed, ended })
+  }, [paused, cruise, speed, ended])
 
   // -- Session --
 
@@ -116,12 +121,12 @@ export function SteerView({
   const choose = useCallback((box: Box, chosenBy: Chosen['chosenBy']) => {
     const L = live.current
     // The next column is already on screen, just right of this one: it stays put
-    const width = L.colWidths[0] ?? 80
-    L.passed.push(width)
-    L.colX += width
+    L.passed.push(L.colWidths[0] ?? 80)
     L.view = enter(L.view, box)
-    // Taking a small box directly (keyboard, typing) starts the new column at rest
-    if (L.view.s < L.height * 0.6) L.view = { c: 0.5, s: L.height * 0.9 }
+    // Arriving by travel, the box already fills the screen; taken directly
+    // (keyboard, typing), start the new column at rest
+    if (L.progress < 0.99) L.view = { c: 0.5, s: L.height * REST }
+    L.progress = 0
     L.tokens.push({ id: box.id, token: box.token, prob: box.prob, chosenBy })
     if (L.stops.includes(box.token)) {
       L.ended = true
@@ -136,10 +141,12 @@ export function SteerView({
     const L = live.current
     const last = L.tokens.pop()
     if (!last) return
+    L.passed.pop()
     const parent = L.cache.get(keyOf(L.tokens.map((t) => t.id)))
     const box = parent && layout(parent).find((b) => b.id === last.id)
-    L.view = box ? exit(L.view, box) : { c: 0.5, s: L.view.s }
-    L.colX -= L.passed.pop() ?? 80
+    // Back out to where we arrived from: the parent column at the line, this box filling the screen
+    L.view = box ? exit({ c: 0.5, s: L.height * REST }, box) : { c: 0.5, s: L.height * REST }
+    L.progress = box ? 0.999 : 0
     L.ended = false
     setEnded(false)
     publish()
@@ -229,8 +236,7 @@ export function SteerView({
     if (!ctx) return
     const L = live.current
     L.height = canvas.clientHeight
-    L.view = { c: 0.5, s: canvas.clientHeight * 0.9 }
-    L.colX = canvas.clientWidth
+    L.view = { c: 0.5, s: canvas.clientHeight * REST }
     fetchDist([])
 
     let frame = 0
@@ -249,41 +255,45 @@ export function SteerView({
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
       const crossX = W * 0.18
       const crossY = H / 2
-      // An option is passed into when it's grown this tall; its column meets the line then
-      const enterH = H * 0.72
 
       const ids = L.tokens.map((t) => t.id)
       const dist = L.cache.get(keyOf(ids))
       if (!dist) fetchDist(ids)
       const boxes = dist ? layout(dist) : []
 
-      if (!L.paused && !L.ended && dist) {
-        // A near-certain token flows through on its own: the model's choice
-        const top = boxes[0]
-        if (top && top.prob >= L.threshold && !L.stops.includes(top.token)) {
-          choose(top, 'model')
-        } else if (L.pointer.inside) {
-          const targetY = L.view.c + (L.pointer.y - crossY) / L.view.s
-          const reach = Math.max(-1, Math.min(1, (L.pointer.x - crossX) / (W - crossX)))
-          const rate = L.cruise ? (L.pointer.x < crossX ? -L.speed : L.speed) : L.speed * 2 * reach
-          L.view = advance(L.view, { targetY, rate, dt })
+      const restH = H * REST
+      // Steering stays within the listed options (the rest is reachable by typing)
+      const listed = boxes.length ? boxes[boxes.length - 1].b : 1
+      if (L.view.c >= listed) L.view = { ...L.view, c: listed - 1e-6 }
+      const focus = boxAt(boxes, L.view.c)
+      if (!L.paused && !L.ended && dist && focus && L.pointer.inside) {
+        // Travel: steady, a column per 1/speed seconds at full reach
+        const reach = Math.max(-1, Math.min(1, (L.pointer.x - crossX) / (W - crossX)))
+        const dir = L.cruise ? (L.pointer.x < crossX ? -1 : 1) : reach
+        L.progress += dir * L.speed * 0.8 * dt
 
-          const under = boxAt(boxes, L.view.c)
-          if (under && (under.b - under.a) * L.view.s >= enterH) {
-            choose(under, 'researcher')
-          } else if (L.view.s < H * 0.45) {
-            if (L.tokens.length > 0) undo()
-            else L.view = { ...L.view, s: H * 0.45 }
-          }
+        // Steer toward the pointer; near the line, settle onto the option there
+        const pointerY = L.view.c + (L.pointer.y - crossY) / L.view.s
+        const settle = Math.max(0, (L.progress - 0.6) / 0.4) ** 2
+        const targetC = pointerY + ((focus.a + focus.b) / 2 - pointerY) * settle
+        L.view = advance(L.view, { targetY: Math.min(targetC, listed - 1e-6), rate: 0, dt }, 6)
+
+        // Zoom so the option at the crosshair fills the screen on arrival
+        const frac = focus.b - focus.a
+        const targetS = restH * Math.pow(frac, -Math.max(0, Math.min(1, L.progress)))
+        L.view = { ...L.view, s: L.view.s + (targetS - L.view.s) * Math.min(1, 10 * dt) }
+
+        if (L.progress >= 1) {
+          choose(focus, 'researcher')
+        } else if (L.progress < 0) {
+          if (L.tokens.length > 0) undo()
+          else L.progress = 0
         }
       }
 
-      // The column slides toward the line as the option under the crosshair grows
-      const focus = dist ? boxAt(layout(dist), L.view.c) : undefined
-      const grown = focus ? Math.min(1, ((focus.b - focus.a) * L.view.s) / enterH) : 0
-      const restX = crossX + (W - crossX) * 0.22
-      const targetX = restX + (crossX - restX) * grown
-      L.colX += (targetX - L.colX) * Math.min(1, 8 * dt)
+      // The column sits a label's width right of the line at rest and reaches it on arrival
+      const gap = L.passed[L.passed.length - 1] ?? (W - crossX) * 0.2
+      L.colX = crossX + gap * (1 - Math.max(0, Math.min(1, L.progress)))
 
       draw(ctx, W, H, crossX, crossY, focus?.id)
       frame = requestAnimationFrame(loop)
@@ -435,17 +445,12 @@ export function SteerView({
 
           <div className="steer-label">
             Reply
-            <span className="steer-legend">
-              <span className="steer-by-researcher">steered</span> ·{' '}
-              <span className="steer-by-model">flowed through</span>
-            </span>
           </div>
           <div className="steer-text">
             {tokens.map((t, i) => (
               <span
                 key={i}
-                className={t.chosenBy === 'model' ? 'steer-by-model' : 'steer-by-researcher'}
-                title={`${(t.prob * 100).toFixed(2)}% · ${t.chosenBy === 'model' ? 'flowed through' : 'steered'}`}
+                title={`${(t.prob * 100).toFixed(2)}%`}
               >
                 {session?.stop_sequences.includes(t.token) ? ' [end of turn]' : t.token}
               </span>
@@ -477,11 +482,6 @@ export function SteerView({
             <span>Speed</span>
             <input type="range" min={0.3} max={3} step={0.1} value={speed}
               onChange={(e) => setSpeed(Number(e.target.value))} />
-          </label>
-          <label className="steer-slider">
-            <span>Flow through at {threshold >= 1 ? 'never' : `${Math.round(threshold * 1000) / 10}%`}</span>
-            <input type="range" min={0.9} max={1} step={0.005} value={threshold}
-              onChange={(e) => setThreshold(Number(e.target.value))} />
           </label>
 
           <p className="steer-help">

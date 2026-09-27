@@ -5,10 +5,9 @@
  * tokens, top to bottom by probability, each as tall as its probability.
  * Probability not among them is left as empty space at the bottom (it can
  * only be reached by typing). The view is a point on that column (c, the
- * world y under the crosshair) and a zoom (s, pixels per unit). Zooming in
- * far enough on a box enters it: its token is chosen, and its own
- * distribution becomes the column. Zooming out past the column's size goes
- * back up to the column it came from, unchoosing the token.
+ * world y under the crosshair) and a zoom (s, pixels per unit). Arriving at a
+ * box zooms it to fill the view; entering it then makes its distribution the
+ * column, with the picture unchanged. Backing out is the exact inverse.
  */
 
 import type { TokenCandidate } from '../../api/types.ts'
