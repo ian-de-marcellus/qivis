@@ -494,7 +494,7 @@ class ReplayService:
         """Generate a response with explicit messages (bypassing normal context resolution)."""
         # Handle completion mode per-provider
         prompt_text, resolved_params, mode_hint = GenerationService._prepare_completion_mode(
-            provider, messages, system_prompt, params, metadata,
+            provider, messages, system_prompt, params, metadata, model=model,
         )
 
         request = GenerationRequest(

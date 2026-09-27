@@ -487,7 +487,7 @@ class PerturbationService:
 
         # Handle completion mode
         prompt_text, resolved_params, mode_hint = GenerationService._prepare_completion_mode(
-            provider, messages, final_prompt, params, metadata,
+            provider, messages, final_prompt, params, metadata, model=model,
         )
 
         request = GenerationRequest(
@@ -561,7 +561,7 @@ class PerturbationService:
         )
 
         prompt_text, resolved_params, mode_hint = GenerationService._prepare_completion_mode(
-            provider, messages, final_prompt, params, metadata,
+            provider, messages, final_prompt, params, metadata, model=model,
         )
 
         request = GenerationRequest(

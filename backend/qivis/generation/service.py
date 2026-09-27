@@ -16,6 +16,7 @@ from qivis.generation.interventions import (
 )
 from qivis.generation.templates import render_prompt
 from qivis.generation.tokens import ApproximateTokenCounter
+from qivis.model_catalog import get_catalog
 from qivis.models import (
     ContextUsage,
     EventEnvelope,
@@ -131,7 +132,7 @@ class GenerationService:
         # Completion mode: render prompt text from messages
         prompt_text, resolved_params, mode_hint = self._prepare_completion_mode(
             provider, messages, resolved_prompt, resolved_params, metadata,
-            mode_override=mode_override,
+            mode_override=mode_override, model=resolved_model,
         )
 
         if prefill_content:
@@ -211,7 +212,7 @@ class GenerationService:
 
         prompt_text, resolved_params, mode_hint = self._prepare_completion_mode(
             provider, messages, resolved_prompt, resolved_params, metadata,
-            mode_override=mode_override,
+            mode_override=mode_override, model=resolved_model,
         )
 
         if prefill_content:
@@ -295,7 +296,7 @@ class GenerationService:
 
         prompt_text, resolved_params, mode_hint = self._prepare_completion_mode(
             provider, messages, resolved_prompt, resolved_params, metadata,
-            mode_override=mode_override,
+            mode_override=mode_override, model=resolved_model,
         )
 
         if prefill_content:
@@ -452,7 +453,7 @@ class GenerationService:
             msgs_copy = [m.copy() for m in messages]
             prompt_text, params, mode_hint = self._prepare_completion_mode(
                 provider, msgs_copy, resolved_prompt, resolved_params, metadata,
-                mode_override=target.get("mode"),
+                mode_override=target.get("mode"), model=target_model,
             )
 
             request = GenerationRequest(
@@ -532,7 +533,7 @@ class GenerationService:
                 msgs_copy = [m.copy() for m in messages]
                 prompt_text, params, mode_hint = self._prepare_completion_mode(
                     provider, msgs_copy, resolved_prompt, resolved_params, metadata,
-                    mode_override=target.get("mode"),
+                    mode_override=target.get("mode"), model=target_model,
                 )
 
                 request = GenerationRequest(
@@ -645,7 +646,7 @@ class GenerationService:
 
         prompt_text, resolved_params, mode_hint = self._prepare_completion_mode(
             provider, messages, resolved_prompt, resolved_params, metadata,
-            mode_override=mode_override,
+            mode_override=mode_override, model=resolved_model,
         )
 
         if prefill_content:
@@ -926,6 +927,7 @@ class GenerationService:
         sampling_params: SamplingParams,
         metadata: dict,
         mode_override: str | None = None,
+        model: str | None = None,
     ) -> tuple[str | None, SamplingParams, str]:
         """Prepare completion mode if the provider supports it.
 
@@ -939,20 +941,29 @@ class GenerationService:
 
         Dual-mode providers (OpenRouter, OpenAI, etc.) default to chat mode.
         mode_override "chat" forces chat on a dual-mode provider.
+
+        The generating model's profile (model catalog) supplies its own mode
+        and template: its mode beats the rhizome's (not an explicit override),
+        and its template is used when the rhizome's is unset or "auto".
         """
         if "completion" not in provider.supported_modes:
             return None, sampling_params, "chat"
 
+        profile = get_catalog().profile(model) or {}
         # Dual-mode providers require explicit opt-in
         is_completion_only = "chat" not in provider.supported_modes
         explicit_completion = metadata.get("generation_mode") == "completion"
+        if profile.get("generation_mode") in ("chat", "completion"):
+            explicit_completion = profile["generation_mode"] == "completion"
         if mode_override is not None and not is_completion_only:
             explicit_completion = mode_override == "completion"
 
         if not is_completion_only and not explicit_completion:
             return None, sampling_params, "chat"
 
-        template_name = metadata.get("prompt_template", "raw")
+        template_name = metadata.get("prompt_template")
+        if not template_name or template_name == "auto":
+            template_name = profile.get("prompt_template") or "raw"
         prompt_text, stop_tokens = render_prompt(template_name, messages, system_prompt)
 
         # Merge template stop tokens into sampling params

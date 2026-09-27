@@ -1,6 +1,5 @@
 """Qivis FastAPI application entry point."""
 
-import json
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -20,6 +19,7 @@ from qivis.generation.service import GenerationService
 from qivis.providers.anthropic import AnthropicProvider
 from qivis.providers.openai import OpenAIProvider
 from qivis.providers.openrouter import OpenRouterProvider
+from qivis.model_catalog import ModelCatalog, get_catalog, set_catalog
 from qivis.providers.registry import clear_providers, get_all_providers, register_provider
 from qivis.export.router import get_export_service
 from qivis.export.router import router as export_router
@@ -45,6 +45,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
     db = await Database.connect("qivis.db")
+    # Model profiles (backend/model_defaults.json): labels, formats, per-model settings
+    set_catalog(ModelCatalog.load())
 
     # Summary client (dedicated API key for cost tracking — no fallback)
     summary_api_key = os.environ.get("SUMMARY_API_KEY")
@@ -89,13 +91,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if os.environ.get("LLAMACPP_BASE_URL"):
         from qivis.providers.llamacpp import LlamaCppProvider
 
-        # Per-model sampling defaults (gitignored; see model_defaults.example.json)
-        defaults_path = Path(os.environ.get(
-            "QIVIS_MODEL_DEFAULTS", Path(__file__).resolve().parent.parent / "model_defaults.json",
-        ))
-        model_defaults = json.loads(defaults_path.read_text()) if defaults_path.exists() else {}
         llamacpp = LlamaCppProvider(
-            base_url=os.environ["LLAMACPP_BASE_URL"], model_defaults=model_defaults,
+            base_url=os.environ["LLAMACPP_BASE_URL"], model_defaults=get_catalog().profiles,
         )
         discovered = await llamacpp.discover_models()
         if discovered:
@@ -174,6 +171,12 @@ async def providers() -> list[dict]:
         {"name": p.name, "available": True, "models": p.suggested_models, "supported_params": p.supported_params, "supported_modes": p.supported_modes}
         for p in get_all_providers()
     ]
+
+
+@app.get("/api/models")
+async def models() -> list[dict]:
+    """Named models for the picker: profiled models first, then discovered ones."""
+    return get_catalog().entries(get_all_providers())
 
 
 @app.get("/api/intervention-types")
