@@ -152,7 +152,9 @@ class SteeringService:
             kept = len(tokens)
             if tokens and tokens[-1].token in stops:
                 finish, kept = "stop", len(tokens) - 1
-            content = await self._provider(session).detokenize(token_ids[:kept])
+            content = await self._provider(session).detokenize(
+                token_ids[:kept], session.prepared.model,
+            )
         except Exception:
             self._sessions[session.session_id] = session  # let them retry the commit
             raise
@@ -173,7 +175,8 @@ class SteeringService:
 
     async def tokenize(self, session_id: str, text: str) -> list[dict[str, Any]]:
         """Typed text as the session model's tokens, to append as researcher choices."""
-        return await self._provider(self._session(session_id)).tokenize(text)
+        session = self._session(session_id)
+        return await self._provider(session).tokenize(text, session.prepared.model)
 
     def discard(self, session_id: str) -> None:
         self._sessions.pop(session_id, None)
@@ -200,7 +203,7 @@ class SteeringService:
         specials |= set(prepared.request.sampling_params.stop_sequences or [])
         if not specials:
             return {}
-        pieces = await provider.tokenize("".join(sorted(specials)))
+        pieces = await provider.tokenize("".join(sorted(specials)), prepared.model)
         return {p["id"]: p["token"] for p in pieces if p["token"] in specials}
 
     @staticmethod

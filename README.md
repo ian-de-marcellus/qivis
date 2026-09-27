@@ -120,6 +120,10 @@ uv run python -m qivis.tools.llama_supervisor --model ~/Models/your-model.gguf \
     --port 8080 --idle 3600 -- -ngl 99 -c 8192
 ```
 
+Repeat `--model` to serve several local models from one port: each gets its own
+llama-server, started when first asked for and stopped when idle, and Qivis
+routes each request to the model it names (the first model is the default).
+
 Models guests can pick are listed in `guest_config.json` (`models`); per-model
 settings such as logit biases come from `model_defaults.json` as usual. The
 machine must be awake with Qivis and the model servers running.

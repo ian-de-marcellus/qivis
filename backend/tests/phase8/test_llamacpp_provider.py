@@ -69,6 +69,9 @@ def _make_mock_client(response_data: dict | None = None) -> AsyncMock:
     return client
 
 
+LLAMA3_PROMPT = "<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\nHello<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
+
+
 def _make_request(
     prompt_text: str = "<|im_start|>user\nHello<|im_end|>\n<|im_start|>assistant\n",
     model: str = "test-model.gguf",
@@ -376,21 +379,22 @@ class TestLlamaCppExtraStops:
         provider = LlamaCppProvider(http_client=client)
         models = await provider.discover_models()
         assert models == ["test.gguf"]
-        assert provider._extra_stops == []  # discovery no longer probes (keeps servers asleep)
+        assert provider._extra_stops == {}  # discovery no longer probes (keeps servers asleep)
 
-        await provider.generate(_make_request())  # the first generation probes
+        await provider.generate(_make_request(LLAMA3_PROMPT))  # the first generation probes
         # All 3 garbled byte forms should be extra stops
-        assert len(provider._extra_stops) == 3
+        assert len(provider._extra_stops["test-model.gguf"]) == 3
 
     async def test_extra_stops_merged_into_request(self):
         """Extra stops from probe get included in the request body."""
         client = _make_mock_client()
         provider = LlamaCppProvider(http_client=client)
         # Simulate probed byte form
-        provider._extra_stops = ["\u0438\u043b\u0430"]
+        provider._extra_stops = {"test-model.gguf": ["\u0438\u043b\u0430"]}
 
         await provider.generate(
             _make_request(
+                LLAMA3_PROMPT,
                 sampling_params=SamplingParams(
                     max_tokens=256, stop_sequences=["<|eot_id|>"]
                 )
@@ -424,10 +428,10 @@ class TestLlamaCppExtraStops:
 
         provider = LlamaCppProvider(http_client=client)
         await provider.discover_models()
-        await provider.generate(_make_request())  # the first generation probes
+        await provider.generate(_make_request(LLAMA3_PROMPT))  # the first generation probes
 
         # No extra stops needed — text forms match
-        assert provider._extra_stops == []
+        assert provider._extra_stops.get("test-model.gguf", []) == []
 
 
     async def test_concurrent_streams_share_one_probe(self):
@@ -453,7 +457,7 @@ class TestLlamaCppExtraStops:
 
         client.stream = MagicMock(side_effect=stream)
         provider = LlamaCppProvider(http_client=client)
-        await asyncio.gather(provider.generate(_make_request()), provider.generate(_make_request()))
+        await asyncio.gather(provider.generate(_make_request(LLAMA3_PROMPT)), provider.generate(_make_request(LLAMA3_PROMPT)))
         assert probes == 3  # one probe: three special tokens
         assert all("garbled" in b["stop"] for b in bodies)
 
@@ -474,11 +478,23 @@ class TestLlamaCppExtraStops:
         client.stream = MagicMock(side_effect=lambda *a, **kw: MockStreamResponse(
             ['data: {"content": "", "stop": true}']))
         provider = LlamaCppProvider(http_client=client)
-        await provider.generate(_make_request())
-        assert provider._extra_stops == []
+        await provider.generate(_make_request(LLAMA3_PROMPT))
+        assert provider._extra_stops.get("test-model.gguf", []) == []
         ready = True
-        await provider.generate(_make_request())
-        assert provider._extra_stops == ["garbled"] * 3
+        await provider.generate(_make_request(LLAMA3_PROMPT))
+        assert provider._extra_stops["test-model.gguf"] == ["garbled"] * 3
+
+    async def test_probe_is_only_for_llama3_models(self):
+        """The probe is about Llama 3's special tokens: another model (e.g. OLMo on the
+        same supervisor) never gets probed, nor any Llama 3 model's extra stops."""
+        client = _make_mock_client()
+        provider = LlamaCppProvider(http_client=client)
+        provider._extra_stops = {"sun.gguf": ["garbled"]}
+        await provider.generate(_make_request(model="olmo.gguf"))
+        body = client.stream.call_args.kwargs["json"]
+        assert "garbled" not in body.get("stop", [])
+        assert body["model"] == "olmo.gguf"
+        assert "olmo.gguf" not in provider._probed_stops
 
 
 class TestLlamaCppDiscoverModels:

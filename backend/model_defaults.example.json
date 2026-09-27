@@ -9,5 +9,11 @@
       "128009": 5.955837
     },
     "bos_tokens": 2
+  },
+  "Olmo-3-7B-stage1-step1413814.BF16.gguf": {
+    "label": "OLMo 3 7B base (stage1, bf16)",
+    "provider": "llamacpp",
+    "generation_mode": "completion",
+    "prompt_template": "raw"
   }
 }

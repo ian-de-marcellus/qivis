@@ -113,16 +113,18 @@ class LlamaCppProvider(LLMProvider):
             base_url=self._base_url,
             timeout=httpx.Timeout(connect=10.0, read=300.0, write=10.0, pool=10.0),
         )
-        # Byte representations of special tokens discovered via /detokenize.
-        # Used as extra stop sequences when the server decodes special tokens
-        # as raw bytes instead of their text form.
-        self._extra_stops: list[str] = []
-        # Whether the server prepends BOS to string prompts; probed once
-        self._adds_bos: bool | None = None
-        # Special-token byte forms are probed on first generation, not at
-        # discovery, so starting Qivis never wakes an on-demand model server
-        self._probed_stops = False
+        # Facts learned from the server, per model (one supervisor can serve
+        # several; see qivis.tools.llama_supervisor). Every request names its
+        # model, so it reaches the right one.
+        # Byte forms of Llama 3 special tokens discovered via /detokenize, used
+        # as extra stops when a model decodes them as raw bytes. Probed on a
+        # model's first Llama 3 generation (not at discovery, so starting Qivis
+        # never wakes an on-demand server).
+        self._extra_stops: dict[str, list[str]] = {}
+        self._probed_stops: set[str] = set()
         self._probe_lock = asyncio.Lock()
+        # Whether the server prepends BOS to a model's string prompts
+        self._adds_bos: dict[str, bool] = {}
 
     @property
     def name(self) -> str:
@@ -133,23 +135,26 @@ class LlamaCppProvider(LLMProvider):
     # these, causing the model to emit them instead of real special tokens.
     _LLAMA3_RESERVED_RANGE = range(128011, 128256)
 
-    async def _props(self) -> dict:
+    async def _props(self, model: str | None = None) -> dict:
         try:
-            resp = await self._client.get(f"{self._base_url}/props")
+            resp = await self._client.get(
+                f"{self._base_url}/props", params={"model": model} if model else None,
+            )
             resp.raise_for_status()
             data = resp.json()
             return data if isinstance(data, dict) else {}
         except Exception:
             return {}
 
-    async def _served_model(self) -> str | None:
-        """Name of the model llama-server actually has loaded (it ignores the requested name)."""
-        data = await self._props()
+    async def _served_model(self, model: str | None = None) -> str | None:
+        """Name of the model actually answering for `model` (a plain llama-server
+        serves its one model whatever is asked for)."""
+        data = await self._props(model)
         return _served_name(data)
 
     async def context_window(self, model: str) -> int | None:
-        """llama-server's n_ctx: the one window it serves, whatever model is asked for."""
-        settings = (await self._props()).get("default_generation_settings") or {}
+        """The n_ctx of the server answering for this model."""
+        settings = (await self._props(model)).get("default_generation_settings") or {}
         n_ctx = settings.get("n_ctx")
         return n_ctx if isinstance(n_ctx, int) and n_ctx > 0 else None
 
@@ -161,24 +166,26 @@ class LlamaCppProvider(LLMProvider):
         merged = {**defaults, **(request.sampling_params.logit_bias or {})}
         return merged or None
 
-    async def _server_adds_bos(self) -> bool | None:
-        """Whether llama-server prepends BOS to string prompts (None if unknown)."""
-        if self._adds_bos is None:
+    async def _server_adds_bos(self, model: str = "") -> bool | None:
+        """Whether llama-server prepends BOS to this model's string prompts (None if unknown)."""
+        if model not in self._adds_bos:
             try:
                 resp = await self._client.post(
                     f"{self._base_url}/tokenize",
-                    json={"content": "x", "add_special": True, "parse_special": False},
+                    json={
+                        "model": model, "content": "x", "add_special": True, "parse_special": False,
+                    },
                 )
                 resp.raise_for_status()
                 tokens = resp.json().get("tokens")
                 if isinstance(tokens, list) and tokens and isinstance(tokens[0], int):
-                    self._adds_bos = tokens[0] == _LLAMA3_BOS_ID
+                    self._adds_bos[model] = tokens[0] == _LLAMA3_BOS_ID
             except Exception:
                 return None
-        return self._adds_bos
+        return self._adds_bos.get(model)
 
     async def _prompt_for_bos_count(
-        self, prompt: str, served: str | None,
+        self, prompt: str, served: str | None, model: str = "",
     ) -> tuple[str, str | None]:
         """Adjust a llama3 prompt so the model sees exactly `bos_tokens` BOS.
 
@@ -190,7 +197,7 @@ class LlamaCppProvider(LLMProvider):
         """
         if not prompt.startswith(_LLAMA3_BOS):
             return prompt, None
-        adds = await self._server_adds_bos()
+        adds = await self._server_adds_bos(model)
         if adds is None:
             return prompt, None  # can't tell what the server does; send as rendered
         want = int(self._model_defaults.get(served or "", {}).get("bos_tokens", 1))
@@ -207,6 +214,8 @@ class LlamaCppProvider(LLMProvider):
     ) -> dict[str, Any]:
         """Map GenerationRequest to llama.cpp /completion request body."""
         body: dict[str, Any] = {
+            # Names the model for a multi-model supervisor (plain llama-server ignores it)
+            "model": request.model,
             "prompt": request.prompt_text or "",
             # Parse special tokens (<|eot_id|> etc.) as token IDs, not text
             "special": True,
@@ -223,7 +232,8 @@ class LlamaCppProvider(LLMProvider):
         if sp.top_k is not None:
             body["top_k"] = sp.top_k
         stops = list(sp.stop_sequences or [])
-        for s in self._extra_stops:
+        extra = self._extra_stops.get(request.model, []) if self._is_llama3(request) else []
+        for s in extra:
             if s not in stops:
                 stops.append(s)
         if stops:
@@ -322,18 +332,18 @@ class LlamaCppProvider(LLMProvider):
         self, request: GenerationRequest
     ) -> AsyncIterator[StreamChunk]:
         """Stream a completion; report any logit_bias applied beyond the reserved range."""
-        if not self._probed_stops:
+        if self._is_llama3(request) and request.model not in self._probed_stops:
             # Concurrent streams (n>1, cross-model) wait for the one probe
             async with self._probe_lock:
-                if not self._probed_stops:
-                    await self._probe_special_token_stops()
-        served = await self._served_model() if self._model_defaults else None
+                if request.model not in self._probed_stops:
+                    await self._probe_special_token_stops(request.model)
+        served = await self._served_model(request.model) if self._model_defaults else None
         applied = self._effective_logit_bias(request, served)
         body = self._build_request_body(request, applied)
         effective_prompt = None
         if request.prompt_text:
             body["prompt"], effective_prompt = await self._prompt_for_bos_count(
-                request.prompt_text, served,
+                request.prompt_text, served, request.model,
             )
         async for chunk in self._stream_completion(request, body):
             if chunk.result is not None:
@@ -433,7 +443,7 @@ class LlamaCppProvider(LLMProvider):
                                 is_final=True,
                                 result=GenerationResult(
                                     content=accumulated_text,
-                                    model=data.get("model", request.model),
+                                    model=_result_model(data, request),
                                     finish_reason="stop",
                                     usage={},
                                     logprobs=self._returned_logprobs(
@@ -469,7 +479,7 @@ class LlamaCppProvider(LLMProvider):
                                 is_final=True,
                                 result=GenerationResult(
                                     content=clean,
-                                    model=data.get("model", request.model),
+                                    model=_result_model(data, request),
                                     finish_reason="stop",
                                     usage={
                                         "input_tokens": data.get(
@@ -500,7 +510,7 @@ class LlamaCppProvider(LLMProvider):
                         is_final=True,
                         result=GenerationResult(
                             content=accumulated_text,
-                            model=data.get("model", request.model),
+                            model=_result_model(data, request),
                             finish_reason="length" if stopped_at_limit else "stop",
                             usage={
                                 "input_tokens": data.get("tokens_evaluated", 0),
@@ -510,7 +520,7 @@ class LlamaCppProvider(LLMProvider):
                         ),
                     )
 
-    async def _probe_special_token_stops(self) -> None:
+    async def _probe_special_token_stops(self, model: str = "") -> None:
         """Discover byte representations of special tokens via /detokenize.
 
         llama.cpp may decode special tokens (like <|eot_id|>) as raw bytes
@@ -526,7 +536,7 @@ class LlamaCppProvider(LLMProvider):
             try:
                 resp = await self._client.post(
                     f"{self._base_url}/detokenize",
-                    json={"tokens": [token_id]},
+                    json={"model": model, "tokens": [token_id]},
                 )
                 if resp.status_code != 200:
                     return  # server not ready or no /detokenize: try again next time
@@ -540,13 +550,13 @@ class LlamaCppProvider(LLMProvider):
                     )
             except Exception:
                 return
-        self._extra_stops = found
-        self._probed_stops = True
+        self._extra_stops[model] = found
+        self._probed_stops.add(model)
 
-        if self._extra_stops:
+        if found:
             logger.info(
-                "Probed %d extra stop sequences for byte-decoded special tokens",
-                len(self._extra_stops),
+                "Probed %d extra stop sequences for %s's byte-decoded special tokens",
+                len(found), model or "the model",
             )
 
     async def next_tokens(
@@ -558,13 +568,15 @@ class LlamaCppProvider(LLMProvider):
         model's logit bias applied, no truncation, temperature 1. Returns
         {"candidates": [{id, token, bytes, prob}], "logit_bias", "effective_prompt"}.
         """
-        served = await self._served_model() if self._model_defaults else None
+        served = await self._served_model(request.model) if self._model_defaults else None
         applied = self._effective_logit_bias(request, served)
         body = self._build_request_body(request, applied)
         prompt = body["prompt"]
         effective_prompt = None
         if isinstance(prompt, str):
-            prompt, effective_prompt = await self._prompt_for_bos_count(prompt, served)
+            prompt, effective_prompt = await self._prompt_for_bos_count(
+                prompt, served, request.model,
+            )
         body.update({
             # Text first (the server adds its BOS as for a string prompt), then ids
             "prompt": [prompt, *continuation] if prompt else list(continuation),
@@ -586,12 +598,13 @@ class LlamaCppProvider(LLMProvider):
             "candidates": candidates, "logit_bias": applied, "effective_prompt": effective_prompt,
         }
 
-    async def tokenize(self, text: str) -> list[dict[str, Any]]:
+    async def tokenize(self, text: str, model: str = "") -> list[dict[str, Any]]:
         """Text as this model's tokens (no BOS): [{id, piece}]."""
         resp = await self._client.post(
             f"{self._base_url}/tokenize",
             json={
-                "content": text, "add_special": False, "parse_special": True, "with_pieces": True,
+                "model": model, "content": text,
+                "add_special": False, "parse_special": True, "with_pieces": True,
             },
         )
         resp.raise_for_status()
@@ -600,13 +613,21 @@ class LlamaCppProvider(LLMProvider):
             for t in resp.json().get("tokens", [])
         ]
 
-    async def detokenize(self, ids: list[int]) -> str:
-        resp = await self._client.post(f"{self._base_url}/detokenize", json={"tokens": ids})
+    async def detokenize(self, ids: list[int], model: str = "") -> str:
+        resp = await self._client.post(
+            f"{self._base_url}/detokenize", json={"model": model, "tokens": ids},
+        )
         resp.raise_for_status()
         return resp.json().get("content", "")
 
     async def discover_models(self) -> list[str]:
-        """Discover loaded model via GET /props."""
+        """The models served: all of a supervisor's, else the one in GET /props."""
+        try:
+            resp = await self._client.get(f"{self._base_url}/supervisor/models")
+            if resp.status_code == 200 and isinstance(resp.json(), list):
+                return [str(m) for m in resp.json()]
+        except Exception:
+            pass
         try:
             resp = await self._client.get(f"{self._base_url}/props")
             resp.raise_for_status()
@@ -636,3 +657,8 @@ def _served_name(props: dict) -> str | None:
     if not isinstance(name, str):
         return None
     return name.rsplit("/", 1)[-1] or None
+
+
+def _result_model(data: dict, request: GenerationRequest) -> str:
+    """The model a result names: the file name llama-server reports, else the requested one."""
+    return _served_name({"model_alias": data.get("model")}) or request.model

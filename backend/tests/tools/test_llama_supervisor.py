@@ -126,3 +126,33 @@ async def test_client_gone_before_the_body_still_releases(sup_client):
     with pytest.raises(Exception):
         await app(scope, receive, send)
     assert sup.in_flight == 0
+
+
+async def test_several_models_route_by_name_and_wake_separately():
+    from qivis.tools.llama_supervisor import Pool
+
+    base = free_port()
+    sun, olmo = (
+        Supervisor(
+            model=Path(f"/models/{name}"), backend_port=port, idle_seconds=3600,
+            llama_cmd=[sys.executable, str(STUB)], extra_args=[], startup_timeout=20,
+        )
+        for name, port in (("sun.gguf", base), ("olmo.gguf", free_port()))
+    )
+    async with AsyncClient(
+        transport=ASGITransport(app=create_app(Pool([sun, olmo]))), base_url="http://sup"
+    ) as c:
+        assert (await c.get("/supervisor/models")).json() == ["sun.gguf", "olmo.gguf"]
+        # Asking about a model doesn't wake it
+        assert (await c.get("/props", params={"model": "olmo.gguf"})).json()["model_alias"] == "olmo.gguf"
+        # A request naming a model (by file name or path) goes to it, and only it wakes
+        r = await c.post("/completion", json={"model": "/anywhere/olmo.gguf", "prompt": "hi"})
+        assert r.json()["echo"] == "hi"
+        assert olmo.running and not sun.running
+        # Naming nothing goes to the first model
+        await c.post("/completion", json={"prompt": "hey"})
+        assert sun.running
+        status = (await c.get("/supervisor/status")).json()
+        assert [m["model"] for m in status["models"]] == ["sun.gguf", "olmo.gguf"]
+    await sun.stop()
+    await olmo.stop()

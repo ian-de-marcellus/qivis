@@ -1,5 +1,5 @@
-"""On-demand llama.cpp server: start the model when someone talks to it,
-stop it after a stretch of silence.
+"""On-demand llama.cpp server: start a model when someone talks to it,
+stop it after a stretch of silence. Serves one model or several.
 
 Sits on the port Qivis already uses for llama.cpp (LLAMACPP_BASE_URL) and
 proxies to a real llama-server it launches on a private port. Nothing in
@@ -14,13 +14,20 @@ Qivis needs to change:
   /props, or a minimal one naming the model file), so Qivis starting up
   or listing models doesn't wake it. /health reports the supervisor as up.
 
+Several models: repeat --model. Each gets its own llama-server (on
+consecutive private ports, started and stopped independently); a request goes
+to the model it names -- the "model" field of a JSON body or ?model= -- by
+file name, and to the first model when it names none.
+
     uv run python -m qivis.tools.llama_supervisor \\
-        --model ~/Models/Sun-v1.0.1-8B.Q4_K_M.gguf --port 8080 --idle 3600 \\
-        -- -ngl 99 -c 8192
+        --model ~/Models/Sun-v1.0.1-8B.Q4_K_M.gguf \\
+        --model ~/Models/olmo3/Olmo-3-7B-stage1-step1413814.BF16.gguf \\
+        --port 8080 --idle 3600 -- -ngl 99 -c 8192
 """
 
 import argparse
 import asyncio
+import json
 import logging
 import time
 from contextlib import asynccontextmanager
@@ -148,6 +155,23 @@ class Supervisor:
             await self.maybe_sleep()
 
 
+class Pool:
+    """Several supervised models behind one port; requests pick by model file name."""
+
+    def __init__(self, models: list[Supervisor]):
+        if not models:
+            raise ValueError("at least one model")
+        self.models = models
+
+    def pick(self, name: str | None) -> Supervisor:
+        if name:
+            base = name.rsplit("/", 1)[-1]
+            for sup in self.models:
+                if sup.model.name == base:
+                    return sup
+        return self.models[0]
+
+
 class _ReleasingStream(StreamingResponse):
     """A streamed response that runs `release` once it's over, however it ends.
 
@@ -167,57 +191,72 @@ class _ReleasingStream(StreamingResponse):
             await self._release()
 
 
-def create_app(sup: Supervisor, idle_check_interval: float = 30.0) -> FastAPI:
+def create_app(sup: Supervisor | Pool, idle_check_interval: float = 30.0) -> FastAPI:
+    pool = sup if isinstance(sup, Pool) else Pool([sup])
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        watch = asyncio.create_task(sup.idle_watch(idle_check_interval))
+        watches = [asyncio.create_task(m.idle_watch(idle_check_interval)) for m in pool.models]
         yield
-        watch.cancel()
-        await sup.stop()
+        for w in watches:
+            w.cancel()
+        for m in pool.models:
+            await m.stop()
 
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
 
-    @app.get("/supervisor/status")
-    async def status():
+    def slot_status(m: Supervisor) -> dict:
         return {
-            "running": sup.running,
-            "in_flight": sup.in_flight,
-            "idle_for": round(time.monotonic() - sup.last_activity, 1),
-            "idle_limit": sup.idle_seconds,
-            "model": sup.model.name,
+            "model": m.model.name,
+            "running": m.running,
+            "in_flight": m.in_flight,
+            "idle_for": round(time.monotonic() - m.last_activity, 1),
+            "idle_limit": m.idle_seconds,
         }
 
+    @app.get("/supervisor/status")
+    async def status():
+        # The first model's status at the top level (as before), all of them under "models"
+        return {**slot_status(pool.models[0]), "models": [slot_status(m) for m in pool.models]}
+
+    @app.get("/supervisor/models")
+    async def models():
+        return [m.model.name for m in pool.models]
+
     @app.get("/health")
-    async def health():
-        return {"status": "ok", "model": "running" if sup.running else "sleeping"}
+    async def health(model: str | None = None):
+        return {"status": "ok", "model": "running" if pool.pick(model).running else "sleeping"}
 
     @app.get("/props")
-    async def props():
-        if not sup.running:
-            return JSONResponse(sup.cached_props or sup.placeholder_props())
-        r = await sup.client.get(f"{sup.backend}/props")
+    async def props(model: str | None = None):
+        m = pool.pick(model)
+        if not m.running:
+            return JSONResponse(m.cached_props or m.placeholder_props())
+        r = await m.client.get(f"{m.backend}/props")
         if r.status_code == 200:
-            sup.cached_props = r.json()
+            m.cached_props = r.json()
         return Response(r.content, status_code=r.status_code, media_type="application/json")
 
     @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
     async def proxy(path: str, request: Request):
-        sup.in_flight += 1
-        sup.last_activity = time.monotonic()
+        body = await request.body()
+        m = pool.pick(request.query_params.get("model") or _named_model(body))
+        m.in_flight += 1
+        m.last_activity = time.monotonic()
         try:
-            await sup.ensure_running()
+            await m.ensure_running()
             headers = {k: v for k, v in request.headers.items() if k.lower() not in HOP_HEADERS}
-            upstream = sup.client.build_request(
+            upstream = m.client.build_request(
                 request.method,
-                f"{sup.backend}/{path}",
+                f"{m.backend}/{path}",
                 params=request.query_params,
                 headers=headers,
-                content=await request.body(),
+                content=body,
             )
-            resp = await sup.client.send(upstream, stream=True)
+            resp = await m.client.send(upstream, stream=True)
         except Exception as e:
-            sup.in_flight -= 1
-            sup.last_activity = time.monotonic()
+            m.in_flight -= 1
+            m.last_activity = time.monotonic()
             logger.exception("proxy failed")
             return JSONResponse(
                 {"error": {"code": 503, "message": f"model server unavailable: {e}"}},
@@ -225,8 +264,8 @@ def create_app(sup: Supervisor, idle_check_interval: float = 30.0) -> FastAPI:
             )
 
         async def release() -> None:
-            sup.in_flight -= 1
-            sup.last_activity = time.monotonic()
+            m.in_flight -= 1
+            m.last_activity = time.monotonic()
             await resp.aclose()
 
         out_headers = {k: v for k, v in resp.headers.items() if k.lower() not in HOP_HEADERS}
@@ -237,13 +276,30 @@ def create_app(sup: Supervisor, idle_check_interval: float = 30.0) -> FastAPI:
     return app
 
 
+def _named_model(body: bytes) -> str | None:
+    """The model a JSON request body names, if any."""
+    if not body or not body.lstrip().startswith(b"{"):
+        return None
+    try:
+        name = json.loads(body).get("model")
+    except (ValueError, AttributeError):
+        return None
+    return name if isinstance(name, str) else None
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    parser.add_argument("--model", required=True, type=Path)
+    parser.add_argument(
+        "--model", required=True, type=Path, action="append",
+        help="a GGUF to serve (repeat for several; the first is the default)",
+    )
     parser.add_argument("--port", type=int, default=8080, help="port Qivis talks to")
-    parser.add_argument("--backend-port", type=int, default=8181, help="private llama-server port")
+    parser.add_argument(
+        "--backend-port", type=int, default=8181,
+        help="first private llama-server port (one per model, consecutive)",
+    )
     parser.add_argument(
         "--idle", type=float, default=3600, help="seconds of silence before sleeping"
     )
@@ -252,17 +308,20 @@ def main() -> None:
     parser.add_argument("llama_args", nargs="*", help="extra llama-server args (after --)")
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
-    sup = Supervisor(
-        model=args.model.expanduser(),
-        backend_port=args.backend_port,
-        idle_seconds=args.idle,
-        llama_cmd=[args.llama_server],
-        extra_args=args.llama_args,
-        log_path=args.log,
-    )
+    pool = Pool([
+        Supervisor(
+            model=path.expanduser(),
+            backend_port=args.backend_port + i,
+            idle_seconds=args.idle,
+            llama_cmd=[args.llama_server],
+            extra_args=args.llama_args,
+            log_path=args.log,
+        )
+        for i, path in enumerate(args.model)
+    ])
     import uvicorn
 
-    uvicorn.run(create_app(sup), host="127.0.0.1", port=args.port, log_level="warning")
+    uvicorn.run(create_app(pool), host="127.0.0.1", port=args.port, log_level="warning")
 
 
 if __name__ == "__main__":

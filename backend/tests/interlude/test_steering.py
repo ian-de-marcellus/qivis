@@ -49,7 +49,7 @@ class SteerableModel(LLMProvider):
             "effective_prompt": "<BOS><BOS>" + (request.prompt_text or ""),
         }
 
-    async def tokenize(self, text: str) -> list[dict]:
+    async def tokenize(self, text: str, model: str = "") -> list[dict]:
         by_text = {v: k for k, v in VOCAB.items()}
         out, rest = [], text
         while rest:
@@ -61,7 +61,7 @@ class SteerableModel(LLMProvider):
             rest = rest[len(piece):]
         return out
 
-    async def detokenize(self, ids: list[int]) -> str:
+    async def detokenize(self, ids: list[int], model: str = "") -> str:
         return "".join(VOCAB[i] for i in ids)
 
     async def generate(self, request: GenerationRequest) -> GenerationResult:
