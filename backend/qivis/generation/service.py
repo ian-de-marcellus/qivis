@@ -103,6 +103,7 @@ class GenerationService:
         system_prompt: str | None = None,
         sampling_params: SamplingParams | None = None,
         prefill_content: str | None = None,
+        mode_override: str | None = None,
     ) -> NodeResponse:
         """Generate a non-streaming response and store as a new node."""
         (rhizome, nodes, resolved_model, resolved_prompt, resolved_params,
@@ -130,6 +131,7 @@ class GenerationService:
         # Completion mode: render prompt text from messages
         prompt_text, resolved_params, mode_hint = self._prepare_completion_mode(
             provider, messages, resolved_prompt, resolved_params, metadata,
+            mode_override=mode_override,
         )
 
         if prefill_content:
@@ -182,6 +184,7 @@ class GenerationService:
         system_prompt: str | None = None,
         sampling_params: SamplingParams | None = None,
         prefill_content: str | None = None,
+        mode_override: str | None = None,
     ) -> list[NodeResponse]:
         """Generate N responses in parallel and store as sibling nodes."""
         (rhizome, nodes, resolved_model, resolved_prompt, resolved_params,
@@ -208,6 +211,7 @@ class GenerationService:
 
         prompt_text, resolved_params, mode_hint = self._prepare_completion_mode(
             provider, messages, resolved_prompt, resolved_params, metadata,
+            mode_override=mode_override,
         )
 
         if prefill_content:
@@ -262,6 +266,7 @@ class GenerationService:
         system_prompt: str | None = None,
         sampling_params: SamplingParams | None = None,
         prefill_content: str | None = None,
+        mode_override: str | None = None,
     ) -> AsyncIterator[StreamChunk]:
         """Stream N responses simultaneously, yielding tagged chunks."""
         (rhizome, nodes, resolved_model, resolved_prompt, resolved_params,
@@ -290,6 +295,7 @@ class GenerationService:
 
         prompt_text, resolved_params, mode_hint = self._prepare_completion_mode(
             provider, messages, resolved_prompt, resolved_params, metadata,
+            mode_override=mode_override,
         )
 
         if prefill_content:
@@ -416,10 +422,10 @@ class GenerationService:
                 rhizome_id, node_id, None, system_prompt, sampling_params,
             )
         )
-        # Use first target's model for context limit
         first_model = targets[0]["model"]
+        # Shared context must fit every target, so use the tightest limit
         context_limit = _apply_debug_context_limit(
-            rhizome, get_model_context_limit(first_model),
+            rhizome, min(get_model_context_limit(t["model"]) for t in targets),
         )
         pipeline = self._resolve_interventions(metadata)
         messages, context_usage, eviction_report, resolved_prompt, active_interventions = (
@@ -446,6 +452,7 @@ class GenerationService:
             msgs_copy = [m.copy() for m in messages]
             prompt_text, params, mode_hint = self._prepare_completion_mode(
                 provider, msgs_copy, resolved_prompt, resolved_params, metadata,
+                mode_override=target.get("mode"),
             )
 
             request = GenerationRequest(
@@ -488,8 +495,9 @@ class GenerationService:
             )
         )
         first_model = targets[0]["model"]
+        # Shared context must fit every target, so use the tightest limit
         context_limit = _apply_debug_context_limit(
-            rhizome, get_model_context_limit(first_model),
+            rhizome, min(get_model_context_limit(t["model"]) for t in targets),
         )
         pipeline = self._resolve_interventions(metadata)
         messages, context_usage, eviction_report, resolved_prompt, active_interventions = (
@@ -523,6 +531,7 @@ class GenerationService:
                 msgs_copy = [m.copy() for m in messages]
                 prompt_text, params, mode_hint = self._prepare_completion_mode(
                     provider, msgs_copy, resolved_prompt, resolved_params, metadata,
+                    mode_override=target.get("mode"),
                 )
 
                 request = GenerationRequest(
@@ -607,6 +616,7 @@ class GenerationService:
         system_prompt: str | None = None,
         sampling_params: SamplingParams | None = None,
         prefill_content: str | None = None,
+        mode_override: str | None = None,
     ) -> AsyncIterator[StreamChunk]:
         """Generate a streaming response, yielding chunks."""
         (rhizome, nodes, resolved_model, resolved_prompt, resolved_params,
@@ -633,6 +643,7 @@ class GenerationService:
 
         prompt_text, resolved_params, mode_hint = self._prepare_completion_mode(
             provider, messages, resolved_prompt, resolved_params, metadata,
+            mode_override=mode_override,
         )
 
         if prefill_content:
@@ -912,6 +923,7 @@ class GenerationService:
         system_prompt: str | None,
         sampling_params: SamplingParams,
         metadata: dict,
+        mode_override: str | None = None,
     ) -> tuple[str | None, SamplingParams, str]:
         """Prepare completion mode if the provider supports it.
 
@@ -919,10 +931,12 @@ class GenerationService:
         mode_hint is "completion" if prompt was rendered, "chat" otherwise.
 
         Completion mode activates when:
+        - mode_override is "completion" (caller has checked provider support), OR
         - Provider is completion-only (e.g. LlamaCpp), OR
         - Provider supports both modes AND metadata.generation_mode == "completion"
 
         Dual-mode providers (OpenRouter, OpenAI, etc.) default to chat mode.
+        mode_override "chat" forces chat on a dual-mode provider.
         """
         if "completion" not in provider.supported_modes:
             return None, sampling_params, "chat"
@@ -930,6 +944,8 @@ class GenerationService:
         # Dual-mode providers require explicit opt-in
         is_completion_only = "chat" not in provider.supported_modes
         explicit_completion = metadata.get("generation_mode") == "completion"
+        if mode_override is not None and not is_completion_only:
+            explicit_completion = mode_override == "completion"
 
         if not is_completion_only and not explicit_completion:
             return None, sampling_params, "chat"

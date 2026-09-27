@@ -190,6 +190,7 @@ interface RhizomeStore {
     mode: 'context_faithful' | 'trajectory',
     systemPrompt?: string,
     samplingParams?: SamplingParams,
+    generationMode?: 'chat' | 'completion',
   ) => Promise<void>
   generateCrossModel: (
     nodeId: string,
@@ -1658,7 +1659,7 @@ export const useRhizomeStore = create<RhizomeStore>((set, get) => ({
     }
   },
 
-  startReplay: async (pathNodeIds, provider, model, mode, systemPrompt, samplingParams) => {
+  startReplay: async (pathNodeIds, provider, model, mode, systemPrompt, samplingParams, generationMode) => {
     const { currentRhizome } = get()
     if (!currentRhizome) return
 
@@ -1686,6 +1687,7 @@ export const useRhizomeStore = create<RhizomeStore>((set, get) => ({
           mode,
           system_prompt: systemPrompt,
           sampling_params: samplingParams,
+          generation_mode: generationMode,
         },
         (step, total, _type, _nodeId) => {
           set((state) => ({
@@ -1709,12 +1711,25 @@ export const useRhizomeStore = create<RhizomeStore>((set, get) => ({
               : null,
           }))
         },
-        (_createdNodeIds) => {
+        (createdNodeIds) => {
           set({
             replayState: null,
             _abortController: null,
           })
-          refreshRhizome(rhizomeId, set)
+          // Faithful replay adds a sibling at each assistant turn. Siblings
+          // are leaves, so select only the deepest one: the path keeps the
+          // original conversation and ends on the new model's last answer,
+          // and earlier turns can be paged via their sibling arrows.
+          api.getRhizome(rhizomeId).then((rhizome) => {
+            const lastId = createdNodeIds[createdNodeIds.length - 1]
+            const last = rhizome.nodes.find((n) => n.node_id === lastId)
+            set((state) => ({
+              currentRhizome: rhizome,
+              branchSelections: last
+                ? { ...state.branchSelections, [last.parent_id ?? '']: last.node_id }
+                : state.branchSelections,
+            }))
+          })
         },
         (error) => {
           set({

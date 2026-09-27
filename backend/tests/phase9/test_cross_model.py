@@ -197,7 +197,7 @@ class TestReplayEndpoint:
     """Tests for POST /api/rhizomes/{id}/replay."""
 
     async def test_replay_endpoint_non_streaming(self, api_client):
-        """Non-streaming replay creates a complete parallel branch."""
+        """Non-streaming faithful replay adds a sibling at each assistant turn."""
         client, providers = api_client
         conv = await _create_conversation(client)
 
@@ -214,10 +214,12 @@ class TestReplayEndpoint:
 
         assert resp.status_code == 200
         results = resp.json()
-        # 4 nodes: 2 user copies + 2 assistant generations
-        assert len(results) == 4
-        roles = [r["role"] for r in results]
-        assert roles == ["user", "assistant", "user", "assistant"]
+        # Context-faithful: one new assistant sibling per original assistant turn
+        assert [r["role"] for r in results] == ["assistant", "assistant"]
+        assert [r["parent_id"] for r in results] == [
+            conv["node_ids"][0], conv["node_ids"][2],
+        ]
+        assert all(r["provider"] == "provider-y" for r in results)
 
     async def test_replay_context_faithful_endpoint(self, api_client):
         """Context-faithful replay gives the model original assistant messages in context."""
@@ -291,8 +293,8 @@ class TestReplayEndpoint:
 
         assert resp.status_code == 400
 
-    async def test_partial_replay_leaves_valid_branch(self, api_client):
-        """A replay of only the first 2 messages creates a valid partial branch."""
+    async def test_partial_replay_adds_sibling_at_first_turn(self, api_client):
+        """Replaying only the first exchange adds one sibling there."""
         client, providers = api_client
         conv = await _create_conversation(client)
 
@@ -309,12 +311,94 @@ class TestReplayEndpoint:
 
         assert resp.status_code == 200
         results = resp.json()
-        assert len(results) == 2
-        assert results[0]["role"] == "user"
-        assert results[1]["role"] == "assistant"
-        # The partial branch is valid — can fetch the rhizome and see the new nodes
+        assert len(results) == 1
+        assert results[0]["role"] == "assistant"
+        assert results[0]["parent_id"] == conv["node_ids"][0]
         detail_resp = await client.get(f"/api/rhizomes/{conv['rhizome_id']}")
         assert detail_resp.status_code == 200
         all_nodes = detail_resp.json()["nodes"]
-        # Original 4 + 2 new = 6
-        assert len(all_nodes) == 6
+        # Original 4 + 1 new sibling = 5
+        assert len(all_nodes) == 5
+
+
+def _sse(body: str) -> list[tuple[str, dict]]:
+    events = []
+    for block in body.split("\n\n"):
+        ev, data = "", None
+        for line in block.strip().split("\n"):
+            if line.startswith("event: "):
+                ev = line[7:]
+            elif line.startswith("data: "):
+                data = json.loads(line[6:])
+        if ev and data is not None:
+            events.append((ev, data))
+    return events
+
+
+class TestFaithfulReplaySiblings:
+    """Context-faithful replay: a sibling at each assistant turn, same parent."""
+
+    async def test_new_turns_are_siblings_of_the_originals(self, api_client):
+        client, _ = api_client
+        conv = await _create_conversation(client)
+        resp = await client.post(f"/api/rhizomes/{conv['rhizome_id']}/replay", json={
+            "path_node_ids": conv["node_ids"], "provider": "provider-y",
+            "model": "y-model", "stream": False,
+        })
+        assert resp.status_code == 200
+        new_ids = {r["node_id"] for r in resp.json()}
+        nodes = (await client.get(f"/api/rhizomes/{conv['rhizome_id']}")).json()["nodes"]
+        by_id = {n["node_id"]: n for n in nodes}
+        for original_id in (conv["node_ids"][1], conv["node_ids"][3]):
+            original = by_id[original_id]
+            siblings = [n for n in nodes if n["parent_id"] == original["parent_id"]]
+            assert len(siblings) == 2
+            assert {s["node_id"] for s in siblings} - {original_id} <= new_ids
+            assert all(s["sibling_count"] == 2 for s in siblings)
+        # No user turns were copied
+        assert len(nodes) == 4 + 2
+
+    async def test_faithful_replay_respects_exclusions(self, api_client):
+        """It goes through the normal context pipeline, unlike the old replay."""
+        client, providers = api_client
+        conv = await _create_conversation(client)
+        await client.post(
+            f"/api/rhizomes/{conv['rhizome_id']}/nodes/{conv['node_ids'][1]}/exclude",
+            json={"scope_node_id": conv["node_ids"][2]},
+        )
+        resp = await client.post(f"/api/rhizomes/{conv['rhizome_id']}/replay", json={
+            "path_node_ids": conv["node_ids"], "provider": "provider-y",
+            "model": "y-model", "stream": False,
+        })
+        assert resp.status_code == 200
+        last_call = providers["provider_y"].calls[-1]
+        assert "Message 2" not in [m["content"] for m in last_call.messages]
+
+    async def test_streaming_faithful_replay(self, api_client):
+        client, _ = api_client
+        conv = await _create_conversation(client)
+        resp = await client.post(f"/api/rhizomes/{conv['rhizome_id']}/replay", json={
+            "path_node_ids": conv["node_ids"], "provider": "provider-y",
+            "model": "y-model", "stream": True,
+        })
+        assert resp.status_code == 200
+        events = _sse(resp.text)
+        assert not [d for e, d in events if e == "error"]
+        steps = [d for e, d in events if e == "replay_step"]
+        assert [(s["step"], s["total"]) for s in steps] == [(1, 2), (2, 2)]
+        assert [s["parent_id"] for s in steps] == [conv["node_ids"][0], conv["node_ids"][2]]
+        stops = [d for e, d in events if e == "message_stop"]
+        complete = [d for e, d in events if e == "replay_complete"]
+        assert len(complete) == 1
+        assert complete[0]["created_node_ids"] == [s["node_id"] for s in stops]
+        assert len(stops) == 2
+
+    async def test_trajectory_replay_complete_is_valid_json(self, api_client):
+        client, _ = api_client
+        conv = await _create_conversation(client)
+        resp = await client.post(f"/api/rhizomes/{conv['rhizome_id']}/replay", json={
+            "path_node_ids": conv["node_ids"], "provider": "provider-y",
+            "model": "y-model", "mode": "trajectory", "stream": True,
+        })
+        complete = [d for e, d in _sse(resp.text) if e == "replay_complete"]
+        assert len(complete) == 1 and len(complete[0]["created_node_ids"]) == 4

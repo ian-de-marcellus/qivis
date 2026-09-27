@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { GenerateRequest, ProviderInfo, SamplingParams } from '../../api/types.ts'
 import { SamplingParamsPanel, type SamplingParamValues } from '../shared/SamplingParamsPanel.tsx'
+import { type GenerationModeChoice, ModeSelect } from './ModeSelect.tsx'
 import './ForkPanel.css'
 
 interface ForkPanelProps {
@@ -44,6 +45,7 @@ export function ForkPanel({
     ''
   const [provider, setProvider] = useState(defaultProvider)
   const [model, setModel] = useState(defaults.model ?? '')
+  const [generationMode, setGenerationMode] = useState<GenerationModeChoice>('')
 
   const selectedProvider = providers.find((p) => p.name === provider)
   const suggestedModels = selectedProvider?.models ?? []
@@ -103,6 +105,7 @@ export function ForkPanel({
         system_prompt: systemPrompt || undefined,
         sampling_params: Object.keys(samplingParams).length > 0 ? samplingParams : undefined,
         stream,
+        mode: generationMode || undefined,
       }
       onPrefillContinue(content.trim(), overrides)
     }
@@ -186,6 +189,11 @@ export function ForkPanel({
                   ))}
                 </datalist>
               </div>
+              <ModeSelect
+                provider={selectedProvider}
+                value={generationMode}
+                onChange={setGenerationMode}
+              />
 
               <div className="fork-settings-divider" />
 
@@ -262,6 +270,7 @@ export function ForkPanel({
       sampling_params: Object.keys(samplingParams).length > 0 ? samplingParams : undefined,
       n,
       stream,
+      mode: generationMode || undefined,
     }
 
     if (mode === 'regenerate' || mode === 'generate') {
@@ -358,6 +367,11 @@ export function ForkPanel({
                 ))}
               </datalist>
             </div>
+            <ModeSelect
+              provider={selectedProvider}
+              value={generationMode}
+              onChange={setGenerationMode}
+            />
             <div className="fork-setting-row">
               <label>System prompt</label>
               <textarea

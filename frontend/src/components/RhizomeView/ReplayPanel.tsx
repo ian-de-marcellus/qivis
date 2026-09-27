@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ProviderInfo, SamplingParams } from '../../api/types.ts'
 import { useRhizomeStore } from '../../store/rhizomeStore.ts'
+import { type GenerationModeChoice, ModeSelect } from './ModeSelect.tsx'
 import './ForkPanel.css'
 
 interface ReplayPanelProps {
@@ -32,7 +33,9 @@ export function ReplayPanel({
     ''
   const [provider, setProvider] = useState(defaultProvider)
   const [model, setModel] = useState(defaults.model ?? '')
-  const [mode, setMode] = useState<'context_faithful' | 'trajectory'>('context_faithful')
+  // Context-faithful only: trajectory replay is parked (the user turns stop
+  // making sense once the new model's replies diverge from the original's).
+  const [generationMode, setGenerationMode] = useState<GenerationModeChoice>('')
   const [systemPrompt, setSystemPrompt] = useState(defaults.systemPrompt ?? '')
   const [showSettings, setShowSettings] = useState(false)
 
@@ -56,13 +59,12 @@ export function ReplayPanel({
       pathNodeIds,
       provider,
       model || undefined,
-      mode,
+      'context_faithful',
       systemPrompt || undefined,
       samplingParams,
+      generationMode || undefined,
     )
   }
-
-  const assistantCount = Math.ceil(pathNodeIds.length / 2)
 
   return (
     <div className="fork-panel" ref={panelRef}>
@@ -75,7 +77,7 @@ export function ReplayPanel({
 
       <div className="fork-panel-body">
         <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>
-          {pathDescription} ({pathNodeIds.length} messages, {assistantCount} to regenerate)
+          {pathDescription} ({pathNodeIds.length} messages)
         </div>
 
         {isActive ? (
@@ -117,17 +119,10 @@ export function ReplayPanel({
           </div>
         ) : (
           <>
-            <div className="fork-setting-row">
-              <label>Mode</label>
-              <select value={mode} onChange={(e) => setMode(e.target.value as typeof mode)}>
-                <option value="context_faithful">Context-faithful</option>
-                <option value="trajectory">Trajectory</option>
-              </select>
-            </div>
             <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>
-              {mode === 'context_faithful'
-                ? 'Model sees original assistant messages at each step'
-                : 'Model builds on its own prior responses'}
+              At each assistant turn, the new model answers the same context the
+              original saw. Its answers are added as siblings, so you can page
+              between them turn by turn.
             </div>
 
             <div className="fork-setting-row">
@@ -163,6 +158,11 @@ export function ReplayPanel({
                 ))}
               </datalist>
             </div>
+            <ModeSelect
+              provider={selectedProvider}
+              value={generationMode}
+              onChange={setGenerationMode}
+            />
 
             <button
               className="fork-settings-toggle"

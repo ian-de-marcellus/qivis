@@ -51,6 +51,9 @@ class GenerateRequest(BaseModel):
     stream: bool = False
     n: int = Field(default=1, ge=1, le=10)
     prefill_content: str | None = None
+    # Force chat or completion (e.g. GPT inside a completion-mode rhizome).
+    # None keeps the rhizome's behavior.
+    mode: Literal["chat", "completion"] | None = None
 
 
 class ReplayRequest(BaseModel):
@@ -63,6 +66,8 @@ class ReplayRequest(BaseModel):
     system_prompt: str | None = None
     sampling_params: SamplingParams | None = None
     stream: bool = False
+    # Chat/completion override for the replaying model (see GenerateRequest.mode)
+    generation_mode: Literal["chat", "completion"] | None = None
 
 
 class CrossModelTarget(BaseModel):
@@ -70,6 +75,9 @@ class CrossModelTarget(BaseModel):
 
     provider: str
     model: str
+    # Per-target mode: e.g. chat for GPT inside a completion-mode (Sun) rhizome,
+    # completion for a base model. None keeps the rhizome's behavior.
+    mode: Literal["chat", "completion"] | None = None
 
 
 class CrossModelGenerateRequest(BaseModel):

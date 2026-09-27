@@ -45,9 +45,29 @@ def _make_mock_response(data: dict, status_code: int = 200) -> MagicMock:
 
 
 def _make_mock_client(response_data: dict | None = None) -> AsyncMock:
-    client = AsyncMock()
+    """Mock client whose /completion stream replays a completion response.
+
+    generate() collects the streaming path (llama.cpp 8460+ can 500 on
+    non-streamed completions), so the mock serves the response as SSE:
+    one content chunk, then a final stop chunk with usage and stop_type.
+    """
     data = response_data or _make_completion_response()
-    client.post = AsyncMock(return_value=_make_mock_response(data))
+    lines = []
+    if data["content"]:
+        chunk = {"content": data["content"], "stop": False}
+        if data.get("completion_probabilities"):
+            chunk["completion_probabilities"] = data["completion_probabilities"]
+        lines.append(f"data: {json.dumps(chunk)}")
+    lines.append("data: " + json.dumps({
+        "content": "",
+        "stop": True,
+        "model": data["model"],
+        "tokens_evaluated": data["tokens_evaluated"],
+        "tokens_predicted": data["tokens_predicted"],
+        "stop_type": "eos" if data["stop"] else "limit",
+    }))
+    client = AsyncMock()
+    client.stream = MagicMock(side_effect=lambda *a, **kw: MockStreamResponse(lines))
     return client
 
 
@@ -118,7 +138,7 @@ class TestLlamaCppRequestBuilding:
                 )
             )
         )
-        call_kwargs = client.post.call_args
+        call_kwargs = client.stream.call_args
         body = call_kwargs.kwargs.get("json") or call_kwargs[1].get("json")
         assert body["temperature"] == 0.5
         assert body["top_p"] == 0.9
@@ -136,7 +156,7 @@ class TestLlamaCppRequestBuilding:
                 )
             )
         )
-        call_kwargs = client.post.call_args
+        call_kwargs = client.stream.call_args
         body = call_kwargs.kwargs.get("json") or call_kwargs[1].get("json")
         assert body["n_probs"] == 20
 
@@ -146,7 +166,7 @@ class TestLlamaCppRequestBuilding:
         await provider.generate(
             _make_request(prompt_text="<|im_start|>user\nHi<|im_end|>")
         )
-        call_kwargs = client.post.call_args
+        call_kwargs = client.stream.call_args
         body = call_kwargs.kwargs.get("json") or call_kwargs[1].get("json")
         assert body["special"] is True
 
@@ -159,7 +179,7 @@ class TestLlamaCppRequestBuilding:
             "<|start_header_id|>assistant<|end_header_id|>\n\n"
         )
         await provider.generate(_make_request(prompt_text=llama3_prompt))
-        call_kwargs = client.post.call_args
+        call_kwargs = client.stream.call_args
         body = call_kwargs.kwargs.get("json") or call_kwargs[1].get("json")
         assert "logit_bias" in body
         bias = body["logit_bias"]
@@ -173,7 +193,7 @@ class TestLlamaCppRequestBuilding:
         provider = LlamaCppProvider(http_client=client)
         chatml_prompt = "<|im_start|>user\nHello<|im_end|>\n<|im_start|>assistant\n"
         await provider.generate(_make_request(prompt_text=chatml_prompt))
-        call_kwargs = client.post.call_args
+        call_kwargs = client.stream.call_args
         body = call_kwargs.kwargs.get("json") or call_kwargs[1].get("json")
         assert "logit_bias" not in body
 
@@ -373,7 +393,7 @@ class TestLlamaCppExtraStops:
                 )
             )
         )
-        call_kwargs = client.post.call_args
+        call_kwargs = client.stream.call_args
         body = call_kwargs.kwargs.get("json") or call_kwargs[1].get("json")
         assert "<|eot_id|>" in body["stop"]
         assert "\u0438\u043b\u0430" in body["stop"]

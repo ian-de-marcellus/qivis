@@ -600,6 +600,12 @@ async def _dispatch_generate(
             detail="prefill_content cannot be combined with n > 1",
         )
 
+    if request.mode is not None and request.mode not in provider.supported_modes:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Provider '{request.provider}' does not support {request.mode} mode",
+        )
+
     if request.stream and request.n > 1:
         return StreamingResponse(
             _stream_n_sse(gen_service, rhizome_id, node_id, provider, request),
@@ -625,6 +631,7 @@ async def _dispatch_generate(
                 system_prompt=request.system_prompt,
                 sampling_params=request.sampling_params,
                 prefill_content=request.prefill_content,
+                mode_override=request.mode,
             )
             return nodes[0]
 
@@ -636,6 +643,7 @@ async def _dispatch_generate(
             system_prompt=request.system_prompt,
             sampling_params=request.sampling_params,
             prefill_content=request.prefill_content,
+            mode_override=request.mode,
         )
     except RhizomeNotFoundForGenerationError:
         raise HTTPException(status_code=404, detail=f"Rhizome not found: {rhizome_id}")
@@ -662,6 +670,7 @@ async def _stream_sse(
             system_prompt=request.system_prompt,
             sampling_params=request.sampling_params,
             prefill_content=request.prefill_content,
+            mode_override=request.mode,
         ):
             if chunk.is_final and chunk.result:
                 data = {
@@ -715,6 +724,7 @@ async def _stream_n_sse(
             system_prompt=request.system_prompt,
             sampling_params=request.sampling_params,
             prefill_content=request.prefill_content,
+            mode_override=request.mode,
         ):
             if chunk.type == "generation_complete":
                 data = {"type": "generation_complete"}
@@ -799,6 +809,15 @@ async def replay(
         provider = get_provider(request.provider)
     except ProviderNotFoundError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    if (
+        request.generation_mode is not None
+        and request.generation_mode not in provider.supported_modes
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Provider '{request.provider}' does not support "
+            f"{request.generation_mode} mode",
+        )
 
     if request.stream:
         return StreamingResponse(
@@ -815,6 +834,7 @@ async def replay(
             request.path_node_ids,
             provider,
             mode=request.mode,
+            generation_mode=request.generation_mode,
             model=request.model,
             system_prompt=request.system_prompt,
             sampling_params=request.sampling_params,
@@ -842,6 +862,7 @@ async def _stream_replay_sse(
             request.path_node_ids,
             provider,
             mode=request.mode,
+            generation_mode=request.generation_mode,
             model=request.model,
             system_prompt=request.system_prompt,
             sampling_params=request.sampling_params,
@@ -908,14 +929,22 @@ async def generate_cross(
     request: CrossModelGenerateRequest,
     gen_service: GenerationService = Depends(get_generation_service),
 ) -> list[NodeResponse] | StreamingResponse:
-    # Validate all providers exist up front
+    # Validate all providers (and any requested modes) up front
     for target in request.targets:
         try:
-            get_provider(target.provider)
+            provider = get_provider(target.provider)
         except ProviderNotFoundError as e:
             raise HTTPException(status_code=400, detail=str(e))
+        if target.mode is not None and target.mode not in provider.supported_modes:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Provider '{target.provider}' does not support {target.mode} mode",
+            )
 
-    targets = [{"provider": t.provider, "model": t.model} for t in request.targets]
+    targets = [
+        {"provider": t.provider, "model": t.model, "mode": t.mode}
+        for t in request.targets
+    ]
 
     if request.stream:
         return StreamingResponse(

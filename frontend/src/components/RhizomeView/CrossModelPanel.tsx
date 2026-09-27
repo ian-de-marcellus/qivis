@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { CrossModelTarget, ProviderInfo } from '../../api/types.ts'
 import { useRhizomeStore } from '../../store/rhizomeStore.ts'
+import { ModeSelect } from './ModeSelect.tsx'
 import './ForkPanel.css'
 
 interface CrossModelPanelProps {
@@ -57,7 +58,10 @@ export function CrossModelPanel({
       if (field === 'provider') {
         // Reset model when provider changes
         const providerInfo = providers.find(p => p.name === value)
-        return { ...t, provider: value, model: providerInfo?.models?.[0] ?? '' }
+        return { provider: value, model: providerInfo?.models?.[0] ?? '' }
+      }
+      if (field === 'mode') {
+        return value ? { ...t, mode: value as 'chat' | 'completion' } : { provider: t.provider, model: t.model }
       }
       return { ...t, [field]: value }
     }))
@@ -115,6 +119,12 @@ export function CrossModelPanel({
                   <option key={m} value={m} />
                 ))}
               </datalist>
+              <ModeSelect
+                provider={providerInfo}
+                value={target.mode ?? ''}
+                onChange={(v) => updateTarget(index, 'mode', v)}
+                row={false}
+              />
               {targets.length > 1 && (
                 <button
                   className="fork-panel-close"

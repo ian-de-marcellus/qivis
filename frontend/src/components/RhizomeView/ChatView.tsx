@@ -326,9 +326,10 @@ export function ChatView() {
                   onCrossModel: isPicking ? undefined : () => setCrossModelNodeId(
                     crossModelNodeId === node.node_id ? null : node.node_id
                   ),
-                  onExperiment: isPicking ? undefined : () => setExperimentNodeId(
-                    experimentNodeId === node.node_id ? null : node.node_id
-                  ),
+                  // Perturbation experiments are parked until they're rebuilt
+                  // around specific experiments (with replicates per condition).
+                  // PerturbationPanel stays wired below; this just hides the entry.
+                  onExperiment: undefined,
                   onWriteResponse: isPicking ? undefined : node.role === 'user' ? () => setWriteResponseNodeId(
                     writeResponseNodeId === node.node_id ? null : node.node_id
                   ) : undefined,

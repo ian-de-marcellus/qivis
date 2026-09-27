@@ -198,6 +198,8 @@ async def conversation(services):
 
 
 class TestReplayTreeStructure:
+    # Trajectory mode copies user turns into a new branch. (Context-faithful
+    # replay creates siblings instead; see TestFaithfulReplaySiblings.)
     """Tests that replay creates the correct node tree topology."""
 
     async def test_replay_creates_alternating_user_assistant_nodes(self, services, conversation):
@@ -209,6 +211,7 @@ class TestReplayTreeStructure:
             conversation["rhizome_id"],
             conversation["path_node_ids"],
             provider_b,
+            mode="trajectory",
             model="b-model",
         )
 
@@ -228,6 +231,7 @@ class TestReplayTreeStructure:
             conversation["rhizome_id"],
             conversation["path_node_ids"],
             provider_b,
+            mode="trajectory",
             model="b-model",
         )
 
@@ -244,6 +248,7 @@ class TestReplayTreeStructure:
             conversation["rhizome_id"],
             conversation["path_node_ids"],
             provider_b,
+            mode="trajectory",
             model="b-model",
         )
 
@@ -267,6 +272,7 @@ class TestReplayTreeStructure:
             conversation["rhizome_id"],
             conversation["path_node_ids"],
             provider_b,
+            mode="trajectory",
             model="b-model",
         )
 
@@ -296,6 +302,7 @@ class TestReplayTreeStructure:
             conversation["rhizome_id"],
             conversation["path_node_ids"],
             provider_b,
+            mode="trajectory",
             model="b-model",
         )
 

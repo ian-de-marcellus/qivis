@@ -265,6 +265,8 @@ export interface GenerateRequest {
   stream?: boolean
   n?: number
   prefill_content?: string
+  /** Force chat or completion; omitted keeps the rhizome's behavior */
+  mode?: 'chat' | 'completion'
 }
 
 export interface ReplayRequest {
@@ -275,11 +277,15 @@ export interface ReplayRequest {
   system_prompt?: string
   sampling_params?: SamplingParams
   stream?: boolean
+  /** Chat/completion override for the replaying model */
+  generation_mode?: 'chat' | 'completion'
 }
 
 export interface CrossModelTarget {
   provider: string
   model: string
+  /** Chat/completion override for this target; omitted keeps the rhizome's behavior */
+  mode?: 'chat' | 'completion'
 }
 
 export interface CrossModelGenerateRequest {

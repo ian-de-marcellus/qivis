@@ -167,21 +167,6 @@ class LlamaCppProvider(LLMProvider):
         return logprobs if sp.logprobs and sp.top_logprobs is not None else None
 
     @staticmethod
-    def _cut_at_lost_turn_end(
-        content: str, logprobs: LogprobData | None,
-    ) -> tuple[str, LogprobData | None]:
-        """Cut content (and logprobs) where the model lost its end-of-turn."""
-        if logprobs is None:
-            return content, logprobs
-        idx = _find_lost_turn_end(logprobs.tokens)
-        if idx is None:
-            return content, logprobs
-        prefix = "".join(t.token for t in logprobs.tokens[:idx])
-        if not content.startswith(prefix):
-            return content, logprobs
-        return prefix, logprobs.model_copy(update={"tokens": logprobs.tokens[:idx]})
-
-    @staticmethod
     def _truncate_at_boundary(text: str, is_llama3: bool) -> str:
         """Strip leaked turn-boundary garbage from completion output.
 
@@ -219,33 +204,21 @@ class LlamaCppProvider(LLMProvider):
         return text[:pos].rstrip()
 
     async def generate(self, request: GenerationRequest) -> GenerationResult:
-        """Non-streaming completion via POST /completion."""
-        body = self._build_request_body(request)
-        resp = await self._client.post(f"{self._base_url}/completion", json=body)
-        resp.raise_for_status()
-        data = resp.json()
+        """Non-streaming completion, collected from the streaming path.
 
-        logprobs = LogprobNormalizer.from_llamacpp(
-            data.get("completion_probabilities")
-        )
-
-        content = data.get("content", "")
-        is_llama3 = self._is_llama3(request)
-        if is_llama3:
-            content, logprobs = self._cut_at_lost_turn_end(content, logprobs)
-        content = self._truncate_at_boundary(content, is_llama3)
-        logprobs = self._returned_logprobs(request, logprobs)
-
-        return GenerationResult(
-            content=content,
-            model=data.get("model", request.model),
-            finish_reason="stop" if data.get("stop", True) else "length",
-            usage={
-                "input_tokens": data.get("tokens_evaluated", 0),
-                "output_tokens": data.get("tokens_predicted", 0),
-            },
-            logprobs=logprobs,
-        )
+        llama.cpp 8460+ returns a 500 for a non-streamed completion when the
+        output ends in bytes it can't parse (e.g. a model's damaged
+        end-of-turn), discarding the whole reply.  The streaming path
+        recovers from that and detects lost turn ends, so every caller gets
+        the same, clean result either way.
+        """
+        result: GenerationResult | None = None
+        async for chunk in self.generate_stream(request):
+            if chunk.is_final and chunk.result is not None:
+                result = chunk.result
+        if result is None:
+            raise RuntimeError("llama.cpp stream ended without a final result")
+        return result
 
     async def generate_stream(
         self, request: GenerationRequest
@@ -397,13 +370,16 @@ class LlamaCppProvider(LLMProvider):
                     logprobs = self._returned_logprobs(
                         request, LogprobNormalizer.from_llamacpp(accumulated_probs)
                     )
+                    stopped_at_limit = (
+                        data.get("stop_type") == "limit" or data.get("stopped_limit")
+                    )
                     yield StreamChunk(
                         type="message_stop",
                         is_final=True,
                         result=GenerationResult(
                             content=accumulated_text,
                             model=data.get("model", request.model),
-                            finish_reason="stop",
+                            finish_reason="length" if stopped_at_limit else "stop",
                             usage={
                                 "input_tokens": data.get("tokens_evaluated", 0),
                                 "output_tokens": data.get("tokens_predicted", 0),

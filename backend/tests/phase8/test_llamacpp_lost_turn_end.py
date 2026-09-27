@@ -136,24 +136,20 @@ class TestStreamingCut:
 
 class TestNonStreamingCut:
     async def test_generate_cuts_content_and_logprobs(self):
+        """generate() collects the stream, so it gets the same cut."""
         probs = [_normal("Good."), _normal(" Me"), _normal(" too."), _flat("аракт")]
-        data = {
-            "content": "Good. Me too.аракт",
-            "stop": True,
-            "model": "sun.gguf",
-            "tokens_evaluated": 5,
-            "tokens_predicted": 4,
-            "completion_probabilities": probs,
-        }
-        resp = MagicMock()
-        resp.json.return_value = data
-        resp.raise_for_status = MagicMock()
-        client = AsyncMock()
-        client.post = AsyncMock(return_value=resp)
-
+        client, _ = _stream_client([_chunk(p) for p in probs])
         result = await LlamaCppProvider(http_client=client).generate(_request())
         assert result.content == "Good. Me too."
         assert len(result.logprobs.tokens) == 3
+
+    async def test_generate_survives_server_error_after_output(self):
+        """llama.cpp 8460+ errors when it can't parse trailing junk bytes."""
+        lines = [_chunk(_normal("Hi")), _chunk(_normal(" there.")),
+                 'data: {"error": {"code": 500, "message": "Failed to parse input at pos 0"}}']
+        client, _ = _stream_client(lines)
+        result = await LlamaCppProvider(http_client=client).generate(_request())
+        assert result.content == "Hi there."
 
 
 class TestDetectionWithoutRequestedLogprobs:
