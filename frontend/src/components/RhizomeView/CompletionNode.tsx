@@ -22,7 +22,7 @@ import { averageCertainty, uncertaintyColor } from './logprobColor.ts'
 import { NotePanel } from './NotePanel.tsx'
 import { PromptTextViewer } from './PromptTextViewer.tsx'
 import { ThinkingSection } from './ThinkingSection.tsx'
-import { formatTimestamp, formatSamplingMeta } from './nodeFormat.ts'
+import { formatTimestamp, formatSamplingMeta, formatUsage } from './nodeFormat.ts'
 import './CompletionNode.css'
 
 export interface CompletionNodeActions {
@@ -217,7 +217,7 @@ export const CompletionNode = memo(function CompletionNode({
         {node.latency_ms != null && (
           <>
             {` \u00b7 ${(node.latency_ms / 1000).toFixed(1)}s`}
-            {node.usage && ` \u00b7 ${node.usage.input_tokens.toLocaleString()}+${node.usage.output_tokens.toLocaleString()} tok`}
+            {formatUsage(node.usage) && ` \u00b7 ${formatUsage(node.usage)}`}
           </>
         )}
         {formatSamplingMeta(node.sampling_params).map((label) => (

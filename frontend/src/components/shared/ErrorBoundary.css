@@ -1,0 +1,25 @@
+.error-boundary {
+  max-width: var(--content-width);
+  margin: var(--space-2xl) auto;
+  padding: var(--space-lg);
+  font-family: var(--font-ui);
+  color: var(--error-text);
+  background: var(--error-bg);
+  border-radius: var(--radius-md);
+}
+
+.error-boundary pre {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  white-space: pre-wrap;
+}
+
+.error-boundary button {
+  font-family: var(--font-ui);
+  padding: var(--space-xs) var(--space-md);
+  background: none;
+  color: inherit;
+  border: 1px solid currentColor;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}

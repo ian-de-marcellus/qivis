@@ -10,6 +10,7 @@ import { DigressionSidePanel } from './components/RhizomeView/DigressionPanel.ts
 import { ChatView } from './components/RhizomeView/ChatView.tsx'
 import { CompletionView } from './components/RhizomeView/CompletionView.tsx'
 import { DocumentView } from './components/RhizomeView/DocumentView.tsx'
+import { ErrorBoundary } from './components/shared/ErrorBoundary.tsx'
 import { MessageInput } from './components/RhizomeView/MessageInput.tsx'
 import { SystemPromptInput } from './components/RhizomeView/SystemPromptInput.tsx'
 import { RhizomeSettings } from './components/RhizomeView/RhizomeSettings.tsx'
@@ -154,10 +155,12 @@ function App() {
           // doesn't remount the conversation (and lose open panels, scroll)
           <div className="split-layout">
             <div className="linear-pane">
-              <RhizomeSettings />
-              {!isCompletion && <SystemPromptInput />}
-              {isDocument ? <DocumentView /> : isCompletion ? <CompletionView /> : <ChatView />}
-              {!isDocument && <MessageInput />}
+              <ErrorBoundary what="this rhizome" key={currentRhizome.rhizome_id}>
+                <RhizomeSettings />
+                {!isCompletion && <SystemPromptInput />}
+                {isDocument ? <DocumentView /> : isCompletion ? <CompletionView /> : <ChatView />}
+                {!isDocument && <MessageInput />}
+              </ErrorBoundary>
             </div>
             {rightPaneMode != null && (
               <>

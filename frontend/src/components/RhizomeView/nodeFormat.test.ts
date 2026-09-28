@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { textTokenCount } from './nodeFormat.ts'
+import { formatUsage, textTokenCount } from './nodeFormat.ts'
 
 const toks = (...ts: string[]) => ts.map((token) => ({ token }))
 
@@ -14,5 +14,20 @@ describe('textTokenCount', () => {
 
   it('shows everything when the tokens are the text', () => {
     expect(textTokenCount(toks(' time', ',', ' there'), ' time, there')).toBe(3)
+  })
+})
+
+describe('formatUsage', () => {
+  it('shows both counts', () => {
+    expect(formatUsage({ input_tokens: 61, output_tokens: 19 })).toBe('61+19 tok')
+  })
+
+  it("shows a stopped reply's output count alone", () => {
+    expect(formatUsage({ output_tokens: 91 })).toBe('+91 tok')
+  })
+
+  it('shows nothing when nothing is known', () => {
+    expect(formatUsage(null)).toBeNull()
+    expect(formatUsage({})).toBeNull()
   })
 })

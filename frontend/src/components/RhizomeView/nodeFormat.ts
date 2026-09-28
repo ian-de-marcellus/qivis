@@ -1,6 +1,13 @@
 /** How node metadata reads in the conversation views. */
 
-import type { SamplingParams } from '../../api/types.ts'
+import type { SamplingParams, TokenUsage } from '../../api/types.ts'
+
+/** "61+19 tok", or whichever count is known ("+91 tok": a stopped reply's output). */
+export function formatUsage(usage: TokenUsage | null | undefined): string | null {
+  if (!usage || (usage.input_tokens == null && usage.output_tokens == null)) return null
+  const n = (v: number | undefined) => (v == null ? '' : v.toLocaleString())
+  return `${n(usage.input_tokens)}+${n(usage.output_tokens)} tok`
+}
 
 /** Short labels for sampling params that differ from defaults. */
 export function formatSamplingMeta(sp: SamplingParams | null | undefined): string[] {

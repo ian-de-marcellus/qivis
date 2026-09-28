@@ -42,7 +42,7 @@ export interface NodeResponse {
   mode: string | null
   prefill_content: string | null
   prompt_text: string | null
-  usage: Record<string, number> | null
+  usage: TokenUsage | null
   latency_ms: number | null
   finish_reason: string | null
   logprobs: LogprobData | null
@@ -339,11 +339,17 @@ export interface ThinkingDeltaEvent {
   completion_index?: number
 }
 
+/** Token counts, as far as they're known: a stopped reply has only its output count. */
+export interface TokenUsage {
+  input_tokens?: number
+  output_tokens?: number
+}
+
 export interface MessageStopEvent {
   type: 'message_stop'
   content: string
   finish_reason: string | null
-  usage: Record<string, number> | null
+  usage: TokenUsage | null
   latency_ms: number | null
   node_id: string | null
   thinking_content: string | null
@@ -489,7 +495,7 @@ export interface PerturbationStepResponse {
   content: string
   node_id: string
   latency_ms: number | null
-  usage: Record<string, number> | null
+  usage: TokenUsage | null
 }
 
 export interface DivergenceMetrics {

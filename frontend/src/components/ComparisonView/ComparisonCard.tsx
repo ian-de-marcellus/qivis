@@ -3,6 +3,7 @@ import type { LogprobData, NodeResponse, SamplingParams, TokenLogprob } from '..
 import { useRhizomeStore } from '../../store/rhizomeStore.ts'
 import { LogprobOverlay } from '../RhizomeView/LogprobOverlay.tsx'
 import { averageCertainty, uncertaintyColor } from '../RhizomeView/logprobColor.ts'
+import { formatUsage } from '../RhizomeView/nodeFormat.ts'
 import { ThinkingSection } from '../RhizomeView/ThinkingSection.tsx'
 import type { DiffSegment } from './wordDiff.ts'
 
@@ -169,10 +170,10 @@ export function ComparisonCard({ node, isSelected, diffSegments, onSelect }: Com
         {node.latency_ms != null && (
           <span>{(node.latency_ms / 1000).toFixed(1)}s</span>
         )}
-        {node.usage && (
+        {formatUsage(node.usage) && (
           <span>
             {node.latency_ms != null && ' \u00b7 '}
-            {node.usage.input_tokens.toLocaleString()}+{node.usage.output_tokens.toLocaleString()} tok
+            {formatUsage(node.usage)}
           </span>
         )}
         {!logprobs && avgCertainty != null && (

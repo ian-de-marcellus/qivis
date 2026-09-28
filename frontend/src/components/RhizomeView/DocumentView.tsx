@@ -20,7 +20,7 @@ import { ForkPanelFor, InspectedContext } from './ConversationParts.tsx'
 import { GenerationErrorPanel } from './GenerationErrorPanel.tsx'
 import { LogprobOverlay } from './LogprobOverlay.tsx'
 import { averageCertainty } from './logprobColor.ts'
-import { formatSamplingMeta } from './nodeFormat.ts'
+import { formatSamplingMeta, formatUsage } from './nodeFormat.ts'
 import { PromptTextViewer } from './PromptTextViewer.tsx'
 import { TokenBranch } from './TokenBranch.tsx'
 import { useAutoScroll, useConversationView, useScrollToNode } from './useViewShared.ts'
@@ -360,7 +360,7 @@ export function DocumentView() {
                 <div className="passage-meta">
                   {[
                     selected.finish_reason && `ended: ${selected.finish_reason}`,
-                    selected.usage && `${selected.usage.input_tokens.toLocaleString()}+${selected.usage.output_tokens.toLocaleString()} tok`,
+                    formatUsage(selected.usage),
                     ...formatSamplingMeta(selected.sampling_params),
                   ].filter(Boolean).join(' · ')}
                 </div>

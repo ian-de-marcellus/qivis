@@ -1,4 +1,4 @@
-import type { ContextUsage, InterventionSnapshot, NodeResponse, SamplingParams } from '../../api/types.ts'
+import type { ContextUsage, InterventionSnapshot, NodeResponse, SamplingParams, TokenUsage } from '../../api/types.ts'
 
 export interface ReconstructedMessage {
   role: string
@@ -34,7 +34,7 @@ export interface ReconstructedContext {
   samplingParams: SamplingParams | null
   timestamp: string
   latencyMs: number | null
-  usage: Record<string, number> | null
+  usage: TokenUsage | null
   finishReason: string | null
   contextUsage: ContextUsage | null
   thinkingContent: string | null
