@@ -156,3 +156,32 @@ async def test_several_models_route_by_name_and_wake_separately():
         assert [m["model"] for m in status["models"]] == ["sun.gguf", "olmo.gguf"]
     await sun.stop()
     await olmo.stop()
+
+
+async def test_memory_budget_stops_idle_models_to_make_room(tmp_path):
+    """On a laptop: small models share memory; a big one gets it to itself."""
+    from qivis.tools.llama_supervisor import Pool
+
+    def model(name: str, gb: int) -> Supervisor:
+        path = tmp_path / name
+        with open(path, "wb") as f:
+            f.truncate(gb * 1024**3)  # sparse: the size without the disk space
+        return Supervisor(
+            model=path, backend_port=free_port(), idle_seconds=3600,
+            llama_cmd=[sys.executable, str(STUB)], extra_args=[], startup_timeout=20,
+        )
+
+    sun, olmo, big = model("sun.gguf", 5), model("olmo.gguf", 15), model("big.gguf", 34)
+    pool = Pool([sun, olmo, big], memory_budget=36 * 1024**3)
+    async with AsyncClient(
+        transport=ASGITransport(app=create_app(pool)), base_url="http://sup"
+    ) as c:
+        await c.post("/completion", json={"model": "sun.gguf", "prompt": "a"})
+        await c.post("/completion", json={"model": "olmo.gguf", "prompt": "b"})
+        assert sun.running and olmo.running  # 20 GB: both fit
+        await c.post("/completion", json={"model": "big.gguf", "prompt": "c"})
+        assert big.running and not sun.running and not olmo.running
+        await c.post("/completion", json={"model": "sun.gguf", "prompt": "d"})
+        assert sun.running and not big.running  # 39 GB would be over
+    for m in (sun, olmo, big):
+        await m.stop()

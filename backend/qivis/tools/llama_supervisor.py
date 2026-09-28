@@ -68,6 +68,14 @@ class Supervisor:
         self.client = httpx.AsyncClient(timeout=httpx.Timeout(600, connect=5))
 
     @property
+    def size(self) -> int:
+        """Roughly what the model takes in memory: its file's size."""
+        try:
+            return self.model.stat().st_size
+        except OSError:
+            return 0
+
+    @property
     def running(self) -> bool:
         return self.proc is not None and self.proc.returncode is None
 
@@ -156,12 +164,31 @@ class Supervisor:
 
 
 class Pool:
-    """Several supervised models behind one port; requests pick by model file name."""
+    """Several supervised models behind one port; requests pick by model file name.
 
-    def __init__(self, models: list[Supervisor]):
+    With a memory budget, starting a model first stops idle ones (least
+    recently used first) until the running models' files fit in it: on a
+    laptop, a big model gets the memory to itself instead of swapping.
+    """
+
+    def __init__(self, models: list[Supervisor], memory_budget: float | None = None):
         if not models:
             raise ValueError("at least one model")
         self.models = models
+        self.memory_budget = memory_budget  # bytes
+
+    async def make_room(self, for_model: Supervisor) -> None:
+        if self.memory_budget is None or for_model.running:
+            return
+        running = [m for m in self.models if m.running and m is not for_model]
+        used = sum(m.size for m in running) + for_model.size
+        for m in sorted(running, key=lambda m: m.last_activity):
+            if used <= self.memory_budget:
+                break
+            if m.in_flight == 0:
+                logger.info("making room for %s: stopping %s", for_model.model.name, m.model.name)
+                await m.stop()
+                used -= m.size
 
     def pick(self, name: str | None) -> Supervisor:
         if name:
@@ -244,6 +271,7 @@ def create_app(sup: Supervisor | Pool, idle_check_interval: float = 30.0) -> Fas
         m.in_flight += 1
         m.last_activity = time.monotonic()
         try:
+            await pool.make_room(m)
             await m.ensure_running()
             headers = {k: v for k, v in request.headers.items() if k.lower() not in HOP_HEADERS}
             upstream = m.client.build_request(
@@ -303,6 +331,10 @@ def main() -> None:
     parser.add_argument(
         "--idle", type=float, default=3600, help="seconds of silence before sleeping"
     )
+    parser.add_argument(
+        "--memory-budget", type=float, default=None,
+        help="GB the running models' files may take together; idle ones stop to make room",
+    )
     parser.add_argument("--llama-server", default="llama-server", help="llama-server binary")
     parser.add_argument("--log", type=Path, default=None, help="append llama-server output here")
     parser.add_argument("llama_args", nargs="*", help="extra llama-server args (after --)")
@@ -318,7 +350,7 @@ def main() -> None:
             log_path=args.log,
         )
         for i, path in enumerate(args.model)
-    ])
+    ], memory_budget=args.memory_budget * 1024**3 if args.memory_budget else None)
     import uvicorn
 
     uvicorn.run(create_app(pool), host="127.0.0.1", port=args.port, log_level="warning")
