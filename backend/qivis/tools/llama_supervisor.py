@@ -167,8 +167,9 @@ class Pool:
     """Several supervised models behind one port; requests pick by model file name.
 
     With a memory budget, starting a model first stops idle ones (least
-    recently used first) until the running models' files fit in it: on a
-    laptop, a big model gets the memory to itself instead of swapping.
+    recently used first) until the running models' files fit in it, waiting
+    for any that are mid-request: on a laptop, a big model gets the memory
+    to itself instead of swapping or running out.
     """
 
     def __init__(self, models: list[Supervisor], memory_budget: float | None = None):
@@ -176,19 +177,40 @@ class Pool:
             raise ValueError("at least one model")
         self.models = models
         self.memory_budget = memory_budget  # bytes
+        # One model starts at a time, so making room sees every model that's up
+        self._starting = asyncio.Lock()
 
-    async def make_room(self, for_model: Supervisor) -> None:
+    async def start(self, m: Supervisor) -> None:
+        """Make sure `m` is running, with room made for it first."""
+        if m.running:
+            await m.ensure_running()  # waits if it's still starting up
+            return
+        async with self._starting:
+            await self.make_room(m)
+            await m.ensure_running()
+
+    async def make_room(self, for_model: Supervisor, wait: float = 600.0) -> None:
+        """Stop idle models until `for_model` fits; a busy one is waited for, not cut off."""
         if self.memory_budget is None or for_model.running:
             return
-        running = [m for m in self.models if m.running and m is not for_model]
-        used = sum(m.size for m in running) + for_model.size
-        for m in sorted(running, key=lambda m: m.last_activity):
+        deadline = time.monotonic() + wait
+        while True:
+            running = [m for m in self.models if m.running and m is not for_model]
+            used = sum(m.size for m in running) + for_model.size
+            for m in sorted(running, key=lambda m: m.last_activity):
+                if used <= self.memory_budget:
+                    return
+                if m.in_flight == 0:
+                    logger.info(
+                        "making room for %s: stopping %s", for_model.model.name, m.model.name,
+                    )
+                    await m.stop()
+                    used -= m.size
             if used <= self.memory_budget:
-                break
-            if m.in_flight == 0:
-                logger.info("making room for %s: stopping %s", for_model.model.name, m.model.name)
-                await m.stop()
-                used -= m.size
+                return
+            if time.monotonic() > deadline:
+                raise RuntimeError("the other models stayed busy; no room to start this one")
+            await asyncio.sleep(0.2)
 
     def pick(self, name: str | None) -> Supervisor:
         if name:
@@ -271,8 +293,7 @@ def create_app(sup: Supervisor | Pool, idle_check_interval: float = 30.0) -> Fas
         m.in_flight += 1
         m.last_activity = time.monotonic()
         try:
-            await pool.make_room(m)
-            await m.ensure_running()
+            await pool.start(m)
             headers = {k: v for k, v in request.headers.items() if k.lower() not in HOP_HEADERS}
             upstream = m.client.build_request(
                 request.method,

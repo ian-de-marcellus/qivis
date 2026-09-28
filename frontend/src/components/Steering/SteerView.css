@@ -300,3 +300,14 @@
 .steer-your-turn .steer-actions {
   flex-wrap: wrap;
 }
+
+.steer-retry {
+  margin-left: var(--space-sm);
+  padding: 0 var(--space-xs);
+  font: inherit;
+  background: none;
+  color: inherit;
+  border: 1px solid currentColor;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}

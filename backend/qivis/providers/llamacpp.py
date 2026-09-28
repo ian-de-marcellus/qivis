@@ -125,6 +125,7 @@ class LlamaCppProvider(LLMProvider):
         self._probe_lock = asyncio.Lock()
         # Whether the server prepends BOS to a model's string prompts
         self._adds_bos: dict[str, bool] = {}
+        self._eos: dict[str, str] = {}
 
     @property
     def name(self) -> str:
@@ -208,6 +209,47 @@ class LlamaCppProvider(LLMProvider):
         send = _LLAMA3_BOS * in_text + body
         effective = _LLAMA3_BOS * (in_text + int(adds)) + body
         return send, (effective if effective != prompt else None)
+
+    async def _eos_token(self, model: str = "") -> str | None:
+        """The model's end-of-text token, from its server's /props."""
+        if model not in self._eos:
+            props = await self._props(model)
+            if "eos_token" not in props:
+                # A sleeping model's stand-in props don't say: wake it and ask again
+                try:
+                    await self._client.post(
+                        f"{self._base_url}/tokenize", json={"model": model, "content": ""},
+                    )
+                except httpx.HTTPError:
+                    return None
+                props = await self._props(model)
+            eos = props.get("eos_token")
+            if not (isinstance(eos, str) and eos):
+                return None
+            self._eos[model] = eos
+        return self._eos[model]
+
+    async def _prompt_to_send(
+        self, prompt: str, served: str | None, model: str = "",
+    ) -> tuple[str, str | None]:
+        """The prompt to send, and the effective prompt if it differs from the rendered one.
+
+        An empty prompt (a document with nothing written yet) is a blank page:
+        what a base model has seen right before a document begins. A model
+        whose server adds BOS starts from that; otherwise from its end-of-text
+        token, which separates documents in pretraining. Given nothing at
+        all, llama-server evaluates no tokens and the model says nothing.
+        """
+        if not prompt:
+            adds = await self._server_adds_bos(model)
+            if adds:
+                send, effective = await self._prompt_for_bos_count(_LLAMA3_BOS, served, model)
+                return send, effective or _LLAMA3_BOS  # it saw BOS, not the empty rendering
+            eos = await self._eos_token(model)
+            if eos:
+                return eos, eos
+            raise RuntimeError("Nothing to continue: the prompt is empty. Write an opening first.")
+        return await self._prompt_for_bos_count(prompt, served, model)
 
     def _build_request_body(
         self, request: GenerationRequest, logit_bias: dict[int, float] | None = None,
@@ -341,8 +383,8 @@ class LlamaCppProvider(LLMProvider):
         applied = self._effective_logit_bias(request, served)
         body = self._build_request_body(request, applied)
         effective_prompt = None
-        if request.prompt_text:
-            body["prompt"], effective_prompt = await self._prompt_for_bos_count(
+        if request.prompt_text is not None:
+            body["prompt"], effective_prompt = await self._prompt_to_send(
                 request.prompt_text, served, request.model,
             )
         # What the model sees, for the record even if the stream is stopped
@@ -585,12 +627,12 @@ class LlamaCppProvider(LLMProvider):
         prompt = body["prompt"]
         effective_prompt = None
         if isinstance(prompt, str):
-            prompt, effective_prompt = await self._prompt_for_bos_count(
+            prompt, effective_prompt = await self._prompt_to_send(
                 prompt, served, request.model,
             )
         body.update({
             # Text first (the server adds its BOS as for a string prompt), then ids
-            "prompt": [prompt, *continuation] if prompt else list(continuation),
+            "prompt": [prompt, *continuation],
             "n_predict": 1,
             "n_probs": k,
             "post_sampling_probs": True,

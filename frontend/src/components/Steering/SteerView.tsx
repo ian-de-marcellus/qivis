@@ -88,6 +88,8 @@ export function SteerView({
     tokens: [] as Chosen[],
     cache: new Map<string, TokenCandidate[]>(),
     inflight: new Set<string>(),
+    // Distributions that failed: not asked again (every frame) until Retry
+    failed: new Set<string>(),
     pointer: { x: 0, y: 0, inside: false },
     paused: true, cruise: false, speed: 1.2, ended: false, pastEnd: false,
     // How far the current column has traveled toward the line, 0..1
@@ -138,13 +140,16 @@ export function SteerView({
   }, [])
 
   const fetchDist = useCallback((ids: number[]) => {
-    const { cache, inflight, sessionId } = live.current
+    const { cache, inflight, failed, sessionId } = live.current
     const key = keyOf(ids)
-    if (!sessionId || cache.has(key) || inflight.has(key)) return
+    if (!sessionId || cache.has(key) || inflight.has(key) || failed.has(key)) return
     inflight.add(key)
     api.steerNext(sessionId, ids, K)
       .then((cands) => cache.set(key, cands))
-      .catch((e) => setError(String(e)))
+      .catch((e) => {
+        failed.add(key)
+        setError(String(e))
+      })
       .finally(() => inflight.delete(key))
   }, [])
 
@@ -611,7 +616,20 @@ export function SteerView({
             undo · 1–9 (paused): take a ranked token · Esc: close
           </p>
 
-          {error && <div className="steer-error">{error}</div>}
+          {error && (
+            <div className="steer-error">
+              {error}
+              <button
+                className="steer-retry"
+                onClick={() => {
+                  live.current.failed.clear()
+                  setError(null)
+                }}
+              >
+                Retry
+              </button>
+            </div>
+          )}
 
           <div className="steer-actions">
             <button className="steer-discard" onClick={requestClose}>

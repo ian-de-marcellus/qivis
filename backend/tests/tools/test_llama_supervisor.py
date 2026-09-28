@@ -185,3 +185,32 @@ async def test_memory_budget_stops_idle_models_to_make_room(tmp_path):
         assert sun.running and not big.running  # 39 GB would be over
     for m in (sun, olmo, big):
         await m.stop()
+
+
+async def test_models_woken_at_once_still_fit_the_budget(tmp_path):
+    """Two requests for different models at the same moment: the second waits and makes room."""
+    import asyncio
+
+    from qivis.tools.llama_supervisor import Pool
+
+    def model(name: str, gb: int) -> Supervisor:
+        path = tmp_path / name
+        with open(path, "wb") as f:
+            f.truncate(gb * 1024**3)
+        return Supervisor(
+            model=path, backend_port=free_port(), idle_seconds=3600,
+            llama_cmd=[sys.executable, str(STUB)], extra_args=[], startup_timeout=20,
+        )
+
+    sun, big = model("sun.gguf", 5), model("big.gguf", 34)
+    pool = Pool([sun, big], memory_budget=36 * 1024**3)
+    async with AsyncClient(
+        transport=ASGITransport(app=create_app(pool)), base_url="http://sup"
+    ) as c:
+        await asyncio.gather(
+            c.post("/completion", json={"model": "sun.gguf", "prompt": "a"}),
+            c.post("/completion", json={"model": "big.gguf", "prompt": "b"}),
+        )
+        assert not (sun.running and big.running)
+    for m in (sun, big):
+        await m.stop()
