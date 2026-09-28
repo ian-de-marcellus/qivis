@@ -29,6 +29,8 @@ from qivis.models import (
     NoteRemovedPayload,
     PerturbationReportGeneratedPayload,
     PerturbationReportRemovedPayload,
+    ProbeJudgedPayload,
+    ProbeRecordedPayload,
     RhizomeArchivedPayload,
     RhizomeCreatedPayload,
     RhizomeMetadataUpdatedPayload,
@@ -78,6 +80,8 @@ class StateProjector:
             "SummaryRemoved": self._handle_summary_removed,
             "PerturbationReportGenerated": self._handle_perturbation_report_generated,
             "PerturbationReportRemoved": self._handle_perturbation_report_removed,
+            "ProbeRecorded": self._handle_probe_recorded,
+            "ProbeJudged": self._handle_probe_judged,
         }
 
     async def project(self, events: list[EventEnvelope]) -> None:
@@ -559,6 +563,41 @@ class StateProjector:
         )
 
     # -- Perturbation reports --
+
+    async def _handle_probe_recorded(self, event: EventEnvelope) -> None:
+        payload = ProbeRecordedPayload.model_validate(event.payload)
+        await self._db.execute(
+            """
+            INSERT OR REPLACE INTO probes
+                (probe_id, rhizome_id, node_id, provider, model, samples, judge, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                payload.probe_id, event.rhizome_id, payload.node_id, payload.provider,
+                payload.model, json.dumps(payload.samples),
+                json.dumps(payload.judge) if payload.judge is not None else None,
+                event.timestamp.isoformat(),
+            ),
+        )
+
+    async def _handle_probe_judged(self, event: EventEnvelope) -> None:
+        payload = ProbeJudgedPayload.model_validate(event.payload)
+        await self._db.execute(
+            "UPDATE probes SET judge = ? WHERE probe_id = ?",
+            (json.dumps(payload.judge), payload.probe_id),
+        )
+
+    async def get_probes(self, rhizome_id: str) -> list[dict]:
+        rows = await self._db.fetchall(
+            "SELECT * FROM probes WHERE rhizome_id = ? ORDER BY created_at", (rhizome_id,),
+        )
+        return [dict(r) for r in rows]
+
+    async def get_probe(self, rhizome_id: str, probe_id: str) -> dict | None:
+        row = await self._db.fetchone(
+            "SELECT * FROM probes WHERE rhizome_id = ? AND probe_id = ?", (rhizome_id, probe_id),
+        )
+        return dict(row) if row else None
 
     async def _handle_perturbation_report_generated(self, event: EventEnvelope) -> None:
         """Project a PerturbationReportGenerated event into perturbation_reports."""

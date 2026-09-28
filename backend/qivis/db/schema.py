@@ -294,6 +294,20 @@ _MIGRATIONS: list[tuple[str, str]] = [
     ("021_perturbation_reports_rhizome_id_index",
      "CREATE INDEX IF NOT EXISTS idx_perturbation_reports_rhizome_id "
      "ON perturbation_reports(rhizome_id)"),
+    # Answer probes: short samples at a point, grouped by what they answer
+    ("022_create_probes",
+     "CREATE TABLE IF NOT EXISTS probes ("
+     "probe_id TEXT PRIMARY KEY, "
+     "rhizome_id TEXT NOT NULL, "
+     "node_id TEXT, "
+     "provider TEXT NOT NULL, "
+     "model TEXT NOT NULL, "
+     "samples TEXT NOT NULL, "
+     "judge TEXT, "
+     "created_at TEXT NOT NULL"
+     ")"),
+    ("023_probes_rhizome_id_index",
+     "CREATE INDEX IF NOT EXISTS idx_probes_rhizome_id ON probes(rhizome_id)"),
 ]
 
 

@@ -51,8 +51,11 @@ class Supervisor:
         extra_args: list[str],
         startup_timeout: float = 300.0,
         log_path: Path | None = None,
+        gpu: bool = True,
     ):
         self.model = model
+        # A CPU model (-ngl 0) doesn't count against the GPU memory budget
+        self.gpu = gpu
         self.backend = f"http://127.0.0.1:{backend_port}"
         self.backend_port = backend_port
         self.idle_seconds = idle_seconds
@@ -191,11 +194,11 @@ class Pool:
 
     async def make_room(self, for_model: Supervisor, wait: float = 600.0) -> None:
         """Stop idle models until `for_model` fits; a busy one is waited for, not cut off."""
-        if self.memory_budget is None or for_model.running:
+        if self.memory_budget is None or for_model.running or not for_model.gpu:
             return
         deadline = time.monotonic() + wait
         while True:
-            running = [m for m in self.models if m.running and m is not for_model]
+            running = [m for m in self.models if m.running and m.gpu and m is not for_model]
             used = sum(m.size for m in running) + for_model.size
             for m in sorted(running, key=lambda m: m.last_activity):
                 if used <= self.memory_budget:
@@ -261,12 +264,18 @@ def create_app(sup: Supervisor | Pool, idle_check_interval: float = 30.0) -> Fas
             "in_flight": m.in_flight,
             "idle_for": round(time.monotonic() - m.last_activity, 1),
             "idle_limit": m.idle_seconds,
+            "size": m.size,
+            "gpu": m.gpu,
         }
 
     @app.get("/supervisor/status")
     async def status():
         # The first model's status at the top level (as before), all of them under "models"
-        return {**slot_status(pool.models[0]), "models": [slot_status(m) for m in pool.models]}
+        return {
+            **slot_status(pool.models[0]),
+            "models": [slot_status(m) for m in pool.models],
+            "memory_budget": pool.memory_budget,
+        }
 
     @app.get("/supervisor/models")
     async def models():
@@ -325,6 +334,20 @@ def create_app(sup: Supervisor | Pool, idle_check_interval: float = 30.0) -> Fas
     return app
 
 
+def _on_cpu(llama_args: list[str]) -> list[str]:
+    """llama-server args with no layers offloaded to the GPU."""
+    out, skip = [], False
+    for arg in llama_args:
+        if skip:
+            skip = False
+            continue
+        if arg in ("-ngl", "--n-gpu-layers", "--gpu-layers"):
+            skip = True
+            continue
+        out.append(arg)
+    return [*out, "-ngl", "0"]
+
+
 def _named_model(body: bytes) -> str | None:
     """The model a JSON request body names, if any."""
     if not body or not body.lstrip().startswith(b"{"):
@@ -343,6 +366,10 @@ def main() -> None:
     parser.add_argument(
         "--model", required=True, type=Path, action="append",
         help="a GGUF to serve (repeat for several; the first is the default)",
+    )
+    parser.add_argument(
+        "--cpu-model", type=Path, action="append", default=[],
+        help="a GGUF to serve on the CPU only (-ngl 0), outside the memory budget",
     )
     parser.add_argument("--port", type=int, default=8080, help="port Qivis talks to")
     parser.add_argument(
@@ -371,6 +398,17 @@ def main() -> None:
             log_path=args.log,
         )
         for i, path in enumerate(args.model)
+    ] + [
+        Supervisor(
+            model=path.expanduser(),
+            backend_port=args.backend_port + len(args.model) + i,
+            idle_seconds=args.idle,
+            llama_cmd=[args.llama_server],
+            extra_args=_on_cpu(args.llama_args),
+            log_path=args.log,
+            gpu=False,
+        )
+        for i, path in enumerate(args.cpu_model)
     ], memory_budget=args.memory_budget * 1024**3 if args.memory_budget else None)
     import uvicorn
 

@@ -185,6 +185,8 @@ class NodeCreatedPayload(BaseModel):
 
     # A reply the researcher cut short to branch from: the node it was cut from
     cut_from: str | None = None
+    # A probe's sample the researcher continued from: the probe it came from
+    from_probe: str | None = None
 
 
 class NodeAnchoredPayload(BaseModel):
@@ -326,6 +328,27 @@ class PerturbationReportRemovedPayload(BaseModel):
     report_id: str
 
 
+class ProbeRecordedPayload(BaseModel):
+    """Short samples of what a model would say next at one point, and what each answers.
+
+    Each sample is stored as the node it would become (its text and exactly
+    what produced it), so continuing from one records it as any reply.
+    """
+
+    probe_id: str
+    node_id: str | None  # the point probed (None: the rhizome's beginning)
+    provider: str
+    model: str
+    samples: list[dict]  # NodeCreatedPayload dumps, not yet nodes
+    # The answer each sample gives, as a judge model named it (None: not judged)
+    judge: dict | None = None
+
+
+class ProbeJudgedPayload(BaseModel):
+    probe_id: str
+    judge: dict
+
+
 # ---------------------------------------------------------------------------
 # Event type registry
 # ---------------------------------------------------------------------------
@@ -361,6 +384,8 @@ EVENT_TYPES: dict[str, type[BaseModel]] = {
     "GarbagePurged": GarbagePurgedPayload,
     "PerturbationReportGenerated": PerturbationReportGeneratedPayload,
     "PerturbationReportRemoved": PerturbationReportRemovedPayload,
+    "ProbeRecorded": ProbeRecordedPayload,
+    "ProbeJudged": ProbeJudgedPayload,
     # Backward compat: old event type names from before the rename
     "TreeCreated": RhizomeCreatedPayload,
     "TreeMetadataUpdated": RhizomeMetadataUpdatedPayload,

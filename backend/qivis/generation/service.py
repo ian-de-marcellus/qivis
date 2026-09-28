@@ -679,11 +679,11 @@ class GenerationService:
 
     async def complete(self, p: Prepared) -> NodeResponse:
         """Send a prepared request and store the reply."""
-        result = self._turn_ended(p, await p.provider.generate(p.request))
+        result = self.turn_ended(p, await p.provider.generate(p.request))
         return await self.persist(p, self._with_prefill(p, result))
 
     @staticmethod
-    def _turn_ended(p: Prepared, result: GenerationResult) -> GenerationResult:
+    def turn_ended(p: Prepared, result: GenerationResult) -> GenerationResult:
         """A transcript reply ends where the model starts a new speaker's line."""
         if p.template != "transcript":
             return result
@@ -709,7 +709,7 @@ class GenerationService:
                     continue
                 if chunk.is_final and chunk.result is not None:
                     so_far.finished = True
-                    result = self._with_prefill(p, self._turn_ended(p, chunk.result))
+                    result = self._with_prefill(p, self.turn_ended(p, chunk.result))
                     node = await self.persist(p, result)
                     yield StreamChunk(
                         type="message_stop", is_final=True, result=result,
@@ -846,6 +846,13 @@ class GenerationService:
 
     async def persist(self, p: Prepared, result: GenerationResult) -> NodeResponse:
         """Store a reply as a node, recording exactly what produced it."""
+        payload = self.node_record(p, result)
+        await self._events.emit(p.rhizome_id, "NodeCreated", payload, device_id=p.device_id)
+        return await self._rhizome_service.node_response(p.rhizome_id, payload.node_id)
+
+    @staticmethod
+    def node_record(p: Prepared, result: GenerationResult) -> NodeCreatedPayload:
+        """The node a reply would be stored as: its text, and exactly what produced it."""
         if p.template == "transcript":
             # The turn's text, without the space after "Sun:" or the blank line
             # before the next speaker (the template adds them back when rendering)
@@ -856,9 +863,8 @@ class GenerationService:
             sampling_params = sampling_params.model_copy(update=SamplingParams.model_validate(
                 {**sampling_params.model_dump(), **result.applied_sampling_params}
             ).model_dump(include=set(result.applied_sampling_params)))
-        node_id = str(uuid4())
-        await self._events.emit(p.rhizome_id, "NodeCreated", NodeCreatedPayload(
-            node_id=node_id,
+        return NodeCreatedPayload(
+            node_id=str(uuid4()),
             generation_id=p.generation_id,
             parent_id=p.parent_id,
             role="assistant",
@@ -880,8 +886,7 @@ class GenerationService:
             active_interventions=p.active_interventions,
             context_usage=p.context_usage,
             raw_response=result.raw_response,
-        ), device_id=p.device_id)
-        return await self._rhizome_service.node_response(p.rhizome_id, node_id)
+        )
 
 
 # The generation service reports missing rhizomes and nodes as the rhizome

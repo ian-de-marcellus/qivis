@@ -673,6 +673,32 @@ class LlamaCppProvider(LLMProvider):
         resp.raise_for_status()
         return resp.json().get("content", "")
 
+    async def supervisor_status(self) -> dict | None:
+        """A supervisor's models: which are loaded, their sizes, its memory budget
+        (None: a plain llama-server)."""
+        try:
+            resp = await self._client.get(f"{self._base_url}/supervisor/status")
+            data = resp.json() if resp.status_code == 200 else None
+            return data if isinstance(data, dict) else None
+        except Exception:
+            return None
+
+    async def chat_json(
+        self, model: str, messages: list[dict], schema: dict, max_tokens: int = 1024,
+    ) -> Any:
+        """A chat reply constrained to a JSON schema, from an instruct model (e.g. a judge)."""
+        resp = await self._client.post(f"{self._base_url}/v1/chat/completions", json={
+            "model": model,
+            "messages": messages,
+            "temperature": 0,
+            "max_tokens": max_tokens,
+            "response_format": {
+                "type": "json_schema", "json_schema": {"name": "reply", "schema": schema},
+            },
+        })
+        resp.raise_for_status()
+        return json.loads(resp.json()["choices"][0]["message"]["content"])
+
     async def discover_models(self) -> list[str]:
         """The models served: all of a supervisor's, else the one in GET /props."""
         try:
