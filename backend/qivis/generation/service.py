@@ -31,7 +31,11 @@ from qivis.generation.interventions import (
     InterventionPipeline,
     default_registry,
 )
-from qivis.generation.templates import render_prompt
+from qivis.generation.templates import (
+    render_prompt,
+    transcript_turn_end,
+    transcript_undecided,
+)
 from qivis.generation.tokens import ApproximateTokenCounter
 from qivis.model_catalog import get_catalog
 from qivis.models import (
@@ -675,7 +679,18 @@ class GenerationService:
 
     async def complete(self, p: Prepared) -> NodeResponse:
         """Send a prepared request and store the reply."""
-        return await self.persist(p, self._with_prefill(p, await p.provider.generate(p.request)))
+        result = self._turn_ended(p, await p.provider.generate(p.request))
+        return await self.persist(p, self._with_prefill(p, result))
+
+    @staticmethod
+    def _turn_ended(p: Prepared, result: GenerationResult) -> GenerationResult:
+        """A transcript reply ends where the model starts a new speaker's line."""
+        if p.template != "transcript":
+            return result
+        cut = transcript_turn_end(result.content)
+        if cut is None:
+            return result
+        return result.model_copy(update={"content": result.content[:cut], "finish_reason": "stop"})
 
     async def stream(self, p: Prepared) -> AsyncIterator[StreamChunk]:
         """Stream a prepared request; the final chunk carries the stored node's id.
@@ -685,6 +700,7 @@ class GenerationService:
         record, as a reply the researcher ended.
         """
         so_far = _Partial(started=time.monotonic())
+        shown = 0  # how much of a transcript reply's text has been passed on
         chunks = p.provider.generate_stream(p.request)
         try:
             async for chunk in chunks:
@@ -693,7 +709,7 @@ class GenerationService:
                     continue
                 if chunk.is_final and chunk.result is not None:
                     so_far.finished = True
-                    result = self._with_prefill(p, chunk.result)
+                    result = self._with_prefill(p, self._turn_ended(p, chunk.result))
                     node = await self.persist(p, result)
                     yield StreamChunk(
                         type="message_stop", is_final=True, result=result,
@@ -701,7 +717,36 @@ class GenerationService:
                     )
                     return
                 so_far.add(chunk)
-                yield chunk.model_copy(update={"completion_index": p.completion_index})
+                if p.template != "transcript" or chunk.type != "text_delta":
+                    yield chunk.model_copy(update={"completion_index": p.completion_index})
+                    continue
+                cut = transcript_turn_end(so_far.text)
+                if cut is not None:
+                    # A new speaker's line: the model's turn is over; stop it here
+                    so_far.finished = True
+                    if cut > shown:
+                        yield StreamChunk(
+                            type="text_delta", text=so_far.text[shown:cut],
+                            completion_index=p.completion_index,
+                        )
+                    result = so_far.result(p).model_copy(update={
+                        "content": so_far.text[:cut], "finish_reason": "stop",
+                    })
+                    result = self._with_prefill(p, result)
+                    node = await self.persist(p, result)
+                    yield StreamChunk(
+                        type="message_stop", is_final=True, result=result,
+                        completion_index=p.completion_index, node_id=node.node_id,
+                    )
+                    return
+                # Show the text, holding back a line that may yet be a new speaker's
+                ready = transcript_undecided(so_far.text)
+                if ready > shown:
+                    yield StreamChunk(
+                        type="text_delta", text=so_far.text[shown:ready],
+                        completion_index=p.completion_index,
+                    )
+                    shown = ready
         except (asyncio.CancelledError, GeneratorExit):
             if not so_far.finished and (so_far.text or so_far.thinking):
                 self._in_background(self._persist_stopped(p, so_far))

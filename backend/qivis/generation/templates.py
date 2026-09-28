@@ -5,6 +5,7 @@ into a single text string suitable for a text completion endpoint.
 Returns (prompt_text, stop_tokens).
 """
 
+import re
 from collections.abc import Callable
 
 
@@ -124,6 +125,35 @@ def render_transcript(
         parts.append(f"{who}: {msg['content'].strip()}\n\n")
     parts.append(f"{model}:")
     return "".join(parts), [f"\n{speaker}:"]
+
+
+# A new speaker's line in a transcript: a line starting with a short name
+# (up to three words) and a colon, e.g. "\nIan:" or "\n\nmian: ".
+_SPEAKER_LINE = re.compile(r"\n\s*[^\W\d_][\w'.-]*(?: [\w'.-]+){0,2}:(?=\s|$)")
+
+
+def transcript_turn_end(text: str) -> int | None:
+    """Where a transcript reply ends: the start of the first new speaker line.
+
+    The template stops at the other speaker's name, but a base model drifts:
+    it continues as itself on a new line, invents a third speaker, changes
+    the name's case. Any new speaker line ends the model's turn.
+    """
+    match = _SPEAKER_LINE.search(text)
+    return match.start() if match else None
+
+
+_MAYBE_SPEAKER = re.compile(r"\n\s*(?:[^\W\d_][\w'.-]*(?: [\w'.-]*){0,2})?$")
+
+
+def transcript_undecided(text: str) -> int:
+    """Where text that might still become a new speaker's line begins (else its end).
+
+    "hi!\n\nbet" could be the start of "betsy:"; streaming holds it back
+    until it's decided, so a turn's end never flashes on screen.
+    """
+    match = _MAYBE_SPEAKER.search(text)
+    return match.start() if match else len(text)
 
 
 def render_document(
