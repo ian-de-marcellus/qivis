@@ -164,5 +164,7 @@ def _response(row: dict) -> dict[str, Any]:
         ],
         "judge": None if judge is None else {
             "model": judge["model"], "answers": judge["answers"], "messages": judge["messages"],
+            # What the judge actually wrote, before spellings were merged
+            "raw": judge.get("raw"),
         },
     }

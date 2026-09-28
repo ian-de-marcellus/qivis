@@ -129,3 +129,11 @@ def test_a_gpu_judge_is_skipped_when_it_would_not_fit():
     assert not judging._fits(status, "judge.gguf")
     status["models"][0]["running"] = False
     assert judging._fits(status, "judge.gguf")
+
+
+def test_plural_and_singular_are_one_answer():
+    merged = judging.merge_forms(["dogs", "dog", "Dogs", "cat", "cats", "fish", "no answer"])
+    assert merged == ["dogs", "dogs", "dogs", "cat", "cat", "fish", "no answer"]
+    # A tie goes to the shorter form; a lone plural stays as it is
+    assert judging.merge_forms(["horses", "horse"]) == ["horse", "horse"]
+    assert judging.merge_forms(["glasses", "fish"]) == ["glasses", "fish"]

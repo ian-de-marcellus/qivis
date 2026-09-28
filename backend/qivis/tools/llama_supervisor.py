@@ -64,6 +64,8 @@ class Supervisor:
         self.startup_timeout = startup_timeout
         self.log_path = log_path
         self.proc: asyncio.subprocess.Process | None = None
+        # Up and answering (running is true from the moment it's launched)
+        self.ready = False
         self.in_flight = 0
         self.last_activity = time.monotonic()
         self.cached_props: dict | None = None
@@ -124,6 +126,7 @@ class Supervisor:
                     r = await self.client.get(f"{self.backend}/health", timeout=2)
                     if r.status_code == 200:
                         logger.info("llama-server ready")
+                        self.ready = True
                         return
                 except httpx.HTTPError:
                     pass
@@ -132,6 +135,7 @@ class Supervisor:
             raise RuntimeError("llama-server did not become ready in time")
 
     async def stop(self) -> None:
+        self.ready = False
         if self.proc is None:
             return
         if self.proc.returncode is None:
@@ -288,7 +292,8 @@ def create_app(sup: Supervisor | Pool, idle_check_interval: float = 30.0) -> Fas
     @app.get("/props")
     async def props(model: str | None = None):
         m = pool.pick(model)
-        if not m.running:
+        # Asleep or still loading: what's known about it (its name, its settings)
+        if not (m.running and m.ready):
             return JSONResponse(m.cached_props or m.placeholder_props())
         r = await m.client.get(f"{m.backend}/props")
         if r.status_code == 200:

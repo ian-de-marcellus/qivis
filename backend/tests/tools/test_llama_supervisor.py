@@ -214,3 +214,16 @@ async def test_models_woken_at_once_still_fit_the_budget(tmp_path):
         assert not (sun.running and big.running)
     for m in (sun, big):
         await m.stop()
+
+
+async def test_props_while_loading_say_what_is_known(sup_client):
+    """A model still loading can't answer /props; the supervisor answers with its name."""
+
+    class Launched:
+        returncode = None
+
+    sup, c = sup_client
+    sup.proc = Launched()  # type: ignore[assignment]  # launched, not yet ready
+    r = await c.get("/props")
+    assert r.status_code == 200 and r.json()["model_alias"] == "sun-1.0.1.gguf"
+    sup.proc = None

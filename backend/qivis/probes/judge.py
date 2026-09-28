@@ -45,6 +45,32 @@ def normalize(label: str) -> str:
     return re.sub(r"\s+", " ", label.strip().strip(".,!?;:\"'").lower()) or "no answer"
 
 
+def merge_forms(labels: list[str]) -> list[str]:
+    """Normalized labels, with plural and singular of the same answer made one
+    ("dogs" and "dog"): the label used more often wins, the shorter on a tie."""
+    normal = [normalize(label) for label in labels]
+    counts: dict[str, int] = {}
+    for label in normal:
+        counts[label] = counts.get(label, 0) + 1
+
+    def twin(label: str) -> str | None:
+        for other in (label[:-1], label[:-2], label + "s", label + "es"):
+            if other != label and other in counts:
+                return other
+        return None
+
+    merged = {}
+    for label in counts:
+        other = twin(label) if label.endswith("s") else None
+        if other is None and not label.endswith("s"):
+            other = twin(label)
+        if other is None:
+            continue
+        keep = max((label, other), key=lambda x: (counts[x], -len(x)))
+        merged[label if keep == other else other] = keep
+    return [merged.get(label, label) for label in normal]
+
+
 async def pick_judge(llama: LlamaCppProvider) -> str | None:
     """The best judge that's served and fits alongside what's loaded.
 
@@ -97,5 +123,5 @@ async def judge_samples(
         "required": ["answers"],
     }
     reply = await llama.chat_json(judge, messages, schema, max_tokens=24 * len(texts) + 64)
-    answers = [normalize(str(a)) for a in reply["answers"]][: len(texts)]
-    return {"model": judge, "messages": messages, "answers": answers}
+    raw = [str(a) for a in reply["answers"]][: len(texts)]
+    return {"model": judge, "messages": messages, "raw": raw, "answers": merge_forms(raw)}
