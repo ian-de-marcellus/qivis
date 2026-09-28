@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Probe } from '../../api/types.ts'
-import { groupByAnswer } from './probeGroups.ts'
+import { groupByAnswer, shareRange } from './probeGroups.ts'
 
 const probe = (answers: string[] | null): Probe => ({
   probe_id: 'p', node_id: 'n', provider: 'llamacpp', model: 'm', created_at: '',
@@ -19,5 +19,20 @@ describe('groupByAnswer', () => {
 
   it('keeps unjudged samples together', () => {
     expect(groupByAnswer(probe(null))).toEqual([{ answer: '', indices: [0, 1] }])
+  })
+})
+
+describe('shareRange', () => {
+  it('is wide for few draws and narrows with more', () => {
+    const [lo20, hi20] = shareRange(6, 20)
+    expect(lo20).toBeCloseTo(0.145, 2)
+    expect(hi20).toBeCloseTo(0.519, 2)
+    const [lo200, hi200] = shareRange(60, 200)
+    expect(hi200 - lo200).toBeLessThan((hi20 - lo20) / 2.5)
+  })
+
+  it('stays within 0 and 1 at the edges', () => {
+    expect(shareRange(0, 20)[0]).toBe(0)
+    expect(shareRange(20, 20)[1]).toBe(1)
   })
 })

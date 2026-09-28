@@ -11,7 +11,8 @@ import { useEffect, useMemo, useState } from 'react'
 import * as api from '../../api/client.ts'
 import type { Probe } from '../../api/types.ts'
 import { useRhizomeStore } from '../../store/rhizomeStore.ts'
-import { groupByAnswer } from './probeGroups.ts'
+import { LogprobOverlay } from './LogprobOverlay.tsx'
+import { groupByAnswer, shareRange } from './probeGroups.ts'
 import './ProbePanel.css'
 
 interface ProbePanelProps {
@@ -127,6 +128,7 @@ export function ProbePanel({ rhizomeId, nodeId, provider, model, onClose }: Prob
           <div className="probe-groups">
             {groups.map((g) => {
               const share = g.indices.length / total
+              const [lo, hi] = shareRange(g.indices.length, total)
               const isOpen = open === g.answer || !probe.judge
               return (
                 <div key={g.answer} className="probe-group">
@@ -137,8 +139,13 @@ export function ProbePanel({ rhizomeId, nodeId, provider, model, onClose }: Prob
                     >
                       <span className="probe-bar" style={{ width: `${share * 100}%` }} />
                       <span className="probe-answer">{g.answer}</span>
-                      <span className="probe-share">
-                        {Math.round(share * 100)}% · {g.indices.length}/{total}
+                      <span
+                        className="probe-share"
+                        title={`${g.indices.length} of ${total} draws; the true share is likely between ${Math.round(lo * 100)}% and ${Math.round(hi * 100)}%`}
+                      >
+                        {Math.round(share * 100)}%
+                        <span className="probe-range"> ({Math.round(lo * 100)}–{Math.round(hi * 100)}%)</span>
+                        {' '}· {g.indices.length}/{total}
                       </span>
                     </button>
                   )}
@@ -147,7 +154,9 @@ export function ProbePanel({ rhizomeId, nodeId, provider, model, onClose }: Prob
                       {g.indices.map((i) => (
                         <li key={i}>
                           <span className="probe-sample-text">
-                            {probe.samples[i].content || <em>(nothing)</em>}
+                            {probe.samples[i].logprobs && probe.samples[i].content
+                              ? <LogprobOverlay logprobs={probe.samples[i].logprobs!} content={probe.samples[i].content} />
+                              : probe.samples[i].content || <em>(nothing)</em>}
                             {probe.samples[i].finish_reason === 'length' && <span className="probe-more">…</span>}
                           </span>
                           <button
@@ -168,6 +177,7 @@ export function ProbePanel({ rhizomeId, nodeId, provider, model, onClose }: Prob
 
           <div className="probe-foot">
             {total} samples at temperature 1 from {probe.model.replace(/\.gguf$/, '')}
+            {' '}· ranges are 95% intervals for the share · hover a word for its probability
             {probe.judge
               ? <> · grouped by {probe.judge.model.replace(/\.gguf$/, '')} (its reading, not the model&apos;s)</>
               : (

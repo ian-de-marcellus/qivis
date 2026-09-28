@@ -19,3 +19,17 @@ export function groupByAnswer(probe: Probe): Group[] {
       Number(x.answer === 'no answer') - Number(y.answer === 'no answer')
       || y.indices.length - x.indices.length)
 }
+
+/**
+ * A 95% range for a share seen k times in n draws (the Wilson interval):
+ * with few draws a share is rough, and this says how rough.
+ */
+export function shareRange(k: number, n: number): [number, number] {
+  if (n === 0) return [0, 1]
+  const z = 1.96
+  const p = k / n
+  const denom = 1 + (z * z) / n
+  const center = (p + (z * z) / (2 * n)) / denom
+  const half = (z * Math.sqrt((p * (1 - p)) / n + (z * z) / (4 * n * n))) / denom
+  return [Math.max(0, center - half), Math.min(1, center + half)]
+}
