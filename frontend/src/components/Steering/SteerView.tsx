@@ -142,15 +142,19 @@ export function SteerView({
   }, [])
 
   const fetchDist = useCallback((ids: number[]) => {
-    const { cache, inflight, failed, sessionId } = live.current
+    const L = live.current
+    const { cache, inflight, failed, sessionId } = L
     const key = keyOf(ids)
-    if (!sessionId || cache.has(key) || inflight.has(key) || failed.has(key)) return
+    // A finished turn is being (or has been) kept, which closes its session
+    if (!sessionId || L.ended) return
+    if (cache.has(key) || inflight.has(key) || failed.has(key)) return
     inflight.add(key)
     api.steerNext(sessionId, ids, K)
       .then((cands) => cache.set(key, cands))
       .catch((e) => {
         failed.add(key)
-        setError(String(e))
+        // Only this session's troubles matter, and only while it's still open
+        if (L.sessionId === sessionId && !L.ended) setError(String(e))
       })
       .finally(() => inflight.delete(key))
   }, [])
