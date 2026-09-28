@@ -11,6 +11,7 @@ from typing import Any
 
 from openai import AsyncOpenAI
 
+from qivis.models import LogprobData, TokenLogprob
 from qivis.providers.base import (
     GenerationRequest,
     GenerationResult,
@@ -170,6 +171,8 @@ class OpenAICompatibleProvider(LLMProvider):
 
         start = time.monotonic()
         accumulated_text = ""
+        tokens: list[TokenLogprob] = []
+        top_k = 0
         finish_reason: str | None = None
         model = request.model
         input_tokens = 0
@@ -183,9 +186,14 @@ class OpenAICompatibleProvider(LLMProvider):
             if chunk.choices:
                 choice = chunk.choices[0]
                 text = choice.text
+                # Each chunk carries its own tokens' probabilities
+                chunk_logprobs = LogprobNormalizer.from_openai_completion(choice.logprobs)
+                if chunk_logprobs is not None:
+                    tokens.extend(chunk_logprobs.tokens)
+                    top_k = max(top_k, chunk_logprobs.top_k_available)
                 if text:
                     accumulated_text += text
-                    yield StreamChunk(type="text_delta", text=text)
+                    yield StreamChunk(type="text_delta", text=text, logprobs=chunk_logprobs)
                 if choice.finish_reason:
                     finish_reason = choice.finish_reason
 
@@ -203,6 +211,9 @@ class OpenAICompatibleProvider(LLMProvider):
                 finish_reason=finish_reason,
                 usage={"input_tokens": input_tokens, "output_tokens": output_tokens},
                 latency_ms=latency_ms,
+                logprobs=LogprobData(
+                    tokens=tokens, provider_format="openai", top_k_available=top_k,
+                ) if tokens else None,
             ),
         )
 

@@ -310,3 +310,40 @@ class TestSupportedModes:
         provider = OllamaProvider(client=AsyncMock())
         assert "completion" not in provider.supported_modes
         assert provider.supported_modes == ["chat"]
+
+
+class TestCompletionStreamLogprobs:
+    async def test_keeps_each_chunks_token_probabilities(self):
+        """Streamed completions carry logprobs per chunk: kept on each delta and in the result."""
+
+        def chunk(text, token, lp, finish=None):
+            c = MagicMock()
+            c.model = "base-model"
+            choice = MagicMock()
+            choice.text = text
+            choice.finish_reason = finish
+            choice.logprobs = MagicMock(
+                tokens=[token], token_logprobs=[lp], top_logprobs=[{token: lp, " no": -3.0}],
+            )
+            c.choices = [choice]
+            c.usage = None
+            return c
+
+        class MockAsyncStream:
+            def __aiter__(self):
+                return self._iter()
+
+            async def _iter(self):
+                yield chunk("Hello", "Hello", -0.1)
+                yield chunk(" world", " world", -0.7, finish="length")
+
+        client = _make_mock_client()
+        client.completions.create = AsyncMock(return_value=MockAsyncStream())
+        received = [c async for c in ConcreteProvider(client).generate_stream(_make_completion_request())]
+
+        deltas = [c for c in received if c.type == "text_delta"]
+        assert [d.logprobs.tokens[0].token for d in deltas if d.logprobs] == ["Hello", " world"]
+        [final] = [c for c in received if c.is_final]
+        assert final.result is not None and final.result.logprobs is not None
+        assert [t.token for t in final.result.logprobs.tokens] == ["Hello", " world"]
+        assert final.result.logprobs.tokens[1].top_alternatives[0].token == " no"
