@@ -254,6 +254,18 @@ export function SteerView({
     }
   }, [showNode, onClose])
 
+  // Ending the turn yourself: the reply is kept as it stands (recorded as
+  // ended by the researcher, not with end-of-turn tokens the model never
+  // chose), and the conversation comes back to you
+  const endTurn = useCallback(() => {
+    const L = live.current
+    if (L.ended || L.tokens.length === 0 || !L.sessionId) return
+    L.ended = true
+    setEnded(true)
+    setPaused(true)
+    void keep({ thenYourTurn: true })
+  }, [keep])
+
   // Reaching end of turn keeps the reply and hands the conversation back
   // (choose() runs in the frame loop, so it reaches keep through a ref)
   useEffect(() => {
@@ -304,13 +316,16 @@ export function SteerView({
         undo()
       } else if (e.key === 'Escape') {
         requestClose()
+      } else if (e.key === 'Enter' && tag !== 'BUTTON') {
+        e.preventDefault()
+        endTurn()
       } else if (/^[1-9]$/.test(e.key) && live.current.paused) {
         chooseRank(Number(e.key) - 1)
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [undo, requestClose, chooseRank])
+  }, [undo, requestClose, chooseRank, endTurn])
 
   // -- The frame loop --
 
@@ -645,7 +660,7 @@ export function SteerView({
           <p className="steer-help">
             Space: go/pause · point up/down to steer · just right of the line holds, further
             right goes faster, left of the line backs up (see the bar at the top) · Backspace:
-            undo · 1–9 (paused): take a ranked token · Esc: close
+            undo · 1–9 (paused): take a ranked token · click a box: take it · Enter: end turn · Esc: close
           </p>
 
           {error && (
@@ -671,8 +686,17 @@ export function SteerView({
               className="steer-keep"
               onClick={() => keep({ thenYourTurn: false })}
               disabled={saving || tokens.length === 0 || yourTurn != null}
+              title="Save the reply as it stands and close"
             >
               {saving ? 'Saving…' : 'Keep so far'}
+            </button>
+            <button
+              className="steer-keep"
+              onClick={endTurn}
+              disabled={saving || tokens.length === 0 || yourTurn != null || ended}
+              title="End the turn here and write yours (Enter)"
+            >
+              End turn
             </button>
           </div>
         </div>
