@@ -91,6 +91,8 @@ export function SteerView({
     // Distributions that failed: not asked again (every frame) until Retry
     failed: new Set<string>(),
     pointer: { x: 0, y: 0, inside: false },
+    // Where each drawn option is on screen, with the path of options to it (deepest last)
+    hits: [] as { x: number; y: number; h: number; path: Box[] }[],
     paused: true, cruise: false, speed: 1.2, ended: false, pastEnd: false,
     // How far the current column has traveled toward the line, 0..1
     progress: 0,
@@ -412,7 +414,8 @@ export function SteerView({
           }
         }
         const widths: number[] = []
-        drawColumn(g, column, ids, top, L.view.s, 0, x0, W, H, color, widths, focusId)
+        L.hits = []
+        drawColumn(g, column, ids, top, L.view.s, 0, x0, W, H, color, widths, [], focusId)
         L.colWidths = widths
       }
 
@@ -468,7 +471,7 @@ export function SteerView({
     const drawColumn = (
       g: CanvasRenderingContext2D, column: Box[], prefix: number[], top: number, height: number,
       depth: number, x: number, W: number, H: number, color: (n: string) => string,
-      widths: number[], focusId?: number,
+      widths: number[], path: Box[], focusId?: number,
     ) => {
       if (x >= W - 8) return
       const crossY = H / 2
@@ -477,6 +480,7 @@ export function SteerView({
         const y = top + box.a * height
         const h = (box.b - box.a) * height
         if (y > H || y + h < 0 || h < 0.5) continue
+        L.hits.push({ x, y, h, path: [...path, box] })
         const isStop = L.stops.includes(box.token)
         const focused = depth === 0 && box.id === focusId
         g.fillStyle = isStop
@@ -518,7 +522,12 @@ export function SteerView({
           const childIds = [...prefix, box.id]
           const children = L.cache.get(keyOf(childIds))
           if (!children) fetchDist(childIds)
-          else drawColumn(g, layout(children), childIds, y, h, depth + 1, childX, W, H, color, widths)
+          else {
+            drawColumn(
+              g, layout(children), childIds, y, h, depth + 1, childX, W, H, color, widths,
+              [...path, box],
+            )
+          }
         }
       }
     }
@@ -526,6 +535,25 @@ export function SteerView({
     frame = requestAnimationFrame(loop)
     return () => cancelAnimationFrame(frame)
   }, [session, choose, undo, fetchDist])
+
+  // A click on an option takes it, and every option on the way to it; elsewhere, pause
+  const onCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (yourTurn) return
+    const L = live.current
+    const rect = e.currentTarget.getBoundingClientRect()
+    const px = e.clientX - rect.left
+    const py = e.clientY - rect.top
+    // Deeper options are drawn over their parents: the last one under the click is it
+    const hit = [...L.hits].reverse().find((b) => px >= b.x && py >= b.y && py < b.y + b.h)
+    if (!hit || L.ended) {
+      setPaused((p) => !p)
+      return
+    }
+    for (const box of hit.path) {
+      if (L.ended) break
+      choose(box, 'researcher')
+    }
+  }
 
   const onPointer = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const rect = e.currentTarget.getBoundingClientRect()
@@ -652,7 +680,7 @@ export function SteerView({
             onPointerMove={onPointer}
             onPointerEnter={onPointer}
             onPointerLeave={() => { live.current.pointer.inside = false }}
-            onClick={() => { if (!yourTurn) setPaused((p) => !p) }}
+            onClick={onCanvasClick}
           />
           {yourTurn && (
             <div className="steer-your-turn">
