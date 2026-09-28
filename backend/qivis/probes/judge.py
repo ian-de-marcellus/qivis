@@ -32,9 +32,10 @@ def judge_request(context: str, texts: list[str]) -> str:
         "The text so far ends like this:\n<<<\n" + tail + "\n>>>\n\n"
         f"Below are {len(texts)} possible continuations, numbered. For each, name the "
         "answer, choice or stance it expresses, in one to four lowercase words: the gist, "
-        "without hedges or intensity (\"probably humans\", \"humans, i think\" and "
-        "\"definitely humans!\" are all \"humans\"). Give continuations that give the same "
-        "answer the same label. If a continuation gives no answer, label it \"no answer\".\n\n"
+        "without hedges or intensity, in its plainest form (\"probably humans\", \"humans, "
+        "i think\" and \"definitely humans!\" are all \"humans\"; \"my pet cat\" and "
+        "\"cats\" are both \"cats\"). Give continuations that give the same answer exactly "
+        "the same label. If a continuation gives no answer, label it \"no answer\".\n\n"
         + numbered
     )
 
