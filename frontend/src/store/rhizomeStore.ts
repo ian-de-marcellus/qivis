@@ -301,6 +301,18 @@ function refreshRhizomeSelectNewest(
   api.listRhizomes().then((rhizomes) => set({ rhizomes }))
 }
 
+/** Wait for the reply a stopped stream is stored as, then show it. */
+async function followStoppedReply(
+  rhizomeId: string, parentNodeId: string, known: Set<string>, set: SetFn,
+) {
+  for (let attempt = 0; attempt < 12; attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, 250))
+    const rhizome = await api.getRhizome(rhizomeId).catch(() => null)
+    if (rhizome?.nodes.some((n) => (n.parent_id ?? '') === parentNodeId && !known.has(n.node_id))) break
+  }
+  refreshRhizomeSelectNewest(rhizomeId, parentNodeId, set)
+}
+
 const errorMessage = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
 /** Streaming-state updates shared by every kind of generation. */
@@ -540,7 +552,7 @@ export const useRhizomeStore = create<RhizomeStore>((set, get) => ({
       ...MULTI_STREAMING_RESET,
       regeneratingParentId: null,
       replayState: null,
-        })
+    })
 
     const rhizomeId = currentRhizome?.rhizome_id
     // streamingParentId is '' for a root generation, so check null explicitly
@@ -549,39 +561,17 @@ export const useRhizomeStore = create<RhizomeStore>((set, get) => ({
       return
     }
 
-    // Collect partial content to save
-    const partials: string[] = []
-
-    if (streamingTotal > 0) {
-      // Multi-stream: save uncompleted streams
-      for (const [idxStr, content] of Object.entries(streamingContents)) {
-        const idx = Number(idxStr)
-        if (streamingNodeIds[idx]) continue // Already completed server-side
-        if (content.trim()) partials.push(content)
-      }
-    } else if (streamingContent.trim()) {
-      // Single stream
-      partials.push(streamingContent)
-    }
-
-    if (partials.length === 0) {
+    // Streams stopped part-way: the server stores what each said so far,
+    // with its record, once it sees the disconnect
+    const stoppedPartWay = streamingTotal > 0
+      ? Object.entries(streamingContents).some(([i, text]) => !streamingNodeIds[Number(i)] && text.trim())
+      : streamingContent.trim() !== ''
+    if (!stoppedPartWay) {
       refreshRhizome(rhizomeId, set)
       return
     }
-
-    // Save partial content as assistant nodes, then refresh
-    Promise.allSettled(
-      partials.map((content) =>
-        api.createNode(rhizomeId, {
-          content,
-          role: 'assistant',
-          parent_id: streamingParentId || undefined,
-          mode: 'chat',
-        }),
-      ),
-    ).then(() => {
-      refreshRhizome(rhizomeId, set)
-    })
+    const known = new Set(currentRhizome?.nodes.map((n) => n.node_id))
+    followStoppedReply(rhizomeId, streamingParentId, known, set)
   },
 
   fetchRhizomes: async (includeArchived?: boolean) => {

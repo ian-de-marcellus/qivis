@@ -15,9 +15,10 @@ so what each node records is exactly what its model was sent.
 import asyncio
 import dataclasses
 import logging
-from collections.abc import AsyncIterator
+import time
+from collections.abc import AsyncIterator, Coroutine
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 from uuid import uuid4
 
 from qivis.events.log import EventLog
@@ -38,8 +39,10 @@ from qivis.models import (
     EvictionReport,
     EvictionStrategy,
     GenerationStartedPayload,
+    LogprobData,
     NodeCreatedPayload,
     SamplingParams,
+    TokenLogprob,
 )
 from qivis.providers.base import GenerationRequest, GenerationResult, LLMProvider, StreamChunk
 from qivis.providers.registry import get_provider
@@ -156,6 +159,45 @@ class Prepared:
 
 
 @dataclass
+class _Partial:
+    """What a stream has said so far, to store if it's stopped."""
+
+    started: float
+    text: str = ""
+    thinking: str = ""
+    tokens: list[TokenLogprob] = dataclasses.field(default_factory=list)
+    logprob_format: LogprobData | None = None
+    full_vocab: bool = False
+    prompt: GenerationResult | None = None
+    finished: bool = False
+
+    def add(self, chunk: StreamChunk) -> None:
+        self.text += chunk.text
+        self.thinking += chunk.thinking
+        if chunk.logprobs is not None:
+            self.tokens.extend(chunk.logprobs.tokens)
+            self.logprob_format = self.logprob_format or chunk.logprobs
+            self.full_vocab = self.full_vocab or chunk.logprobs.full_vocab_available
+
+    def result(self, p: Prepared) -> GenerationResult:
+        fmt = self.logprob_format
+        return GenerationResult(
+            content=self.text,
+            model=p.model,
+            finish_reason="researcher",
+            usage={"output_tokens": len(self.tokens)} if self.tokens else None,
+            latency_ms=int((time.monotonic() - self.started) * 1000),
+            logprobs=LogprobData(
+                tokens=self.tokens, provider_format=fmt.provider_format,
+                top_k_available=fmt.top_k_available, full_vocab_available=self.full_vocab,
+            ) if fmt is not None else None,
+            thinking_content=self.thinking or None,
+            applied_sampling_params=self.prompt.applied_sampling_params if self.prompt else None,
+            effective_prompt_text=self.prompt.effective_prompt_text if self.prompt else None,
+        )
+
+
+@dataclass
 class _Built:
     messages: list[dict[str, str]]
     usage: ContextUsage
@@ -177,6 +219,8 @@ class GenerationService:
         self._projector = projector
         self._events = EventLog(store, projector)
         self._context_builder = ContextBuilder()
+        # Stopped replies being stored after their stream was cancelled
+        self._background: set[asyncio.Task[None]] = set()
 
     # -- Entry points --
 
@@ -634,18 +678,52 @@ class GenerationService:
         return await self.persist(p, self._with_prefill(p, await p.provider.generate(p.request)))
 
     async def stream(self, p: Prepared) -> AsyncIterator[StreamChunk]:
-        """Stream a prepared request; the final chunk carries the stored node's id."""
-        async for chunk in p.provider.generate_stream(p.request):
-            if chunk.is_final and chunk.result is not None:
-                result = self._with_prefill(p, chunk.result)
-                node = await self.persist(p, result)
-                yield StreamChunk(
-                    type="message_stop", is_final=True, result=result,
-                    completion_index=p.completion_index, node_id=node.node_id,
-                )
-                return
-            yield chunk.model_copy(update={"completion_index": p.completion_index})
+        """Stream a prepared request; the final chunk carries the stored node's id.
+
+        If the stream is stopped (the client disconnects, or the task is
+        cancelled), what the model said so far is still stored, with its
+        record, as a reply the researcher ended.
+        """
+        so_far = _Partial(started=time.monotonic())
+        chunks = p.provider.generate_stream(p.request)
+        try:
+            async for chunk in chunks:
+                if chunk.type == "prompt":
+                    so_far.prompt = chunk.result
+                    continue
+                if chunk.is_final and chunk.result is not None:
+                    so_far.finished = True
+                    result = self._with_prefill(p, chunk.result)
+                    node = await self.persist(p, result)
+                    yield StreamChunk(
+                        type="message_stop", is_final=True, result=result,
+                        completion_index=p.completion_index, node_id=node.node_id,
+                    )
+                    return
+                so_far.add(chunk)
+                yield chunk.model_copy(update={"completion_index": p.completion_index})
+        except (asyncio.CancelledError, GeneratorExit):
+            if not so_far.finished and (so_far.text or so_far.thinking):
+                self._in_background(self._persist_stopped(p, so_far))
+            raise
+        finally:
+            # Stop the provider's request too (for a local model, its generation)
+            close = getattr(chunks, "aclose", None)
+            if close is not None:
+                await close()
         raise RuntimeError(f"{p.provider.name} stream ended without a result")
+
+    async def _persist_stopped(self, p: Prepared, so_far: _Partial) -> None:
+        try:
+            await self.persist(p, self._with_prefill(p, so_far.result(p)))
+        except Exception:
+            logger.exception("Couldn't store a stopped reply")
+
+    def _in_background(self, work: Coroutine[Any, Any, None]) -> None:
+        """Run outside the cancelled task, holding a reference until it's done."""
+        task = asyncio.create_task(work)
+        self._background.add(task)
+        task.add_done_callback(self._background.discard)
 
     async def fan_out(self, prepared: list[Prepared]) -> AsyncIterator[StreamChunk]:
         """Stream several prepared requests at once, interleaved as chunks arrive.

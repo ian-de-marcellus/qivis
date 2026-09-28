@@ -345,6 +345,12 @@ class LlamaCppProvider(LLMProvider):
             body["prompt"], effective_prompt = await self._prompt_for_bos_count(
                 request.prompt_text, served, request.model,
             )
+        # What the model sees, for the record even if the stream is stopped
+        yield StreamChunk(type="prompt", result=GenerationResult(
+            content="", model=request.model,
+            applied_sampling_params={"logit_bias": applied} if applied else None,
+            effective_prompt_text=effective_prompt,
+        ))
         async for chunk in self._stream_completion(request, body):
             if chunk.result is not None:
                 if applied:
@@ -458,7 +464,12 @@ class LlamaCppProvider(LLMProvider):
                     # Collect per-token logprob data from streaming chunks
                     if chunk_probs:
                         accumulated_probs.extend(chunk_probs)
-                    yield StreamChunk(type="text_delta", text=content)
+                    yield StreamChunk(
+                        type="text_delta", text=content,
+                        logprobs=self._returned_logprobs(
+                            request, LogprobNormalizer.from_llamacpp(chunk_probs),
+                        ) if chunk_probs else None,
+                    )
 
                     # Check for leaked turn boundary after each chunk
                     if is_llama3:

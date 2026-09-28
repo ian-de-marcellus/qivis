@@ -44,9 +44,14 @@ class GenerationResult(BaseModel):
 class StreamChunk(BaseModel):
     """A single delta in a streaming response."""
 
-    type: str  # "text_delta", "thinking_delta", "message_stop", "generation_complete", "error", ...
+    # "text_delta", "thinking_delta", "message_stop", "generation_complete", "error", ...
+    # and "prompt": what the model will see (a result with only effective_prompt_text
+    # and applied_sampling_params), for the record if the stream is stopped early
+    type: str
     text: str = ""
     thinking: str = ""
+    # A text delta's own tokens, when the provider reports them as it streams
+    logprobs: LogprobData | None = None
     is_final: bool = False
     result: GenerationResult | None = None
     completion_index: int | None = None

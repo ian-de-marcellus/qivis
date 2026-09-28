@@ -126,13 +126,14 @@ class OpenAICompatibleProvider(LLMProvider):
                 choice = chunk.choices[0]
                 delta = choice.delta
                 text = delta.content
+                chunk_logprobs = (choice.logprobs.content or []) if choice.logprobs else []
+                accumulated_logprobs.extend(chunk_logprobs)
                 if text:
                     accumulated_text += text
-                    yield StreamChunk(type="text_delta", text=text)
-
-                # Accumulate logprobs from each chunk
-                if choice.logprobs and choice.logprobs.content:
-                    accumulated_logprobs.extend(choice.logprobs.content)
+                    yield StreamChunk(
+                        type="text_delta", text=text,
+                        logprobs=LogprobNormalizer.from_openai(chunk_logprobs or None),
+                    )
 
                 if choice.finish_reason:
                     finish_reason = choice.finish_reason
