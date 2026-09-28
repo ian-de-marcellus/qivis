@@ -17,6 +17,22 @@
   outline-offset: 0px;
 }
 
+.logprob-token-clickable {
+  cursor: pointer;
+}
+
+/* Cut away: what the branch replaces (faded by color, not opacity, so its tooltip stays legible) */
+.logprob-token-cut {
+  color: var(--text-tertiary);
+  background-color: transparent !important;
+  text-decoration: line-through;
+  text-decoration-color: var(--text-tertiary);
+}
+
+.logprob-token-cut-first {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
 /* ---- Token tooltip ---- */
 
 .token-tooltip {

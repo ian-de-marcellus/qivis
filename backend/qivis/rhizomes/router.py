@@ -29,6 +29,7 @@ from qivis.rhizomes.schemas import (
     CreateRhizomeRequest,
     CreateSummaryRequest,
     CrossModelGenerateRequest,
+    CutNodeRequest,
     DigressionGroupResponse,
     EditHistoryResponse,
     ExcludeNodeRequest,
@@ -420,6 +421,16 @@ async def bulk_anchor(
 ) -> dict:
     changed = await service.bulk_anchor(rhizome_id, request.node_ids, request.anchor)
     return {"changed": changed, "anchor": request.anchor}
+
+
+@router.post("/{rhizome_id}/nodes/{node_id}/cut", status_code=status.HTTP_201_CREATED)
+async def cut_node(
+    rhizome_id: str,
+    node_id: str,
+    request: CutNodeRequest,
+    service: RhizomeService = Depends(get_rhizome_service),
+) -> NodeResponse:
+    return await service.cut_node(rhizome_id, node_id, request.keep)
 
 
 @router.post("/{rhizome_id}/nodes/{node_id}/anchor")

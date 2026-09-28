@@ -42,6 +42,13 @@ class CreateNodeRequest(BaseModel):
     participant_name: str | None = None
 
 
+class CutNodeRequest(BaseModel):
+    """Request body for POST /api/rhizomes/{rhizome_id}/nodes/{node_id}/cut."""
+
+    # How many of the reply's tokens to keep: the cut falls before token `keep`
+    keep: int
+
+
 class PatchNodeContentRequest(BaseModel):
     """Request body for PATCH /api/rhizomes/{rhizome_id}/nodes/{node_id}/content."""
 

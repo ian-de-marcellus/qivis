@@ -6,11 +6,14 @@
  * passage, with no speakers or turn breaks. Whose words are whose stays
  * visible (the researcher's are tinted, the model's are plain or heatmapped).
  * Clicking a passage selects it: its branches, regenerate, continue or steer
- * from there, and exactly what the model saw. Writing happens at the end.
+ * from there, and exactly what the model saw. In a selected passage of the
+ * model's, clicking a token branches before it. Writing happens at the end,
+ * or at a branch point.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react'
-import type { NodeResponse } from '../../api/types.ts'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import * as api from '../../api/client.ts'
+import type { GenerateRequest, NodeResponse } from '../../api/types.ts'
 import { useRhizomeStore, useRhizomeData, useStreamingState } from '../../store/rhizomeStore.ts'
 import { BranchIndicator } from './BranchIndicator.tsx'
 import { ForkPanelFor, InspectedContext } from './ConversationParts.tsx'
@@ -19,6 +22,7 @@ import { LogprobOverlay } from './LogprobOverlay.tsx'
 import { averageCertainty } from './logprobColor.ts'
 import { formatSamplingMeta } from './nodeFormat.ts'
 import { PromptTextViewer } from './PromptTextViewer.tsx'
+import { TokenBranch } from './TokenBranch.tsx'
 import { useAutoScroll, useConversationView, useScrollToNode } from './useViewShared.ts'
 import './ChatView.css'
 import './MessageInput.css'
@@ -36,6 +40,9 @@ function readHeatmapPref(): boolean {
 
 const textOf = (node: NodeResponse) => node.edited_content ?? node.content
 const isModel = (node: NodeResponse) => node.role === 'assistant' && node.mode !== 'manual'
+/** A model passage whose tokens are its text: shown token by token, and branchable */
+const tokenized = (node: NodeResponse) =>
+  isModel(node) && (node.logprobs?.tokens.length ?? 0) > 0 && node.edited_content == null
 
 function whoWrote(node: NodeResponse): string {
   if (!isModel(node)) return 'your text'
@@ -55,11 +62,18 @@ export function DocumentView() {
   const regenerate = useRhizomeStore(s => s.regenerate)
   const selectBranch = useRhizomeStore(s => s.selectBranch)
   const openSteer = useRhizomeStore(s => s.openSteer)
+  const forkAndGenerate = useRhizomeStore(s => s.forkAndGenerate)
+  const showNode = useRhizomeStore(s => s.showNode)
   const clearGenerationError = useRhizomeStore(s => s.clearGenerationError)
 
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [showDetails, setShowDetails] = useState(false)
   const [heatmap, setHeatmap] = useState(readHeatmapPref)
+  // A token to branch before, in the selected passage
+  const [cut, setCut] = useState<{ nodeId: string; index: number } | null>(null)
+  // Writing at a branch point instead of the end ('' for the beginning)
+  const [writeAfter, setWriteAfter] = useState<string | null>(null)
+  const composerRef = useRef<HTMLTextAreaElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   useAutoScroll(bottomRef, path.length)
   useScrollToNode()
@@ -84,25 +98,66 @@ export function DocumentView() {
     if (window.getSelection()?.toString()) return
     setSelectedId((id) => (id === node.node_id ? null : node.node_id))
     setShowDetails(false)
+    setCut(null)
   }
 
-  /** Generate under parentId ('' for the beginning), with this model or the branch's. */
-  const generateUnder = useCallback((parentId: string, like?: NodeResponse) => {
+  // Writing at a branch point shows the text only up to it
+  const shown = useMemo(() => {
+    if (writeAfter == null) return path
+    if (writeAfter === '') return []
+    const at = path.findIndex((n) => n.node_id === writeAfter)
+    return at === -1 ? path : path.slice(0, at + 1)
+  }, [path, writeAfter])
+  const writeUnder = writeAfter ?? leafNodeId ?? ''
+
+  /** Generation settings: this passage's model, else the branch's. */
+  const overridesLike = useCallback((like?: NodeResponse): GenerateRequest => {
     const useOwn = like != null && isModel(like) && like.provider != null
     const provider = useOwn ? like.provider : branchDefaults.provider
     const model = useOwn ? like.model : branchDefaults.model
-    regenerate(parentId, {
+    return {
       ...(provider ? { provider } : {}),
       ...(model ? { model } : {}),
       stream: currentRhizome?.metadata?.stream_responses !== false,
+    }
+  }, [branchDefaults, currentRhizome])
+
+  /** Generate under parentId ('' for the beginning). */
+  const generateUnder = useCallback((parentId: string, like?: NodeResponse) => {
+    regenerate(parentId, overridesLike(like))
+  }, [overridesLike, regenerate])
+
+  // Writing: what's typed goes under the leaf, or the branch point
+  const addText = async (text: string): Promise<string | null> => {
+    if (!currentRhizome) return null
+    const made = await api.createNode(currentRhizome.rhizome_id, {
+      content: text, role: 'user', parent_id: writeUnder || undefined,
     })
-  }, [branchDefaults, currentRhizome, regenerate])
+    setWriteAfter(null)
+    await showNode(made.node_id)
+    return made.node_id
+  }
+  const composer = {
+    continue: (text: string) => {
+      setWriteAfter(null)
+      if (text) forkAndGenerate(writeUnder, text, overridesLike())
+      else generateUnder(writeUnder)
+    },
+    add: (text: string) => { addText(text) },
+    steer: async (text: string) => {
+      const at = text ? await addText(text) : writeUnder
+      if (at != null) openSteer(at)
+    },
+  }
 
   useEffect(() => {
     if (!selectedId) return
     const onKey = (e: KeyboardEvent) => {
       // The steering view's own Esc closes it, not this
-      if (e.key === 'Escape' && useRhizomeStore.getState().steerTarget == null) setSelectedId(null)
+      if (e.key === 'Escape' && useRhizomeStore.getState().steerTarget == null) {
+        setSelectedId(null)
+        setCut(null)
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -110,7 +165,7 @@ export function DocumentView() {
 
   const opening = currentRhizome?.default_system_prompt ?? ''
   const live = streamingContents[activeStreamIndex] ?? streamingContent
-  const empty = path.length === 0 && !opening && !isGenerating
+  const empty = shown.length === 0 && !opening && !isGenerating
 
   return (
     <div className="document-view">
@@ -144,7 +199,7 @@ export function DocumentView() {
                 {opening}
               </span>
             )}
-            {path.map((node) => {
+            {shown.map((node) => {
               const siblings = childMap.get(node.parent_id) ?? []
               const index = siblings.findIndex((s) => s.node_id === node.node_id)
               const classes = [
@@ -169,8 +224,18 @@ export function DocumentView() {
                     data-node-id={node.node_id}
                     onClick={() => select(node)}
                   >
-                    {heatmap && isModel(node) && node.logprobs && node.edited_content == null
-                      ? <LogprobOverlay logprobs={node.logprobs} content={node.content} />
+                    {tokenized(node) && (heatmap || node.node_id === selectedId)
+                      ? (
+                        <LogprobOverlay
+                          logprobs={node.logprobs!}
+                          content={node.content}
+                          plain={!heatmap}
+                          onTokenClick={node.node_id === selectedId && !isGenerating
+                            ? (i) => setCut({ nodeId: node.node_id, index: i })
+                            : undefined}
+                          cutAt={cut?.nodeId === node.node_id ? cut.index : null}
+                        />
+                      )
                       : textOf(node)}
                   </span>
                 </span>
@@ -219,13 +284,17 @@ export function DocumentView() {
                   onSelect={(id) => {
                     selectBranch(selected.parent_id ?? '', id)
                     setSelectedId(id)
+                    setCut(null)
                   }}
                 />
               )}
               <span className="passage-bar-spacer" />
               <button
                 className="passage-close"
-                onClick={() => setSelectedId(null)}
+                onClick={() => {
+                  setSelectedId(null)
+                  setCut(null)
+                }}
                 aria-label="Deselect passage"
               >
                 ×
@@ -270,6 +339,22 @@ export function DocumentView() {
                 </button>
               )}
             </div>
+            {cut?.nodeId === selected.node_id && currentRhizome ? (
+              <TokenBranch
+                key={cut.index}
+                rhizomeId={currentRhizome.rhizome_id}
+                node={selected}
+                index={cut.index}
+                onWrite={(at) => {
+                  setWriteAfter(at)
+                  setSelectedId(null)
+                  setTimeout(() => composerRef.current?.focus(), 0)
+                }}
+                onClose={() => setCut(null)}
+              />
+            ) : tokenized(selected) && !isGenerating && (
+              <div className="passage-hint">Click a token to branch before it.</div>
+            )}
             {showDetails && isModel(selected) && (
               <div className="passage-details">
                 <div className="passage-meta">
@@ -290,10 +375,14 @@ export function DocumentView() {
           </div>
         )}
         <DocumentComposer
+          textareaRef={composerRef}
           isGenerating={isGenerating}
-          onContinue={() => generateUnder(leafNodeId ?? '')}
+          atBranch={writeAfter != null && writeAfter !== leafNodeId}
+          onCancelBranch={() => setWriteAfter(null)}
+          onContinue={composer.continue}
+          onAdd={composer.add}
+          onSteer={composer.steer}
           onStop={stopGeneration}
-          leafNodeId={leafNodeId}
         />
       </div>
 
@@ -306,17 +395,20 @@ export function DocumentView() {
  * Write the next part. What's typed is added exactly as written -- spaces
  * and line breaks included, since the model sees the text joined as-is.
  */
-function DocumentComposer({ isGenerating, onContinue, onStop, leafNodeId }: {
+function DocumentComposer({
+  textareaRef, isGenerating, atBranch, onCancelBranch, onContinue, onAdd, onSteer, onStop,
+}: {
+  textareaRef: React.RefObject<HTMLTextAreaElement | null>
   isGenerating: boolean
-  onContinue: () => void
+  /** Writing at a branch point, not the end */
+  atBranch: boolean
+  onCancelBranch: () => void
+  onContinue: (text: string) => void
+  onAdd: (text: string) => void
+  onSteer: (text: string) => void
   onStop: () => void
-  leafNodeId: string | null
 }) {
-  const sendMessage = useRhizomeStore(s => s.sendMessage)
-  const sendMessageOnly = useRhizomeStore(s => s.sendMessageOnly)
-  const openSteer = useRhizomeStore(s => s.openSteer)
   const [text, setText] = useState('')
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   // Whitespace alone never reaches the model (empty parts are skipped), so
   // it can't be a part of its own: it has to lead into some words
@@ -329,33 +421,20 @@ function DocumentComposer({ isGenerating, onContinue, onStop, leafNodeId }: {
 
   const handleContinue = () => {
     if (isGenerating || onlySpace) return
-    if (text) {
-      sendMessage(text)
-      reset()
-    } else {
-      onContinue()
-    }
+    onContinue(text)
+    reset()
   }
 
   const handleAdd = () => {
     if (isGenerating || !text || onlySpace) return
-    sendMessageOnly(text)
+    onAdd(text)
     reset()
   }
 
-  const handleSteer = async () => {
+  const handleSteer = () => {
     if (isGenerating || onlySpace) return
-    if (text) {
-      await sendMessageOnly(text)
-      reset()
-      const { currentRhizome, branchSelections } = useRhizomeStore.getState()
-      const nodes = currentRhizome?.nodes ?? []
-      // The part just added is the newest child of the old leaf
-      const added = nodes.filter((n) => (n.parent_id ?? '') === (leafNodeId ?? '')).at(-1)
-      openSteer(added?.node_id ?? branchSelections[leafNodeId ?? ''] ?? '')
-      return
-    }
-    openSteer(leafNodeId ?? '')
+    onSteer(text)
+    reset()
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -364,6 +443,8 @@ function DocumentComposer({ isGenerating, onContinue, onStop, leafNodeId }: {
       e.preventDefault()
       if (e.shiftKey) handleAdd()
       else handleContinue()
+    } else if (e.key === 'Escape' && atBranch) {
+      onCancelBranch()
     }
   }
 
@@ -376,6 +457,12 @@ function DocumentComposer({ isGenerating, onContinue, onStop, leafNodeId }: {
 
   return (
     <div className="message-input document-composer">
+      {atBranch && (
+        <div className="document-composer-branch">
+          Writing a new branch here, in place of what followed
+          <button onClick={onCancelBranch} aria-label="Back to the end">×</button>
+        </div>
+      )}
       <div className="message-input-inner">
         <textarea
           ref={textareaRef}

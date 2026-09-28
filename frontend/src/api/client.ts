@@ -137,6 +137,14 @@ export function editNodeContent(
   })
 }
 
+/** A new version of a generated reply that ends before token `keep`: the branch point for a token. */
+export function cutNode(rhizomeId: string, nodeId: string, keep: number): Promise<NodeResponse> {
+  return request(`/rhizomes/${rhizomeId}/nodes/${nodeId}/cut`, {
+    method: 'POST',
+    body: JSON.stringify({ keep }),
+  })
+}
+
 // -- Edit history --
 
 export function getEditHistory(

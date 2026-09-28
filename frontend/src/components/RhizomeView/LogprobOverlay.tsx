@@ -8,6 +8,12 @@ interface LogprobOverlayProps {
   logprobs: LogprobData
   /** The reply's saved text: tokens beyond it show as one end-of-turn mark */
   content?: string
+  /** No probability colors (the tokens stay hoverable and clickable) */
+  plain?: boolean
+  /** Makes tokens clickable, e.g. to branch before one */
+  onTokenClick?: (index: number) => void
+  /** Tokens from here on are shown as cut away */
+  cutAt?: number | null
 }
 
 
@@ -52,7 +58,7 @@ function TokenTooltip({ token }: { token: TokenLogprob }) {
   )
 }
 
-export function LogprobOverlay({ logprobs, content }: LogprobOverlayProps) {
+export function LogprobOverlay({ logprobs, content, plain, onTokenClick, cutAt }: LogprobOverlayProps) {
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null)
   const tokens = logprobs.tokens
   const shown = content != null ? textTokenCount(tokens, content) : tokens.length
@@ -64,10 +70,20 @@ export function LogprobOverlay({ logprobs, content }: LogprobOverlayProps) {
       {tokens.slice(0, shown).map((token, i) => (
         <span
           key={i}
-          className={`logprob-token${token.chosen_by === 'researcher' ? ' logprob-token-steered' : ''}`}
-          style={{ backgroundColor: uncertaintyColor(token.linear_prob) }}
+          className={[
+            'logprob-token',
+            token.chosen_by === 'researcher' && 'logprob-token-steered',
+            onTokenClick && 'logprob-token-clickable',
+            cutAt != null && i >= cutAt && 'logprob-token-cut',
+            cutAt === i && 'logprob-token-cut-first',
+          ].filter(Boolean).join(' ')}
+          style={plain ? undefined : { backgroundColor: uncertaintyColor(token.linear_prob) }}
           onMouseEnter={() => setHoveredIndex(i)}
           onMouseLeave={() => setHoveredIndex(null)}
+          onClick={onTokenClick && ((e) => {
+            e.stopPropagation()
+            onTokenClick(i)
+          })}
         >
           {isSpecial(token.token)
             ? <span className="logprob-special">↵</span>

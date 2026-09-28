@@ -183,6 +183,9 @@ class NodeCreatedPayload(BaseModel):
 
     raw_response: dict[str, Any] | None = None
 
+    # A reply the researcher cut short to branch from: the node it was cut from
+    cut_from: str | None = None
+
 
 class NodeAnchoredPayload(BaseModel):
     node_id: str

@@ -310,6 +310,49 @@ class RhizomeService:
 
         return await self.node_response(rhizome_id, node_id)
 
+    async def cut_node(self, rhizome_id: str, node_id: str, keep: int) -> NodeResponse:
+        """A new version of a generated reply that ends before its token `keep`.
+
+        The branch point for taking a reply somewhere else mid-way. The kept
+        tokens are still the model's, sampled under the same prompt and
+        settings, so the new node carries the original's record (its prompt,
+        sampling, and those tokens' probabilities); only the ending is the
+        researcher's. The event names the node it was cut from.
+        """
+        row = await self._require_node(rhizome_id, node_id)
+        node = self._node_from_row(row)
+        tokens = (node.logprobs or {}).get("tokens") or []
+        if node.role != "assistant" or not tokens:
+            raise InvalidRequestError("Only a generated reply with token records can be cut")
+        if node.edited_content is not None:
+            raise InvalidRequestError("This reply was edited; its tokens no longer match its text")
+        if not 0 < keep < len(tokens):
+            raise InvalidRequestError(f"Cut must keep between 1 and {len(tokens) - 1} tokens")
+
+        kept = "".join(t["token"] for t in tokens[:keep])
+        if not node.content.startswith(kept):
+            # A transcript turn is saved without the space its first token carries
+            kept = kept.lstrip()
+            if not node.content.startswith(kept):
+                raise InvalidRequestError("The cut falls past the reply's text")
+
+        usage = dict(node.usage or {})
+        if usage:
+            usage["output_tokens"] = keep
+        # Everything that produced the kept tokens, as recorded on the original
+        payload = NodeCreatedPayload.model_validate({
+            **node.model_dump(include=set(NodeCreatedPayload.model_fields) - {"node_id"}),
+            "node_id": str(uuid4()),
+            "content": kept,
+            "usage": usage or None,
+            "latency_ms": None,
+            "finish_reason": "researcher",
+            "logprobs": {**(node.logprobs or {}), "tokens": tokens[:keep]},
+            "cut_from": node_id,
+        })
+        await self._events.emit(rhizome_id, "NodeCreated", payload)
+        return await self.node_response(rhizome_id, payload.node_id)
+
     async def edit_node_content(
         self, rhizome_id: str, node_id: str, edited_content: str | None,
     ) -> NodeResponse:
