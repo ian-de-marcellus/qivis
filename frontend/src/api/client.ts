@@ -3,6 +3,7 @@
 import { postSSE, sseError, type SSEMessage } from './sse.ts'
 import type {
   AddAnnotationRequest,
+  Probe,
   ModelEntry,
   AnnotationResponse,
   BookmarkResponse,
@@ -720,4 +721,27 @@ export function steerCommit(
 
 export function steerDiscard(sessionId: string): Promise<void> {
   return request(`/steer/${sessionId}`, { method: 'DELETE' })
+}
+
+// -- Answer probes --
+
+export function runProbe(
+  rhizomeId: string,
+  body: { node_id: string | null; provider: string; model?: string | null; n?: number; max_tokens?: number },
+): Promise<Probe> {
+  return request(`/rhizomes/${rhizomeId}/probes`, { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function listProbes(rhizomeId: string): Promise<Probe[]> {
+  return request(`/rhizomes/${rhizomeId}/probes`)
+}
+
+export function judgeProbe(rhizomeId: string, probeId: string): Promise<Probe> {
+  return request(`/rhizomes/${rhizomeId}/probes/${probeId}/judge`, { method: 'POST' })
+}
+
+export function continueFromProbeSample(
+  rhizomeId: string, probeId: string, index: number,
+): Promise<NodeResponse> {
+  return request(`/rhizomes/${rhizomeId}/probes/${probeId}/samples/${index}/continue`, { method: 'POST' })
 }

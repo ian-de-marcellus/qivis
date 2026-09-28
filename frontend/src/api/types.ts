@@ -564,3 +564,27 @@ export interface TokenCandidate {
   bytes: number[] | null
   prob: number
 }
+
+/** A short sample from a probe: what the model might say at that point. */
+export interface ProbeSample {
+  content: string
+  finish_reason: string | null
+  logprobs: LogprobData | null
+}
+
+/** Samples at one point, and (if judged) the answer each gives. */
+export interface Probe {
+  probe_id: string
+  node_id: string | null
+  provider: string
+  model: string
+  created_at: string
+  prompt_text: string | null
+  sampling_params: SamplingParams | null
+  samples: ProbeSample[]
+  judge: {
+    model: string
+    answers: string[]
+    messages: { role: string; content: string }[]
+  } | null
+}

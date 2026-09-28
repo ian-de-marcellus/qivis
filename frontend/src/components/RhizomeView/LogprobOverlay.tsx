@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import type { LogprobData, TokenLogprob } from '../../api/types.ts'
 import { uncertaintyColor } from './logprobColor.ts'
-import { textTokenCount } from './nodeFormat.ts'
+import { textTokenCount, textTokenOverflow } from './nodeFormat.ts'
 import './LogprobOverlay.css'
 
 interface LogprobOverlayProps {
@@ -62,8 +62,15 @@ export function LogprobOverlay({ logprobs, content, plain, onTokenClick, cutAt }
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null)
   const tokens = logprobs.tokens
   const shown = content != null ? textTokenCount(tokens, content) : tokens.length
+  // The part of the last shown token past the text belongs to the end mark
+  const overflow = content != null ? textTokenOverflow(tokens, content) : 0
   // The space a word carries after "Sun:" isn't part of the saved turn
   const trimFirst = content != null && !/^\s/.test(content)
+  const visible = (text: string, i: number) => {
+    let t = i === 0 && trimFirst ? text.trimStart() : text
+    if (i === shown - 1 && overflow > 0) t = t.slice(0, Math.max(0, t.length - overflow))
+    return t
+  }
 
   return (
     <span className="logprob-overlay">
@@ -87,19 +94,22 @@ export function LogprobOverlay({ logprobs, content, plain, onTokenClick, cutAt }
         >
           {isSpecial(token.token)
             ? <span className="logprob-special">↵</span>
-            : i === 0 && trimFirst ? token.token.trimStart() : token.token}
+            : visible(token.token, i)}
           {hoveredIndex === i && <TokenTooltip token={token} />}
         </span>
       ))}
-      {shown < tokens.length && (
+      {(shown < tokens.length || overflow > 0) && (
         <span
           className="logprob-token"
           onMouseEnter={() => setHoveredIndex(shown)}
           onMouseLeave={() => setHoveredIndex(null)}
-          title={`End of turn: ${JSON.stringify(tokens.slice(shown).map((t) => t.token).join(''))}`}
+          title={`End of turn: ${JSON.stringify(
+            (overflow ? tokens[shown - 1].token.slice(-overflow) : '')
+            + tokens.slice(shown).map((t) => t.token).join(''),
+          )}`}
         >
           <span className="logprob-special">↵</span>
-          {hoveredIndex === shown && <TokenTooltip token={tokens[shown]} />}
+          {hoveredIndex === shown && shown < tokens.length && <TokenTooltip token={tokens[shown]} />}
         </span>
       )}
     </span>

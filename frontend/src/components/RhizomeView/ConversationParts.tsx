@@ -12,6 +12,7 @@ import { CrossModelPanel } from './CrossModelPanel.tsx'
 import { FirstTurnAction } from './FirstTurnAction.tsx'
 import { ForkPanel } from './ForkPanel.tsx'
 import { GenerationErrorPanel } from './GenerationErrorPanel.tsx'
+import { ProbePanel } from './ProbePanel.tsx'
 import { ReplayPanel } from './ReplayPanel.tsx'
 import { StreamingDisplay } from './StreamingDisplay.tsx'
 import { SummarizePanel } from './SummarizePanel.tsx'
@@ -44,7 +45,7 @@ export function ForkPanelFor({ view, mode }: { view: View; mode: NonNullable<Vie
 
 /** Whatever panel is open under this node. */
 export function NodePanels({ view, node }: { view: View; node: NodeResponse }) {
-  const { providers } = useRhizomeData()
+  const { providers, currentRhizome } = useRhizomeData()
   const { isGenerating } = useStreamingState()
   const prefillAssistant = useRhizomeStore(s => s.prefillAssistant)
   const { forkTarget } = view.fork
@@ -61,6 +62,15 @@ export function NodePanels({ view, node }: { view: View; node: NodeResponse }) {
     <>
       {forkHere && <ForkPanelFor view={view} mode={forkTarget.mode} />}
       {open === 'summarize' && <SummarizePanel nodeId={node.node_id} onClose={view.closePanel} />}
+      {open === 'probe' && currentRhizome && (
+        <ProbePanel
+          rhizomeId={currentRhizome.rhizome_id}
+          nodeId={node.node_id}
+          provider={view.branchDefaults.provider}
+          model={view.branchDefaults.model}
+          onClose={view.closePanel}
+        />
+      )}
       {open === 'replay' && (() => {
         const from = view.path.findIndex((n) => n.node_id === node.node_id)
         if (from === -1) return null

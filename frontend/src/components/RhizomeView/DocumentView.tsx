@@ -21,6 +21,7 @@ import { GenerationErrorPanel } from './GenerationErrorPanel.tsx'
 import { LogprobOverlay } from './LogprobOverlay.tsx'
 import { averageCertainty } from './logprobColor.ts'
 import { formatSamplingMeta, formatUsage } from './nodeFormat.ts'
+import { ProbePanel } from './ProbePanel.tsx'
 import { PromptTextViewer } from './PromptTextViewer.tsx'
 import { TokenBranch } from './TokenBranch.tsx'
 import { useAutoScroll, useConversationView, useScrollToNode } from './useViewShared.ts'
@@ -74,6 +75,8 @@ export function DocumentView() {
   // Writing at a branch point instead of the end ('' for the beginning)
   const [writeAfter, setWriteAfter] = useState<string | null>(null)
   const composerRef = useRef<HTMLTextAreaElement>(null)
+  // Probing what comes next after this node ('' for the beginning)
+  const [probeAt, setProbeAt] = useState<string | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   useAutoScroll(bottomRef, path.length)
   useScrollToNode()
@@ -259,6 +262,17 @@ export function DocumentView() {
             />
           )}
 
+          {probeAt != null && currentRhizome && (
+            <ProbePanel
+              key={probeAt}
+              rhizomeId={currentRhizome.rhizome_id}
+              nodeId={probeAt}
+              provider={branchDefaults.provider}
+              model={branchDefaults.model}
+              onClose={() => setProbeAt(null)}
+            />
+          )}
+
           {view.fork.forkTarget != null && !isGenerating && (
             <ForkPanelFor view={view} mode={view.fork.forkTarget.mode} />
           )}
@@ -329,6 +343,13 @@ export function DocumentView() {
               >
                 Steer from here
               </button>
+              <button
+                disabled={isGenerating}
+                onClick={() => setProbeAt(selected.node_id)}
+                title="Sample what might come next here, grouped by what it says"
+              >
+                Probe what's next
+              </button>
               {isModel(selected) && (
                 <button
                   className={showDetails ? 'active' : undefined}
@@ -382,6 +403,7 @@ export function DocumentView() {
           onContinue={composer.continue}
           onAdd={composer.add}
           onSteer={composer.steer}
+          onProbe={() => setProbeAt(writeUnder)}
           onStop={stopGeneration}
         />
       </div>
@@ -396,7 +418,7 @@ export function DocumentView() {
  * and line breaks included, since the model sees the text joined as-is.
  */
 function DocumentComposer({
-  textareaRef, isGenerating, atBranch, onCancelBranch, onContinue, onAdd, onSteer, onStop,
+  textareaRef, isGenerating, atBranch, onCancelBranch, onContinue, onAdd, onSteer, onProbe, onStop,
 }: {
   textareaRef: React.RefObject<HTMLTextAreaElement | null>
   isGenerating: boolean
@@ -406,6 +428,7 @@ function DocumentComposer({
   onContinue: (text: string) => void
   onAdd: (text: string) => void
   onSteer: (text: string) => void
+  onProbe: () => void
   onStop: () => void
 }) {
   const [text, setText] = useState('')
@@ -499,6 +522,14 @@ function DocumentComposer({
           title="Steer what comes next, token by token (local models)"
         >
           Steer
+        </button>
+        <button
+          className="send-only-btn"
+          onClick={onProbe}
+          disabled={isGenerating}
+          title="Sample what might come next, grouped by what it says"
+        >
+          Probe
         </button>
       </div>
       {onlySpace && (

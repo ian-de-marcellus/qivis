@@ -37,6 +37,7 @@ export interface MessageRowActions {
   onExperiment?: () => void
   onWriteResponse?: () => void
   onSteer?: () => void
+  onProbe?: () => void
 }
 
 interface MessageRowProps {
@@ -59,7 +60,7 @@ export const MessageRow = memo(function MessageRow({
     onSelectSibling, onFork, onPrefill, onGenerate, onCompare,
     onEdit, onInspect, onBookmarkToggle, onExcludeToggle,
     onAnchorToggle, onGroupToggle, onSplitView, onComparisonPick,
-    onSummarize, onReplay, onCrossModel, onExperiment, onWriteResponse, onSteer,
+    onSummarize, onReplay, onCrossModel, onExperiment, onWriteResponse, onSteer, onProbe,
   } = actions
 
   const [showLogprobs, setShowLogprobs] = useState(false)
@@ -138,6 +139,9 @@ export const MessageRow = memo(function MessageRow({
           )}
           {onSteer && (
             <ActionMenuItem onClick={onSteer}>Steer from here</ActionMenuItem>
+          )}
+          {onProbe && (
+            <ActionMenuItem onClick={onProbe}>Probe what comes next</ActionMenuItem>
           )}
           {onCrossModel && (
             <ActionMenuItem onClick={onCrossModel}>Cross-model</ActionMenuItem>

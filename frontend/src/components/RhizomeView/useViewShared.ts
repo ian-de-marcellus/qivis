@@ -181,7 +181,7 @@ export function useForkPanel() {
   }
 }
 
-export type NodePanelKind = 'summarize' | 'replay' | 'crossModel' | 'writeResponse'
+export type NodePanelKind = 'summarize' | 'replay' | 'crossModel' | 'writeResponse' | 'probe'
 
 /**
  * Everything a conversation view (chat or completion) shares: the active
@@ -276,6 +276,7 @@ export function useConversationView() {
       onCrossModel: () => togglePanel('crossModel', node.node_id),
       onWriteResponse: isUser ? () => togglePanel('writeResponse', node.node_id) : undefined,
       onSteer: () => openSteer(node.node_id),
+      onProbe: () => togglePanel('probe', node.node_id),
     }
   }
 

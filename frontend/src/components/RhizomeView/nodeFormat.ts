@@ -49,6 +49,13 @@ export function formatTimestamp(isoString: string): string {
  * too (in a steered reply: the handover to the next speaker, or an end-of-
  * turn token) but trimmed from the text; they show as one end-of-turn mark.
  */
+/** How much of the last counted token lies past the saved text (a token can hold
+ *  both the reply's end and the next speaker's start, e.g. "?\n\ng"). */
+export function textTokenOverflow(tokens: { token: string }[], content: string): number {
+  const shown = tokens.slice(0, textTokenCount(tokens, content)).map((t) => t.token).join('')
+  return Math.max(0, shown.trimStart().length - content.trimStart().length)
+}
+
 export function textTokenCount(tokens: { token: string }[], content: string): number {
   const target = content.trimStart().length
   if (target === 0) return tokens.length

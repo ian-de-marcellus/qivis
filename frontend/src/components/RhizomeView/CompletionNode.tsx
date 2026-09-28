@@ -30,6 +30,7 @@ export interface CompletionNodeActions {
   onFork: () => void
   onGenerate?: () => void
   onSteer?: () => void
+  onProbe?: () => void
   onBookmarkToggle?: () => void
   onExcludeToggle?: () => void
   onAnchorToggle?: () => void
@@ -47,7 +48,7 @@ export const CompletionNode = memo(function CompletionNode({
   node, siblings, actions, isExcludedOnPath,
 }: CompletionNodeProps) {
   const {
-    onSelectSibling, onFork, onGenerate, onSteer,
+    onSelectSibling, onFork, onGenerate, onSteer, onProbe,
     onBookmarkToggle, onExcludeToggle, onAnchorToggle, onSummarize,
   } = actions
 
@@ -98,6 +99,9 @@ export const CompletionNode = memo(function CompletionNode({
           )}
           {onSteer && (
             <ActionMenuItem onClick={onSteer}>Steer from here</ActionMenuItem>
+          )}
+          {onProbe && (
+            <ActionMenuItem onClick={onProbe}>Probe what comes next</ActionMenuItem>
           )}
         </ActionMenu>
 
