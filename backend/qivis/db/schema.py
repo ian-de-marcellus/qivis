@@ -308,6 +308,7 @@ _MIGRATIONS: list[tuple[str, str]] = [
      ")"),
     ("023_probes_rhizome_id_index",
      "CREATE INDEX IF NOT EXISTS idx_probes_rhizome_id ON probes(rhizome_id)"),
+    ("024_probes_asked", "ALTER TABLE probes ADD COLUMN asked INTEGER"),
 ]
 
 

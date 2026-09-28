@@ -340,6 +340,7 @@ class ProbeRecordedPayload(BaseModel):
     provider: str
     model: str
     samples: list[dict]  # NodeCreatedPayload dumps, not yet nodes
+    asked: int | None = None  # samples asked for (fewer come back if some fail)
     # The answer each sample gives, as a judge model named it (None: not judged)
     judge: dict | None = None
 

@@ -177,6 +177,9 @@ export function ProbePanel({ rhizomeId, nodeId, provider, model, onClose }: Prob
 
           <div className="probe-foot">
             {total} samples at temperature 1 from {probe.model.replace(/\.gguf$/, '')}
+            {probe.asked != null && probe.asked > total && (
+              <span className="probe-failed"> ({probe.asked - total} of {probe.asked} failed)</span>
+            )}
             {' '}· ranges are 95% intervals for the share · hover a word for its probability
             {probe.judge
               ? <> · grouped by {probe.judge.model.replace(/\.gguf$/, '')} (its reading, not the model&apos;s)</>

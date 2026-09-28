@@ -193,3 +193,7 @@
 .probe-range {
   opacity: 0.7;
 }
+
+.probe-failed {
+  color: var(--error-text);
+}

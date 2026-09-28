@@ -4,7 +4,7 @@ import { groupByAnswer, shareRange } from './probeGroups.ts'
 
 const probe = (answers: string[] | null): Probe => ({
   probe_id: 'p', node_id: 'n', provider: 'llamacpp', model: 'm', created_at: '',
-  prompt_text: '', sampling_params: null,
+  prompt_text: '', sampling_params: null, asked: null,
   samples: (answers ?? ['a', 'b']).map((a) => ({ content: a, finish_reason: 'stop', logprobs: null })),
   judge: answers ? { model: 'j', answers, messages: [] } : null,
 })

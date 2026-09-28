@@ -10,6 +10,7 @@ noting the probe it came from.
 
 import asyncio
 import json
+import logging
 from typing import Any
 from uuid import uuid4
 
@@ -25,6 +26,8 @@ from qivis.providers.llamacpp import LlamaCppProvider
 from qivis.providers.registry import get_provider
 from qivis.rhizomes.schemas import NodeResponse
 from qivis.rhizomes.service import RhizomeService
+
+logger = logging.getLogger(__name__)
 
 # Samples in flight at once (llama-server serves a few in parallel)
 CONCURRENCY = 4
@@ -76,9 +79,11 @@ class ProbeService:
 
         results = await asyncio.gather(*[sample() for _ in range(n)], return_exceptions=True)
         done = [r for r in results if isinstance(r, GenerationResult)]
+        failed = [r for r in results if isinstance(r, BaseException)]
+        for error in failed:
+            logger.warning("A probe sample failed: %r", error)
         if not done:
-            error = next(r for r in results if isinstance(r, BaseException))
-            raise error
+            raise failed[0]
         samples = [self._gen.node_record(p, r).model_dump(mode="json") for r in done]
 
         judge = await self._judge(samples)
@@ -89,6 +94,7 @@ class ProbeService:
             "provider": provider.name,
             "model": p.model,
             "samples": samples,
+            "asked": n,
             "judge": judge,
         })
         return await self.get(rhizome_id, probe_id)
@@ -144,6 +150,8 @@ def _response(row: dict) -> dict[str, Any]:
         "provider": row["provider"],
         "model": row["model"],
         "created_at": row["created_at"],
+        # How many samples were asked for (some can fail); None for older probes
+        "asked": row.get("asked"),
         "prompt_text": samples[0].get("prompt_text") if samples else None,
         "sampling_params": samples[0].get("sampling_params") if samples else None,
         "samples": [

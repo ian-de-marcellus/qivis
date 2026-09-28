@@ -582,6 +582,8 @@ export interface Probe {
   prompt_text: string | null
   sampling_params: SamplingParams | null
   samples: ProbeSample[]
+  /** Samples asked for (fewer came back if some failed); null for older probes */
+  asked: number | null
   judge: {
     model: string
     answers: string[]
