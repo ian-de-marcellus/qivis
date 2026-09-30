@@ -626,6 +626,8 @@ export interface NameStudyCell {
   top: Record<string, number> | null
   capital_mass: number | null
   scores: Record<string, number> | null
+  /** Per study name, its first token here: probability, the token, the name's length in tokens */
+  firsts?: Record<string, { p: number; t: string; n: number }> | null
   queries: number
 }
 

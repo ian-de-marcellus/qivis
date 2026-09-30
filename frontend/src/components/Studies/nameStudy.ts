@@ -26,6 +26,9 @@ export interface Comparison {
   /** How many times more likely than for the control / with no description */
   vsControl: number
   vsBare: number
+  /** vsControl with the name's first token divided out: its lean given how it starts
+   *  (NaN for a one-token name, whose lean is all its own) */
+  own: number
 }
 
 export interface NameRow extends Comparison {
@@ -53,7 +56,30 @@ function compare(study: NameStudy, cells: NameStudyCell[], name: string): Compar
     const v = other && value(other, name)
     return v == null ? [] : [ln(value(c, name) ?? 0) - ln(v)]
   }))
-  return { p: Math.exp(mean(logs)), vsControl: Math.exp(ratio('control')), vsBare: Math.exp(ratio('bare')) }
+  const own = mean(cells.flatMap((c) => {
+    const other = pair(study, c, 'control')
+    const f = c.firsts?.[name]
+    const g = other?.firsts?.[name]
+    const v = value(c, name)
+    const w = other && value(other, name)
+    if (!f || !g || f.n < 2 || v == null || w == null) return []
+    return [(ln(v) - ln(f.p)) - (ln(w) - ln(g.p))]
+  }))
+  return {
+    p: Math.exp(mean(logs)), vsControl: Math.exp(ratio('control')), vsBare: Math.exp(ratio('bare')),
+    own: Math.exp(own),
+  }
+}
+
+/** The name's first token, if it's longer than one (" Mind" for Mindy). */
+export function firstToken(study: NameStudy, model: string, name: string): string | null {
+  const f = study.cells.find((c) => c.model === model && c.firsts?.[name])?.firsts?.[name]
+  return f && f.n > 1 ? f.t : null
+}
+
+/** High against the control only on its first token: its lean is borrowed ("Mindy" from "Mind"). */
+export function borrowed(row: Comparison): boolean {
+  return row.vsControl >= 2 && !Number.isNaN(row.own) && row.own < 1.2
 }
 
 /** The names scored in every cell of this model (the study's names). */

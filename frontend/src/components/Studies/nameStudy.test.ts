@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { NameStudy, NameStudyCell } from '../../api/types.ts'
-import { frameAgreement, nameRows, ownTop, pronounPull, studyContrast, studyNames, withPronouns } from './nameStudy.ts'
+import { borrowed, frameAgreement, nameRows, ownTop, pronounPull, studyContrast, studyNames, withPronouns } from './nameStudy.ts'
 
 const cell = (
   pronoun: string, frame: string, condition: NameStudyCell['condition'],
@@ -90,5 +90,22 @@ describe('studyContrast', () => {
     } as NameStudy
     expect(studyContrast(study, other, 'm', 'HAL')).toBeCloseTo(4)
     expect(studyContrast(study, other, 'm', 'Nobody')).toBeNaN()
+  })
+})
+
+describe('own lean', () => {
+  it("divides out the first token: Mindy's lean is Mind's", () => {
+    const f = (p: number) => ({ Mindy: { p, t: ' Mind', n: 2 }, Eliza: { p: p / 2, t: ' El', n: 2 } })
+    const c = (condition: NameStudyCell['condition'], mindy: number, eliza: number, first: number) =>
+      ({ ...cell('he', 'A', condition, { Mindy: mindy, Eliza: eliza }), firsts: f(first) })
+    const s = {
+      ...study, spec: { ...study.spec, frames: { he: ['A'] } },
+      cells: [c('model', 0.008, 0.04, 0.04), c('control', 0.001, 0.005, 0.002), c('bare', 0.001, 0.005, 0.002)],
+    } as NameStudy
+    const rows = Object.fromEntries(nameRows(s, 'm').map((r) => [r.name, r]))
+    expect(rows.Mindy.vsControl).toBeCloseTo(8)
+    expect(rows.Mindy.own).toBeCloseTo(0.4)  // (0.008/0.04) / (0.001/0.002)
+    expect(borrowed(rows.Mindy)).toBe(true)
+    expect(rows.Eliza.own).toBeCloseTo(0.4)  // (0.04/0.02) / (0.005/0.001) = 2/5
   })
 })
