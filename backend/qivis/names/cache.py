@@ -12,12 +12,20 @@ with, above the engine's floor, and the probability of ending a word.
 
 It's derived data, like a projection, not a record: clearing it loses
 nothing but time.
+
+A lookup's response is the whole vocabulary as JSON (about 9 MB for OLMo);
+parsing it takes longer than the model takes to read the prompt. So it's
+parsed in worker processes, several at once, and only the small Summary
+comes back to the event loop.
 """
 
+import asyncio
 import hashlib
 import json
 import zlib
 from array import array
+from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures.process import BrokenProcessPool
 from typing import Any
 
 from qivis.db.connection import Database
@@ -27,6 +35,38 @@ from qivis.providers.base import GenerationRequest
 from qivis.providers.llamacpp import LlamaCppProvider
 
 LOOKUP_K = 1_000_000  # the whole vocabulary (llama.cpp clamps it)
+
+# Worker processes parsing responses (one per llama.cpp slot)
+PARSERS = 4
+
+_pool: ProcessPoolExecutor | None = None
+
+
+def _parsers() -> ProcessPoolExecutor:
+    global _pool
+    if _pool is None:
+        _pool = ProcessPoolExecutor(max_workers=PARSERS)
+    return _pool
+
+
+def shutdown_parsers() -> None:
+    """Stop the workers (at app shutdown; left running, they outlive a reload)."""
+    global _pool
+    if _pool is not None:
+        _pool.shutdown(cancel_futures=True)
+        _pool = None
+
+
+async def summarize_response(raw: bytes) -> engine.Summary:
+    """engine.summarize_response, in a worker process."""
+    global _pool
+    try:
+        return await asyncio.get_running_loop().run_in_executor(
+            _parsers(), engine.summarize_response, raw,
+        )
+    except BrokenProcessPool:  # a worker died: start fresh ones next time, parse this here
+        _pool = None
+        return engine.summarize_response(raw)
 
 
 class DistributionCache:
@@ -59,8 +99,8 @@ class DistributionCache:
         request = GenerationRequest(
             model=model, messages=[], prompt_text=prompt, sampling_params=SamplingParams(),
         )
-        dist = (await self._llama.next_tokens(request, ids, LOOKUP_K))["candidates"]
-        summary = engine.summarize(dist)
+        raw, _, _ = await self._llama.next_tokens_raw(request, ids, LOOKUP_K)
+        summary = await summarize_response(raw)
         await self._store(ident, key, summary)
         return summary
 

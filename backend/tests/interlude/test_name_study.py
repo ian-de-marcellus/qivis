@@ -2,6 +2,7 @@
 everywhere, each result recorded as it's found (so a study resumes)."""
 
 import asyncio
+import json
 
 from qivis.db.connection import Database
 from qivis.events.projector import StateProjector
@@ -30,7 +31,8 @@ class FakeLlama(LlamaCppProvider):
         by_text = {v: k for k, v in TOK.items()}
         return [{"id": by_text[text], "token": text}] if text in by_text else []
 
-    async def next_tokens(self, request, continuation, k):
+    async def next_tokens_raw(self, request, continuation, k):
+        """The server's response, as llama.cpp sends it (parsed by the study's workers)."""
         self.queries += 1
         prompt = request.prompt_text or ""
         if continuation:  # after a name: the word ends
@@ -39,7 +41,9 @@ class FakeLlama(LlamaCppProvider):
             probs = {1: 0.5, 5: 0.3, 2: 0.1, 3: 0.1}
         else:
             probs = {2: 0.7, 1: 0.1, 5: 0.1, 3: 0.1}
-        return {"candidates": [{"id": i, "token": TOK[i], "prob": p} for i, p in probs.items()]}
+        top = [{"id": i, "token": TOK[i], "prob": p} for i, p in probs.items()]
+        body = {"completion_probabilities": [{"top_probs": top}]}
+        return json.dumps(body).encode(), None, None
 
 
 SPEC = StudySpec(

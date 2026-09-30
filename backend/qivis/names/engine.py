@@ -18,6 +18,7 @@ Rules for what counts (a name study records them with its results):
 """
 
 import heapq
+import json
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
@@ -80,6 +81,14 @@ def summarize(dist: list[Candidate], floor: float = FLOOR) -> Summary:
         ends=sum(c["prob"] for c in dist if not _continues(c["token"])),
         ends_with_punctuation=sum(c["prob"] for c in dist if c["token"].startswith(PUNCTUATION)),
     )
+
+
+def summarize_response(raw: bytes, floor: float = FLOOR) -> Summary:
+    """A llama.cpp /completion response (n_probs, one token), summarized. Pure,
+    so it can run in a worker process: the response is megabytes of JSON, the
+    Summary a few kilobytes."""
+    probs = (json.loads(raw).get("completion_probabilities") or [{}])[0]
+    return summarize(probs.get("top_probs", []), floor)
 
 
 @dataclass

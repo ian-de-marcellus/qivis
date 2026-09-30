@@ -28,6 +28,7 @@ from qivis.importer.router import get_import_service
 from qivis.importer.router import router as import_router
 from qivis.importer.service import ImportService
 from qivis.model_catalog import ModelCatalog, get_catalog, set_catalog
+from qivis.names.cache import shutdown_parsers
 from qivis.names.router import get_name_study_service
 from qivis.names.router import router as names_router
 from qivis.names.study import NameStudyService
@@ -164,6 +165,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     yield
 
     clear_providers()
+    shutdown_parsers()
     await db.close()
 
 

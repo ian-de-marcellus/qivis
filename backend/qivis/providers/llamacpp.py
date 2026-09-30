@@ -626,6 +626,22 @@ class LlamaCppProvider(LLMProvider):
         model's logit bias applied, no truncation, temperature 1. Returns
         {"candidates": [{id, token, bytes, prob}], "logit_bias", "effective_prompt"}.
         """
+        raw, applied, effective_prompt = await self.next_tokens_raw(request, continuation, k)
+        probs = (json.loads(raw).get("completion_probabilities") or [{}])[0]
+        candidates = [
+            {"id": c["id"], "token": c["token"], "bytes": c.get("bytes"), "prob": c["prob"]}
+            for c in probs.get("top_probs", [])
+        ]
+        return {
+            "candidates": candidates, "logit_bias": applied, "effective_prompt": effective_prompt,
+        }
+
+    async def next_tokens_raw(
+        self, request: GenerationRequest, continuation: list[int], k: int,
+    ) -> tuple[bytes, dict | None, str | None]:
+        """next_tokens' server response, unparsed (a full vocabulary is megabytes
+        of JSON: a caller may parse it off the event loop), with the logit bias
+        applied and the effective prompt."""
         served = await self._served_model(request.model) if self._model_defaults else None
         applied = self._effective_logit_bias(request, served)
         body = self._build_request_body(request, applied)
@@ -649,14 +665,7 @@ class LlamaCppProvider(LLMProvider):
         body.pop("grammar", None)
         resp = await self._client.post(f"{self._base_url}/completion", json=body)
         resp.raise_for_status()
-        probs = (resp.json().get("completion_probabilities") or [{}])[0]
-        candidates = [
-            {"id": c["id"], "token": c["token"], "bytes": c.get("bytes"), "prob": c["prob"]}
-            for c in probs.get("top_probs", [])
-        ]
-        return {
-            "candidates": candidates, "logit_bias": applied, "effective_prompt": effective_prompt,
-        }
+        return resp.content, applied, effective_prompt
 
     async def model_identity(self, model: str = "") -> dict[str, Any]:
         """Everything about the served model that shapes its distributions: its

@@ -37,6 +37,7 @@ from qivis.providers.registry import get_provider
 logger = logging.getLogger(__name__)
 
 LOOKUP_K = 1_000_000  # the whole vocabulary (llama.cpp clamps it)
+CELLS_AT_ONCE = 4  # one per llama.cpp slot, so each keeps its prompt cached
 
 DEFAULT_FRAMES = {
     "he": ["His name is", "He is called", "His name was", "He calls himself"],
@@ -241,18 +242,18 @@ class NameStudyService:
             return start + study_text(spec, c[1], c[2], c[3])
 
         # 1. Each cell's own top names
-        for i, c in enumerate(mine):
-            self._progress[study_id] = {
-                "model": model, "phase": "finding each cell's top names",
-                "done": i, "of": len(mine),
-            }
+        async def enumerate_cell(c: tuple[str, str, str, str]) -> None:
             if (await self._cell(study_id, c)).get("top") is not None:
-                continue
+                return
             lookups = engine.Lookups(self._fetcher(llama, model, prompt_of(c)))
             top, capital = await engine.enumerate_names(lookups, spec.top)
             await self._record(study_id, "NameStudyCellEnumerated", c, prompt_of(c), {
                 "top": top, "capital_mass": capital, "queries": lookups.queries,
             })
+
+        await self._each_cell(
+            study_id, model, mine, "finding each cell's top names", enumerate_cell,
+        )
 
         # 2. Per pronoun set, the description's frames unified
         names = set(spec.extra_names)
@@ -280,13 +281,11 @@ class NameStudyService:
         spellings: dict[str, list[dict]] = {}
         for name in sorted(names):
             spellings[name] = await llama.tokenize(" " + name, model)
-        for i, c in enumerate(mine):
-            self._progress[study_id] = {
-                "model": model, "phase": "first tokens", "done": i, "of": len(mine),
-            }
+
+        async def firsts_of(c: tuple[str, str, str, str]) -> None:
             cell = await self._cell(study_id, c)
             if set(names) <= set(cell.get("firsts") or {}):
-                continue
+                return
             first = await self._fetcher(llama, model, prompt_of(c))([])
             probs = {tid: p for tid, (_, p) in first.probs.items()}
             firsts = dict(cell.get("firsts") or {})
@@ -300,13 +299,41 @@ class NameStudyService:
                 "firsts": firsts, "queries": 1,
             })
 
+        await self._each_cell(study_id, model, mine, "first tokens", firsts_of)
+
+    async def _each_cell(self, study_id, model, cells, phase, work) -> None:
+        """`work` on every cell, CELLS_AT_ONCE at a time: a cell's lookups follow
+        one another (each depends on the last), so it's cells that overlap, one
+        per llama.cpp slot. One failing stops the rest."""
+        slots = asyncio.Semaphore(CELLS_AT_ONCE)
+        done = 0
+
+        def report() -> None:
+            self._progress[study_id] = {
+                "model": model, "phase": phase, "done": done, "of": len(cells),
+            }
+
+        async def one(c) -> None:
+            nonlocal done
+            async with slots:
+                await work(c)
+            done += 1
+            report()
+
+        report()
+        try:
+            async with asyncio.TaskGroup() as group:
+                for c in cells:
+                    group.create_task(one(c))
+        except ExceptionGroup as failed:  # the study reports the error itself
+            raise failed.exceptions[0] from None
+
     async def _score_all(self, study_id, llama, model, cells, names, prompt_of, phase) -> None:
-        for i, c in enumerate(cells):
-            self._progress[study_id] = {"model": model, "phase": phase, "done": i, "of": len(cells)}
+        async def score_cell(c) -> None:
             cell = await self._cell(study_id, c)
             missing = [n for n in names if value(cell, n) is None]
             if not missing:
-                continue
+                return
             lookups = engine.Lookups(self._fetcher(llama, model, prompt_of(c)))
             scores = dict(cell.get("scores") or {})
             for name in sorted(missing):
@@ -315,6 +342,8 @@ class NameStudyService:
             await self._record(study_id, "NameStudyCellScored", c, prompt_of(c), {
                 "scores": scores, "queries": lookups.queries,
             })
+
+        await self._each_cell(study_id, model, cells, phase, score_cell)
 
     def _cache_for(self, llama: LlamaCppProvider) -> DistributionCache:
         if self._cache is None or self._cache_llama is not llama:
