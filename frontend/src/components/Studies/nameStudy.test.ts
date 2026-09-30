@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { NameStudy, NameStudyCell } from '../../api/types.ts'
-import { frameAgreement, nameRows, ownTop, pronounPull, studyNames, withPronouns } from './nameStudy.ts'
+import { frameAgreement, nameRows, ownTop, pronounPull, studyContrast, studyNames, withPronouns } from './nameStudy.ts'
 
 const cell = (
   pronoun: string, frame: string, condition: NameStudyCell['condition'],
@@ -79,5 +79,16 @@ describe('pronounPull', () => {
       ],
     } as NameStudy
     expect(pronounPull(s, 'm', 'Eliza', 'she', 'it')).toBeCloseTo(Math.sqrt(40 * 2.5))  // 10
+  })
+})
+
+describe('studyContrast', () => {
+  it('pairs cells by pronoun and frame across studies', () => {
+    const other = {
+      ...study,
+      cells: study.cells.map((c) => ({ ...c, top: Object.fromEntries(Object.entries(c.top ?? {}).map(([n, p]) => [n, p / 4])) })),
+    } as NameStudy
+    expect(studyContrast(study, other, 'm', 'HAL')).toBeCloseTo(4)
+    expect(studyContrast(study, other, 'm', 'Nobody')).toBeNaN()
   })
 })

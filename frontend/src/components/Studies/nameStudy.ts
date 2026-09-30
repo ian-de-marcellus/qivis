@@ -165,3 +165,21 @@ export function withPronouns(text: string, to: string): string {
     return out + space + after
   })
 }
+
+/**
+ * How many times more likely a name is for one study's description than for
+ * another's (same subject condition), cells paired by pronoun and frame; only
+ * the pronoun given, if one is. NaN if the studies share no scored pairs.
+ */
+export function studyContrast(
+  a: NameStudy, b: NameStudy, model: string, name: string, pronoun?: string,
+): number {
+  const logs = cellsOf(a, model, 'model', pronoun).flatMap((cell) => {
+    const other = b.cells.find((c) =>
+      c.model === model && c.condition === 'model' && c.pronoun === cell.pronoun && c.frame === cell.frame)
+    const va = value(cell, name)
+    const vb = other && value(other, name)
+    return va == null || vb == null ? [] : [ln(va) - ln(vb)]
+  })
+  return logs.length ? Math.exp(mean(logs)) : NaN
+}

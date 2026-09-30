@@ -13,7 +13,7 @@ import * as api from '../../api/client.ts'
 import type { NameStudy, NameStudySpec, NameStudySummary } from '../../api/types.ts'
 import { useModalBehavior } from '../../hooks/useModalBehavior.ts'
 import { useRhizomeData, useRhizomeStore } from '../../store/rhizomeStore.ts'
-import { frameAgreement, nameRows, ownTop, value, withPronouns, type NameRow } from './nameStudy.ts'
+import { frameAgreement, nameRows, ownTop, studyContrast, value, withPronouns, type NameRow } from './nameStudy.ts'
 import './NameStudiesView.css'
 
 const PRONOUNS = ['he', 'she', 'they', 'it']
@@ -240,13 +240,25 @@ function NewStudy({ onCreated }: { onCreated: (studyId: string) => void }) {
 // -- A study's results --
 
 /** A column to sort by: an overall one, or a pronoun's ("over:she", "human:she") */
-type SortKey = 'p' | 'vsControl' | 'vsBare' | 'name' | `over:${string}` | `human:${string}`
+type SortKey = 'p' | 'vsControl' | 'vsBare' | 'name' | 'shortlist'
+  | `over:${string}` | `human:${string}` | `study:${string}`
 
-function sortValue(r: NameRow, key: SortKey): number {
+/** A row, with how it compares to other studies' descriptions (by study id) */
+interface Row extends NameRow {
+  vsStudy: Record<string, number>
+  /** In a shortlist: the product of every contrast, as a log (higher: stronger on all) */
+  combined: number
+}
+
+function sortValue(r: Row, key: SortKey): number {
+  if (key === 'shortlist') return r.combined
   if (key.startsWith('over:')) return r.overIt[key.slice(5)] ?? NaN
   if (key.startsWith('human:')) return r.byPronoun[key.slice(6)]?.vsControl ?? NaN
+  if (key.startsWith('study:')) return r.vsStudy[key.slice(6)] ?? NaN
   return r[key as 'p' | 'vsControl' | 'vsBare']
 }
+
+const shortTitle = (title: string) => title.replace(/^Names for /, '').replace(/\s*\(.*\)$/, '')
 
 function StudyResults({ studyId, onChange }: { studyId: string; onChange: () => void }) {
   const [study, setStudy] = useState<NameStudy | null>(null)
@@ -256,6 +268,21 @@ function StudyResults({ studyId, onChange }: { studyId: string; onChange: () => 
   const [error, setError] = useState<string | null>(null)
   // Only names more likely for the subject than for the control (2x or more)
   const [aiOnly, setAiOnly] = useState(false)
+  // Other studies to compare this description with, and a pronoun to shortlist for
+  const [others, setOthers] = useState<NameStudySummary[]>([])
+  const [compared, setCompared] = useState<NameStudy[]>([])
+  const [shortlist, setShortlist] = useState('')
+  useEffect(() => {
+    api.listNameStudies().then((list) => setOthers(list.filter((x) => x.study_id !== studyId))).catch(() => {})
+  }, [studyId])
+  const toggleCompare = async (id: string) => {
+    if (compared.some((c) => c.study_id === id)) {
+      setCompared(compared.filter((c) => c.study_id !== id))
+      return
+    }
+    const other = await api.getNameStudy(id)
+    setCompared((cs) => [...cs, other])
+  }
 
   const load = useCallback(() => {
     api.getNameStudy(studyId).then((s) => {
@@ -273,11 +300,26 @@ function StudyResults({ studyId, onChange }: { studyId: string; onChange: () => 
 
   const rows = useMemo(() => {
     if (!study || !model) return []
-    const r = nameRows(study, model).filter((x) => !aiOnly || x.vsControl >= 2)
-    if (sort === 'name') return r.sort((a, b) => a.name.localeCompare(b.name))
-    const v = (x: NameRow) => { const n = sortValue(x, sort); return Number.isNaN(n) ? -Infinity : n }
+    let r: Row[] = nameRows(study, model).filter((x) => !aiOnly || x.vsControl >= 2).map((x) => {
+      const vsStudy = Object.fromEntries(compared.map((c) =>
+        [c.study_id, studyContrast(study, c, model, x.name, shortlist || undefined)]))
+      const factors = shortlist
+        ? [
+          x.byPronoun[shortlist]?.vsControl,
+          ...(shortlist === 'it' || !(shortlist in x.overIt) ? [] : [x.overIt[shortlist]]),
+          ...Object.values(vsStudy),
+        ]
+        : []
+      const ok = factors.every((f) => f != null && !Number.isNaN(f) && f > 1)
+      return { ...x, vsStudy, combined: ok ? factors.reduce((sum, f) => sum + Math.log(f as number), 0) : -Infinity }
+    })
+    // A shortlist: only names that beat every contrast, strongest first
+    if (shortlist) r = r.filter((x) => x.combined > -Infinity)
+    const key: SortKey = shortlist && sort !== 'name' ? 'shortlist' : sort
+    if (key === 'name') return r.sort((a, b) => a.name.localeCompare(b.name))
+    const v = (x: Row) => { const n = sortValue(x, key); return Number.isNaN(n) ? -Infinity : n }
     return r.sort((a, b) => v(b) - v(a))
-  }, [study, model, sort, aiOnly])
+  }, [study, model, sort, aiOnly, compared, shortlist])
 
   if (error) return <div className="study-error">{error}</div>
   if (!study || !model) return <div className="hint">Loading…</div>
@@ -328,6 +370,35 @@ function StudyResults({ studyId, onChange }: { studyId: string; onChange: () => 
             <input type="checkbox" checked={aiOnly} onChange={(e) => setAiOnly(e.target.checked)} />
             only names at least 2× likelier than for {study.spec.control}
           </label>
+          {others.some((o) => o.models.includes(model)) && (
+            <div className="compare-row">
+              <span>Compare with:</span>
+              {others.filter((o) => o.models.includes(model)).map((o) => (
+                <label key={o.study_id} className="choice">
+                  <input
+                    type="checkbox"
+                    checked={compared.some((c) => c.study_id === o.study_id)}
+                    onChange={() => toggleCompare(o.study_id)}
+                  />
+                  {shortTitle(o.title)}
+                </label>
+              ))}
+            </div>
+          )}
+          <div className="compare-row">
+            <span>Shortlist for</span>
+            <select value={shortlist} onChange={(e) => setShortlist(e.target.value)}>
+              <option value="">(off)</option>
+              {study.spec.pronouns.map((p) => <option key={p} value={p}>{p}</option>)}
+            </select>
+            {shortlist && (
+              <span className="hint">
+                names that beat every contrast for "{shortlist}": more likely than for {study.spec.control}
+                {shortlist !== 'it' && hasIt && ', than with "it"'}
+                {compared.length > 0 && ', than for each compared description'}; strongest first
+              </span>
+            )}
+          </div>
           {rows.length === 0 ? (
             <p className="hint">The comparison appears once the names are scored in every cell.</p>
           ) : (
@@ -358,6 +429,12 @@ function StudyResults({ studyId, onChange }: { studyId: string; onChange: () => 
                       {p} ÷ it{sort === `over:${p}` && ' ↓'}
                     </th>
                   ))}
+                  {compared.map((c) => (
+                    <th key={c.study_id} className="pull" onClick={() => setSort(`study:${c.study_id}`)}
+                      title={`How many times more likely for this description than for "${shortTitle(c.title)}"${shortlist ? ` (with "${shortlist}")` : ''}`}>
+                      ÷ {shortTitle(c.title)}{sort === `study:${c.study_id}` && ' ↓'}
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
@@ -377,10 +454,15 @@ function StudyResults({ studyId, onChange }: { studyId: string; onChange: () => 
                       {hasIt && pulled.map((p) => (
                         <td key={`over-${p}`} className={`pull ${r.overIt[p] > 1 ? 'up' : 'down'}`}>{times(r.overIt[p])}</td>
                       ))}
+                      {compared.map((c) => (
+                        <td key={c.study_id} className={`pull ${r.vsStudy[c.study_id] > 1 ? 'up' : 'down'}`}>
+                          {times(r.vsStudy[c.study_id])}
+                        </td>
+                      ))}
                     </tr>
                     {open === r.name && (
                       <tr className="cells-row">
-                        <td colSpan={4 + 2 * study.spec.pronouns.length}>
+                        <td colSpan={4 + 2 * study.spec.pronouns.length + compared.length}>
                           <CellValues study={study} model={model} name={r.name} />
                         </td>
                       </tr>
