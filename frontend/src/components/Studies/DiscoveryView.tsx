@@ -45,6 +45,7 @@ export function DiscoveryView({ discoveryId, studies, onAdded, excluded }: {
 
   if (!d) return <div className="hint">Loading…</div>
   const failures = d.prompts.failure_titles ?? []
+  const other = d.prompts.other_title ?? null
 
   const toggle = (set: Set<string>, item: string, update: (s: Set<string>) => void) => {
     const next = new Set(set)
@@ -69,6 +70,7 @@ export function DiscoveryView({ discoveryId, studies, onAdded, excluded }: {
       <p className="hint">
         "{d.spec.pronoun}" · weights: vs control {d.spec.weights.ai}, vs "it" {d.spec.weights.gender},
         {' '}vs the worst of {failures.map(short).join(' / ') || 'no failure modes'} {d.spec.weights.character}
+        {other && <>, vs {short(other)} {d.spec.weights.other ?? 1}</>}
         {' '}· beam {d.spec.beam}, up to {d.spec.depth} tokens · {d.queries} lookups.
         {' '}A beam search: its numbers are estimates over its frames; add names to a study for the exact record.
       </p>
@@ -92,6 +94,7 @@ export function DiscoveryView({ discoveryId, studies, onAdded, excluded }: {
                   <th>× vs control</th>
                   <th>{d.spec.pronoun} ÷ it</th>
                   <th title="Against the failure mode it leans most toward">× vs worst failure</th>
+                  {other && <th title={other}>× vs {short(other)}</th>}
                   <th title="The search's score (natural log)">score</th>
                 </tr>
               </thead>
@@ -109,6 +112,7 @@ export function DiscoveryView({ discoveryId, studies, onAdded, excluded }: {
                     <td className={r.ai > 0 ? 'up' : 'down'}>{times(r.ai)}</td>
                     <td className={(r.gender ?? 0) > 0 ? 'up' : 'down'}>{times(r.gender)}</td>
                     <td className={(r.character ?? 0) > 0 ? 'up' : 'down'}>{times(r.character)}</td>
+                    {other && <td className={(r.other ?? 0) > 0 ? 'up' : 'down'}>{times(r.other)}</td>}
                     <td>{r.score.toFixed(2)}</td>
                   </tr>
                 ))}
@@ -138,8 +142,9 @@ export function NewDiscovery({ studies, onCreated }: {
 }) {
   const [studyId, setStudyId] = useState(studies[0]?.study_id ?? '')
   const [failuresPicked, setFailures] = useState<string[]>([])
+  const [otherId, setOtherId] = useState('')
   const [pronoun, setPronoun] = useState('she')
-  const [weights, setWeights] = useState({ ai: 1, gender: 1, character: 1 })
+  const [weights, setWeights] = useState({ ai: 1, gender: 1, character: 1, other: 1 })
   const [beam, setBeam] = useState(40)
   const [error, setError] = useState<string | null>(null)
   const study = useMemo(() => studies.find((s) => s.study_id === studyId), [studies, studyId])
@@ -150,7 +155,7 @@ export function NewDiscovery({ studies, onCreated }: {
       const made = await api.createNameDiscovery({
         title: `Discovery: ${pronoun}, ${short(study?.title ?? '')}`,
         model: study?.models[0] ?? '', pronoun, study_id: studyId,
-        failure_study_ids: failuresPicked, weights, beam,
+        failure_study_ids: failuresPicked, other_study_id: otherId || null, weights, beam,
       })
       onCreated(made.discovery_id)
     } catch (e) {
@@ -191,6 +196,15 @@ export function NewDiscovery({ studies, onCreated }: {
           ))}
         </div>
       </div>
+      <label className="field">
+        <span>Also lean away from (optional; weighed on its own)</span>
+        <select value={otherId} onChange={(e) => setOtherId(e.target.value)}>
+          <option value="">Nothing else</option>
+          {studies.filter((s) => s.study_id !== studyId).map((s) => (
+            <option key={s.study_id} value={s.study_id}>{short(s.title)}</option>
+          ))}
+        </select>
+      </label>
       <label className="field narrow">
         <span>Pronoun</span>
         <select value={pronoun} onChange={(e) => setPronoun(e.target.value)}>
@@ -201,6 +215,7 @@ export function NewDiscovery({ studies, onCreated }: {
         {slider('ai', 'vs the control')}
         {slider('gender', `${pronoun} over "it"`)}
         {slider('character', 'vs the worst failure mode')}
+        {otherId && slider('other', `vs ${short(studies.find((s) => s.study_id === otherId)?.title ?? '')}`)}
       </div>
       <label className="field narrow">
         <span>Beam</span>

@@ -74,6 +74,8 @@ class DiscoverySpec(BaseModel):
     # the failure modes from these (their descriptions for the same pronoun)
     study_id: str
     failure_study_ids: list[str] = Field(default_factory=list)
+    # Another description to lean away from, weighed on its own ("other")
+    other_study_id: str | None = None
     weights: dict[str, float] = Field(
         default_factory=lambda: {"ai": 1.0, "gender": 1.0, "character": 1.0},
     )
@@ -398,6 +400,10 @@ class NameStudyService:
             StudySpec.model_validate(json.loads((await self._row(f))["spec"]))
             for f in spec.failure_study_ids
         ]
+        other = (
+            StudySpec.model_validate(json.loads((await self._row(spec.other_study_id))["spec"]))
+            if spec.other_study_id else None
+        )
         p = spec.pronoun
         if p not in study.pronouns:
             raise InvalidRequestError(f"The study has no '{p}' pronoun set")
@@ -411,7 +417,7 @@ class NameStudyService:
             return [start + study_text(s, pronoun, f, condition) for f in fs]
 
         use_it = p != "it" and "it" in study.pronouns and spec.weights.get("gender", 0) != 0
-        for f in failures:
+        for f in [*failures, *([other] if other else [])]:
             if p not in f.pronouns:
                 raise InvalidRequestError(f"'{f.title}' has no '{p}' pronoun set")
         prompts = {
@@ -421,6 +427,8 @@ class NameStudyService:
             "bare": texts(study, p, "bare") if spec.name_floor > 0 else None,
             "failures": [texts(f, p, "model") for f in failures],
             "failure_titles": [f.title for f in failures],
+            "other": texts(other, p, "model") if other else None,
+            "other_title": other.title if other else None,
         }
         discovery_id = f"discovery-{uuid4()}"
         await self._events.emit(discovery_id, "NameDiscoveryCreated", {
@@ -437,6 +445,7 @@ class NameStudyService:
         roles = discovery.Roles(
             description=prompts["description"], control=prompts["control"],
             it=prompts["it"], failures=prompts["failures"], bare=prompts.get("bare"),
+            other=prompts.get("other"),
         )
         weights = discovery.Weights(**spec.weights)
         llama = get_provider("llamacpp")

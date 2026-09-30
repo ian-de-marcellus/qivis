@@ -663,6 +663,8 @@ export interface NameDiscoveryResult {
   ai: number
   gender?: number
   character?: number
+  /** vs the other description, when there is one */
+  other?: number
 }
 
 export interface NameDiscovery {
@@ -674,13 +676,14 @@ export interface NameDiscovery {
     pronoun: string
     study_id: string
     failure_study_ids: string[]
-    weights: { ai: number; gender: number; character: number }
+    other_study_id?: string | null
+    weights: { ai: number; gender: number; character: number; other?: number }
     beam: number
     depth: number
     alpha: number
     top: number
   }
-  prompts: { failure_titles: string[] }
+  prompts: { failure_titles: string[]; other_title?: string | null }
   results: NameDiscoveryResult[] | null
   error: string | null
   queries: number

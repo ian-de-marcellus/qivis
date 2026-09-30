@@ -10,9 +10,13 @@ leans the researcher cares about:
           + b_gender    * mean [log P(... this pronoun) - log P(... "it")]
           + b_character * min over failure descriptions of
                           mean [log P(... description) - log P(... that description)]
+          + b_other     * mean [log P(... description) - log P(... another description)]
 
 means over frames (paired by position), the character term the worst of
-the failure modes (a name that leans toward any of them is penalized).
+the failure modes (a name that leans toward any of them is penalized). The
+other description is one more thing to lean away from, weighed on its own
+(say, the same text about an electronic mind, when the description is of a
+person who is not human: names for that person that aren't AI names).
 
 The search is a beam over token paths: at each step only tokens the model
 finds plausible for the description are tried (at least `alpha` times the
@@ -56,9 +60,12 @@ class Roles:
     failures: list[list[str]]
     # The frames with no description: a name must be at least somewhat likely there
     bare: list[str] | None = None
+    # Another description to lean away from, with a weight of its own
+    other: list[str] | None = None
 
     def all(self) -> list[str]:
         prompts = [*self.description, *self.control, *(self.it or []), *(self.bare or [])]
+        prompts += self.other or []
         for f in self.failures:
             prompts += f
         return list(dict.fromkeys(prompts))
@@ -69,6 +76,7 @@ class Weights:
     ai: float = 1.0
     gender: float = 1.0
     character: float = 1.0
+    other: float = 1.0
 
 
 @dataclass
@@ -88,6 +96,8 @@ def terms(roles: Roles, logs: dict[str, float]) -> dict[str, float]:
     }
     if roles.it:
         out["gender"] = mean([logs[a] - logs[b] for a, b in zip(g, roles.it, strict=True)])
+    if roles.other:
+        out["other"] = mean([logs[a] - logs[b] for a, b in zip(g, roles.other, strict=True)])
     if roles.failures:
         out["character"] = min(
             mean([logs[a] - logs[b] for a, b in zip(g, fail, strict=True)])
@@ -102,6 +112,7 @@ def score(roles: Roles, weights: Weights, logs: dict[str, float]) -> float:
         t["log_p"] + weights.ai * t["ai"]
         + weights.gender * t.get("gender", 0.0)
         + weights.character * t.get("character", 0.0)
+        + weights.other * t.get("other", 0.0)
     )
 
 

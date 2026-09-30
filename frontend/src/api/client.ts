@@ -790,7 +790,8 @@ export function getNameDiscovery(id: string): Promise<NameDiscovery> {
 
 export function createNameDiscovery(spec: {
   title: string; model: string; pronoun: string; study_id: string; failure_study_ids: string[]
-  weights: { ai: number; gender: number; character: number }; beam?: number; depth?: number
+  other_study_id?: string | null
+  weights: { ai: number; gender: number; character: number; other?: number }; beam?: number; depth?: number
   alpha?: number; top?: number
 }): Promise<NameDiscovery> {
   return request('/name-studies/discoveries', { method: 'POST', body: JSON.stringify(spec) })

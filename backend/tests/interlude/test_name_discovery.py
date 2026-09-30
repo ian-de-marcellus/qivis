@@ -61,3 +61,16 @@ async def test_names_under_the_floor_with_no_description_are_dropped():
     found = await discover(fetch, roles, Weights(), alpha=0.01, name_floor=1e-7)
     assert "Wren" not in {f.name for f in found} and "Hal" in {f.name for f in found}
     del FIRST["B"]
+
+
+async def test_another_description_is_weighed_on_its_own():
+    FIRST["O"] = {1: 0.50, 2: 0.10, 3: 0.20, 5: 0.28}  # Wren leans this way too
+    roles = Roles(description=["D"], control=["C"], it=["I"], failures=[["F1"], ["F2"]], other=["O"])
+    t = terms(roles, {"D": math.log(0.02), "C": math.log(0.002), "I": math.log(0.004),
+                      "F1": math.log(0.004), "F2": math.log(0.004), "O": math.log(0.10)})
+    assert t["other"] == pytest.approx(math.log(0.2))
+    found = await discover(fetch, roles, Weights(ai=1, gender=1, character=1, other=0), alpha=0.01)
+    assert found[0].name == "Wren"
+    found = await discover(fetch, roles, Weights(ai=1, gender=1, character=1, other=4), alpha=0.01)
+    assert found[0].name != "Wren"  # weighed heavily, leaning toward the other costs it the top
+    del FIRST["O"]
