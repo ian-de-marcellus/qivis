@@ -329,6 +329,17 @@ class NameStudyService:
             "frame": frame, "condition": condition, "prompt": prompt, **data,
         })
 
+    # -- Excluded names --
+
+    async def excluded_names(self) -> list[str]:
+        row = await self._db.fetchone("SELECT value FROM app_settings WHERE key = 'excluded_names'")
+        return json.loads(row["value"]) if row else []
+
+    async def set_excluded_names(self, names: list[str]) -> list[str]:
+        clean = list(dict.fromkeys(n.strip() for n in names if n.strip()))
+        await self._events.emit("settings", "ExcludedNamesSet", {"names": clean})
+        return clean
+
     # -- Discovery --
 
     async def create_discovery(self, spec: DiscoverySpec) -> dict[str, Any]:
@@ -402,6 +413,7 @@ class NameStudyService:
             found = await discovery.discover(
                 fetch, roles, weights, beam=spec.beam, depth=spec.depth,
                 alpha=spec.alpha, top=spec.top, progress=progress,
+                excluded=set(await self.excluded_names()),
             )
             results = [
                 {"name": f.name, "score": f.score, **discovery.terms(roles, f.logs)}

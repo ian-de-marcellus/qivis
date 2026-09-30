@@ -408,6 +408,12 @@ class NameDiscoveryFinishedPayload(BaseModel):
     queries: int = 0
 
 
+class ExcludedNamesSetPayload(BaseModel):
+    """Names never to shortlist (e.g. taken by AI products): one list for all studies."""
+
+    names: list[str]
+
+
 class NameStudyStatusPayload(BaseModel):
     study_id: str
     status: str  # "queued", "running", "done", "failed", "stopped"
@@ -464,6 +470,7 @@ EVENT_TYPES: dict[str, type[BaseModel]] = {
     "NameStudyCellFirsts": NameStudyCellPayload,
     "NameDiscoveryCreated": NameDiscoveryCreatedPayload,
     "NameDiscoveryFinished": NameDiscoveryFinishedPayload,
+    "ExcludedNamesSet": ExcludedNamesSetPayload,
     # Backward compat: old event type names from before the rename
     "TreeCreated": RhizomeCreatedPayload,
     "TreeMetadataUpdated": RhizomeMetadataUpdatedPayload,

@@ -19,6 +19,7 @@ from qivis.models import (
     DigressionGroupDeletedPayload,
     DigressionGroupToggledPayload,
     EventEnvelope,
+    ExcludedNamesSetPayload,
     NameDiscoveryCreatedPayload,
     NameDiscoveryFinishedPayload,
     NameStudyCellPayload,
@@ -94,6 +95,7 @@ class StateProjector:
             "NameStudyCellFirsts": self._handle_name_study_cell,
             "NameDiscoveryCreated": self._handle_name_discovery_created,
             "NameDiscoveryFinished": self._handle_name_discovery_finished,
+            "ExcludedNamesSet": self._handle_excluded_names_set,
             "NameStudyStatus": self._handle_name_study_status,
             "NameStudyExtended": self._handle_name_study_extended,
         }
@@ -608,6 +610,13 @@ class StateProjector:
         await self._db.execute(
             "UPDATE name_studies SET updated_at = ? WHERE study_id = ?",
             (event.timestamp.isoformat(), p.study_id),
+        )
+
+    async def _handle_excluded_names_set(self, event: EventEnvelope) -> None:
+        p = ExcludedNamesSetPayload.model_validate(event.payload)
+        await self._db.execute(
+            "INSERT OR REPLACE INTO app_settings (key, value) VALUES ('excluded_names', ?)",
+            (json.dumps(p.names),),
         )
 
     async def _handle_name_discovery_created(self, event: EventEnvelope) -> None:

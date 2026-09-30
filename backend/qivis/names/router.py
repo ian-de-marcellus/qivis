@@ -15,6 +15,22 @@ def get_name_study_service() -> NameStudyService:
     raise RuntimeError("NameStudyService not initialized")
 
 
+class Excluded(BaseModel):
+    names: list[str]
+
+
+@router.get("/excluded")
+async def get_excluded(svc: NameStudyService = Depends(get_name_study_service)) -> dict:
+    return {"names": await svc.excluded_names()}
+
+
+@router.put("/excluded")
+async def put_excluded(
+    body: Excluded, svc: NameStudyService = Depends(get_name_study_service),
+) -> dict:
+    return {"names": await svc.set_excluded_names(body.names)}
+
+
 @router.post("/discoveries", status_code=status.HTTP_201_CREATED)
 async def create_discovery(
     spec: DiscoverySpec, svc: NameStudyService = Depends(get_name_study_service),

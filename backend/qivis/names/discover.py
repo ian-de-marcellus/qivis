@@ -116,6 +116,7 @@ async def discover(
     top: int = 60,
     parallel: int = 4,
     progress: Callable[[int, int], None] | None = None,
+    excluded: set[str] | None = None,
 ) -> list[Found]:
     """The names with the best score, found by a beam over token paths."""
     prompts = roles.all()
@@ -174,7 +175,7 @@ async def discover(
             looked = await look(ids)
             name = text.strip()
             ends = {p: _ends(name, looked[p]["ends"], looked[p]["punct"]) for p in prompts}
-            if all(e > 0 for e in ends.values()):
+            if all(e > 0 for e in ends.values()) and name not in (excluded or set()):
                 final = {p: logs[p] + _ln(ends[p]) for p in prompts}
                 s = score(roles, weights, final)
                 if name not in found or s > found[name].score:

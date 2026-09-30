@@ -47,3 +47,8 @@ async def test_the_character_term_is_the_worst_failure_mode():
 async def test_implausible_tokens_are_not_tried():
     found = await discover(fetch, ROLES, Weights(), alpha=0.6)  # only tokens >= 0.6x the best (0.30)
     assert {f.name for f in found} == {"John"}
+
+
+async def test_excluded_names_are_never_found():
+    found = await discover(fetch, ROLES, Weights(), alpha=0.01, excluded={"Wren"})
+    assert "Wren" not in {f.name for f in found} and found
