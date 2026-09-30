@@ -32,6 +32,8 @@ from qivis.generation.interventions import (
     default_registry,
 )
 from qivis.generation.templates import (
+    HEALED_SPACE,
+    heal_trailing_space,
     render_prompt,
     transcript_turn_end,
     transcript_undecided,
@@ -448,6 +450,14 @@ class GenerationService:
                 prompt_text, params, template = self._render_completion(
                     model, messages, built.system_prompt, params, ctx.metadata,
                 )
+            if (
+                prompt_text is not None and not prefill and params.grammar is None
+                and getattr(target.provider, "supports_grammar", False)
+            ):
+                healed = heal_trailing_space(prompt_text)
+                if healed is not None:
+                    prompt_text = healed
+                    params = params.model_copy(update={"grammar": HEALED_SPACE})
             if prefill:
                 if prompt_text is not None:
                     # A transcript turn reads "Sun: text"; words carry their space

@@ -17,6 +17,7 @@ from uuid import uuid4
 
 from qivis.errors import InvalidRequestError, NotFoundError
 from qivis.generation.service import GenerationService, Prepared, Target
+from qivis.generation.templates import HEALED_SPACE
 from qivis.models import AlternativeToken, LogprobData, SamplingParams, TokenLogprob
 from qivis.providers.base import GenerationResult, LLMProvider
 from qivis.rhizomes.schemas import NodeResponse
@@ -100,15 +101,22 @@ class SteeringService:
         """The likeliest next tokens after the reply so far (token ids)."""
         session = self._session(session_id)
         key = tuple(continuation)
+        # A healed trailing space: the first token must start a word. Show the
+        # options given that (renormalized, marked), from the whole vocabulary
+        grammar = session.prepared.request.sampling_params.grammar
+        healed = not continuation and grammar == HEALED_SPACE
+        want = LOOKUP_K if healed else k
         shown = session.shown.get(key)
-        if shown is None or len(shown) < k:
+        if shown is None or len(shown) < want:
             result = await self._provider(session).next_tokens(
-                session.prepared.request, continuation, k,
+                session.prepared.request, continuation, want,
             )
             shown = self._named(session, result["candidates"])
             session.shown[key] = shown
             session.logit_bias = result["logit_bias"]
             session.effective_prompt = result["effective_prompt"]
+        if healed:
+            return starting_a_word(shown)[:k]
         return shown[:k]
 
     async def commit(
@@ -227,3 +235,15 @@ def _log(p: float) -> float:
     # A probability that underflowed to 0 is recorded at the float floor, not -inf
     # (which JSON can't carry)
     return math.log(max(p, 1e-300))
+
+
+def starting_a_word(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The candidates that begin with a space and then a word, their probabilities
+    renormalized among themselves (conditional on starting a word). The record keeps
+    the model's own probabilities: this is only what's shown."""
+    allowed = [c for c in candidates if re.match(r" [^ \t\n]", c["token"])]
+    total = sum(c["prob"] for c in allowed) or 1.0
+    return [
+        {**c, "prob": c["prob"] / total, "raw_prob": c["prob"], "conditional": True}
+        for c in allowed
+    ]

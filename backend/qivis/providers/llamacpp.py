@@ -79,6 +79,8 @@ class LlamaCppProvider(LLMProvider):
     """
 
     supported_modes = ["completion"]
+    # Output can be constrained by a GBNF grammar (e.g. a healed trailing space)
+    supports_grammar = True
     supported_params = [
         "temperature",
         "top_p",
@@ -273,6 +275,8 @@ class LlamaCppProvider(LLMProvider):
             body["top_p"] = sp.top_p
         if sp.top_k is not None:
             body["top_k"] = sp.top_k
+        if sp.grammar:
+            body["grammar"] = sp.grammar
         stops = list(sp.stop_sequences or [])
         extra = self._extra_stops.get(request.model, []) if self._is_llama3(request) else []
         for s in extra:
@@ -640,6 +644,8 @@ class LlamaCppProvider(LLMProvider):
             "cache_prompt": True,
         })
         body.pop("stop", None)
+        # The distribution itself, unconstrained (a caller conditions it if it must)
+        body.pop("grammar", None)
         resp = await self._client.post(f"{self._base_url}/completion", json=body)
         resp.raise_for_status()
         probs = (resp.json().get("completion_probabilities") or [{}])[0]

@@ -432,6 +432,12 @@ export function SteerView({
             g.fillText('other tokens (type to choose)', x0 + 8, restTop + 14)
           }
         }
+        // Options shown conditioned (a healed trailing space: they must start a word)
+        if (dist[0]?.conditional) {
+          g.fillStyle = color('--text-tertiary')
+          g.font = `11px ${color('--font-ui')}`
+          g.fillText('given it starts a new word (your text ended in a space)', x0 + 8, 34)
+        }
         const widths: number[] = []
         L.hits = []
         drawColumn(g, column, ids, top, L.view.s, 0, x0, W, H, color, widths, [], focusId)

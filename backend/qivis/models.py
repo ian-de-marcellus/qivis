@@ -29,6 +29,8 @@ class SamplingParams(BaseModel):
     thinking_budget: int | None = None
     # Token id -> additive logit bias (providers that support it, e.g. llama.cpp)
     logit_bias: dict[int, float] | None = None
+    # A GBNF grammar the output must match (llama.cpp), e.g. HEALED_SPACE
+    grammar: str | None = None
 
 
 class AlternativeToken(BaseModel):

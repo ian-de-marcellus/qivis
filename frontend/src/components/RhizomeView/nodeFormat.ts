@@ -20,6 +20,10 @@ export function formatSamplingMeta(sp: SamplingParams | null | undefined): strin
   if (sp.frequency_penalty != null) parts.push(`freq_pen ${sp.frequency_penalty}`)
   if (sp.presence_penalty != null) parts.push(`pres_pen ${sp.presence_penalty}`)
   if (sp.extended_thinking) parts.push('thinking')
+  if (sp.grammar) {
+    // The text ended in a space: dropped from the prompt, the reply made to start a word
+    parts.push(sp.grammar.startsWith('root ::= " "') ? 'trailing space healed' : 'grammar-constrained')
+  }
   return parts
 }
 

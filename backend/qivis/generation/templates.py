@@ -156,6 +156,20 @@ def transcript_undecided(text: str) -> int:
     return match.start() if match else len(text)
 
 
+# The text ended with a space, which the prompt drops: words carry their own
+# leading space, so a prompt ending in one leaves the model mostly digits and
+# word fragments. Instead the next token must begin with the space.
+HEALED_SPACE = 'root ::= " " [^ \\t\\n] [^\\x00]*'
+
+
+def heal_trailing_space(prompt: str) -> str | None:
+    """The prompt without its trailing spaces, if it ends in some (else None)."""
+    stripped = prompt.rstrip(" ")
+    if stripped == prompt or not stripped:
+        return None
+    return stripped
+
+
 def render_document(
     messages: list[dict[str, str]],
     system_prompt: str | None,

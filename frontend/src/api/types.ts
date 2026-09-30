@@ -14,6 +14,8 @@ export interface SamplingParams {
   top_logprobs?: number | null
   extended_thinking?: boolean
   thinking_budget?: number | null
+  /** A grammar the output had to match (llama.cpp); see HEALED_SPACE */
+  grammar?: string | null
 }
 
 // -- Responses --
@@ -563,6 +565,9 @@ export interface TokenCandidate {
   token: string
   bytes: number[] | null
   prob: number
+  /** Shown conditioned (e.g. on starting a word): prob is renormalized, this is the model's */
+  raw_prob?: number
+  conditional?: boolean
 }
 
 /** A short sample from a probe: what the model might say at that point. */
