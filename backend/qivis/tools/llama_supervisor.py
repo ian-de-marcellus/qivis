@@ -13,6 +13,10 @@ Qivis needs to change:
 - /props is answered from memory while the model sleeps (the last real
   /props, or a minimal one naming the model file), so Qivis starting up
   or listing models doesn't wake it. /health reports the supervisor as up.
+- Another process using the GPU (Qivis's direct lookups) can lease memory:
+  POST /supervisor/lease {"name", "bytes", "ttl"} makes room for it as for
+  a model, and the budget counts it until DELETE /supervisor/lease?name=
+  or until it isn't renewed within its ttl.
 
 Several models: repeat --model. Each gets its own llama-server (on
 consecutive private ports, started and stopped independently); a request goes
@@ -186,6 +190,21 @@ class Pool:
         self.memory_budget = memory_budget  # bytes
         # One model starts at a time, so making room sees every model that's up
         self._starting = asyncio.Lock()
+        # Memory other processes hold: name -> (bytes, expires at, monotonic)
+        self.leases: dict[str, tuple[float, float]] = {}
+
+    def leased(self) -> float:
+        now = time.monotonic()
+        self.leases = {k: v for k, v in self.leases.items() if v[1] > now}
+        return sum(b for b, _ in self.leases.values())
+
+    async def lease(self, name: str, size: float, ttl: float) -> None:
+        """Hold `size` bytes for another process, stopping idle models to make room."""
+        async with self._starting:
+            self.leases.pop(name, None)
+            if self.memory_budget is not None:
+                await self._fit(size, None, name)
+            self.leases[name] = (size, time.monotonic() + ttl)
 
     async def start(self, m: Supervisor) -> None:
         """Make sure `m` is running, with room made for it first."""
@@ -200,16 +219,28 @@ class Pool:
         """Stop idle models until `for_model` fits; a busy one is waited for, not cut off."""
         if self.memory_budget is None or for_model.running or not for_model.gpu:
             return
+        await self._fit(for_model.size, for_model, for_model.model.name, wait)
+
+    async def _fit(
+        self, size: float, exclude: Supervisor | None, label: str, wait: float = 600.0,
+    ) -> None:
+        assert self.memory_budget is not None
+        if self.leased() + size > self.memory_budget:
+            held = ", ".join(self.leases) or "leases"
+            raise RuntimeError(
+                f"GPU memory is leased ({held}, {self.leased() / 1e9:.0f} GB); "
+                "no room until it's released",
+            )
         deadline = time.monotonic() + wait
         while True:
-            running = [m for m in self.models if m.running and m.gpu and m is not for_model]
-            used = sum(m.size for m in running) + for_model.size
+            running = [m for m in self.models if m.running and m.gpu and m is not exclude]
+            used = sum(m.size for m in running) + size + self.leased()
             for m in sorted(running, key=lambda m: m.last_activity):
                 if used <= self.memory_budget:
                     return
                 if m.in_flight == 0:
                     logger.info(
-                        "making room for %s: stopping %s", for_model.model.name, m.model.name,
+                        "making room for %s: stopping %s", label, m.model.name,
                     )
                     await m.stop()
                     used -= m.size
@@ -279,7 +310,22 @@ def create_app(sup: Supervisor | Pool, idle_check_interval: float = 30.0) -> Fas
             **slot_status(pool.models[0]),
             "models": [slot_status(m) for m in pool.models],
             "memory_budget": pool.memory_budget,
+            "leases": {k: b for k, (b, _) in pool.leases.items()} if pool.leased() else {},
         }
+
+    @app.post("/supervisor/lease")
+    async def lease(request: Request):
+        body = await request.json()
+        try:
+            await pool.lease(str(body["name"]), float(body["bytes"]), float(body.get("ttl", 180)))
+        except RuntimeError as e:
+            return JSONResponse({"error": str(e)}, status_code=409)
+        return {"ok": True, "leases": {k: b for k, (b, _) in pool.leases.items()}}
+
+    @app.delete("/supervisor/lease")
+    async def release(name: str):
+        pool.leases.pop(name, None)
+        return {"ok": True}
 
     @app.get("/supervisor/models")
     async def models():

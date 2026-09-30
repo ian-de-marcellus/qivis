@@ -33,7 +33,7 @@ from qivis.db.connection import Database
 from qivis.models import SamplingParams
 from qivis.names import direct, engine, packing
 from qivis.providers.base import GenerationRequest
-from qivis.providers.llamacpp import LlamaCppProvider
+from qivis.providers.llamacpp import _LLAMA3_BOS, LlamaCppProvider
 
 LOOKUP_K = 1_000_000  # the whole vocabulary (llama.cpp clamps it)
 
@@ -88,7 +88,9 @@ class DistributionCache:
 
     async def identity(self, model: str) -> str:
         if model not in self._identities:
-            ident = await self._llama.model_identity(model)
+            # Direct lookups don't need llama-server's copy: don't wake it
+            ident = await (self._llama.model_identity(model, wake=False) if self.direct
+                           else self._llama.model_identity(model))
             self._paths[model] = ident.get("path") or ""
             if self.direct:
                 ident = {**ident, **direct.identity()}
@@ -101,8 +103,24 @@ class DistributionCache:
         """A name's tokens (" " + name), asked of the model once."""
         key = (await self.identity(model), name)
         if key not in self._spellings:
-            self._spellings[key] = await self._llama.tokenize(" " + name, model)
+            if self.direct:
+                self._spellings[key] = await self._engine().tokenize(self._paths[model], " " + name)
+            else:
+                self._spellings[key] = await self._llama.tokenize(" " + name, model)
         return self._spellings[key]
+
+    async def document_start(self, model: str) -> str:
+        """What the model has seen right before a document begins (as
+        LlamaCppProvider.document_start: its BOS if its prompts get one, else
+        its end-of-text token), from whichever copy of it lookups use."""
+        if not self.direct:
+            return await self._llama.document_start(model)
+        await self.identity(model)
+        info = await self._engine().info(self._paths[model])
+        return _LLAMA3_BOS if info["adds_bos"] else (info["eos"] or "")
+
+    def _engine(self) -> direct.DirectEngine:
+        return direct.get_engine(self._llama)
 
     async def summary(self, model: str, prompt: str, ids: list[int]) -> engine.Summary:
         if self.direct:
@@ -137,7 +155,7 @@ class DistributionCache:
             self._inputs[model, prompt] = (text, bias)
         text, bias = self._inputs[model, prompt]
         self.misses += 1
-        return await direct.get_engine().summary(path, text, ids, bias)
+        return await self._engine().summary(path, text, ids, bias)
 
     async def _store(self, ident: str, key: str, s: engine.Summary, data: bytes) -> None:
         vocab = self._vocab.setdefault(ident, {})

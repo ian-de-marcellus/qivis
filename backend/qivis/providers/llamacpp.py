@@ -673,12 +673,13 @@ class LlamaCppProvider(LLMProvider):
         resp.raise_for_status()
         return resp.content, applied, effective_prompt
 
-    async def model_identity(self, model: str = "") -> dict[str, Any]:
+    async def model_identity(self, model: str = "", wake: bool = True) -> dict[str, Any]:
         """Everything about the served model that shapes its distributions: its
         file (path and size), the llama.cpp build, and its profile's settings.
-        A sleeping model's stand-in props lack the build, so it's woken first."""
+        A sleeping model's stand-in props lack the build, so it's woken first
+        (unless not to: its numbers come from elsewhere, e.g. direct lookups)."""
         props = await self._props(model)
-        if "build_info" not in props:
+        if wake and "build_info" not in props:
             await self._client.post(
                 f"{self._base_url}/tokenize", json={"model": model, "content": ""},
             )
@@ -694,6 +695,23 @@ class LlamaCppProvider(LLMProvider):
             "model": served, "path": path, "size": size, "build": props.get("build_info"),
             "logit_bias": profile.get("logit_bias"), "bos_tokens": profile.get("bos_tokens"),
         }
+
+    async def lease_gpu(self, name: str, size: int, ttl: float = 180) -> None:
+        """Ask a supervisor to hold GPU memory for another process (making room
+        by stopping idle models). A plain llama-server has no leases: nothing to do."""
+        resp = await self._client.post(
+            f"{self._base_url}/supervisor/lease", json={"name": name, "bytes": size, "ttl": ttl},
+        )
+        if resp.status_code == 404:
+            return
+        if resp.status_code != 200:
+            raise RuntimeError(resp.json().get("error") or f"lease refused ({resp.status_code})")
+
+    async def release_gpu(self, name: str) -> None:
+        try:
+            await self._client.delete(f"{self._base_url}/supervisor/lease", params={"name": name})
+        except Exception:
+            pass  # it lapses on its own
 
     async def document_start(self, model: str = "") -> str:
         """What the model has seen right before a document begins: BOS if its

@@ -67,9 +67,13 @@ int eng_n_vocab(engine *e) { return e->n_vocab; }
 
 /* As llama-server tokenizes a string prompt: its BOS if the model adds one,
    special tokens parsed. */
-int eng_tokenize(engine *e, const char *text, int len, int32_t *out, int max) {
-    return llama_tokenize(e->vocab, text, len, out, max, true, true);
+int eng_tokenize(engine *e, const char *text, int len, int32_t *out, int max, int add_special) {
+    return llama_tokenize(e->vocab, text, len, out, max, add_special, true);
 }
+
+/* Whether a string prompt gets the model's BOS; its end-of-text token (-1: none). */
+int eng_adds_bos(engine *e) { return llama_vocab_get_add_bos(e->vocab); }
+int32_t eng_eos(engine *e) { return llama_vocab_eos(e->vocab); }
 
 int eng_piece(engine *e, int32_t id, char *buf, int len) {
     return llama_token_to_piece(e->vocab, id, buf, len, 0, true);

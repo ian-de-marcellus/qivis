@@ -227,3 +227,52 @@ async def test_props_while_loading_say_what_is_known(sup_client):
     r = await c.get("/props")
     assert r.status_code == 200 and r.json()["model_alias"] == "sun-1.0.1.gguf"
     sup.proc = None
+
+
+async def test_a_lease_makes_room_and_counts_until_released(tmp_path):
+    """Another process (direct lookups) borrows GPU memory: idle models make room,
+    and a model that won't fit beside the lease is refused at once, not squeezed in."""
+    from qivis.tools.llama_supervisor import Pool
+
+    def model(name: str, gb: int) -> Supervisor:
+        path = tmp_path / name
+        with open(path, "wb") as f:
+            f.truncate(gb * 1024**3)
+        return Supervisor(
+            model=path, backend_port=free_port(), idle_seconds=3600,
+            llama_cmd=[sys.executable, str(STUB)], extra_args=[], startup_timeout=20,
+        )
+
+    sun, olmo = model("sun.gguf", 5), model("olmo.gguf", 15)
+    pool = Pool([sun, olmo], memory_budget=36 * 1024**3)
+    async with AsyncClient(
+        transport=ASGITransport(app=create_app(pool)), base_url="http://sup"
+    ) as c:
+        await c.post("/completion", json={"model": "olmo.gguf", "prompt": "a"})
+        r = await c.post("/supervisor/lease", json={"name": "direct", "bytes": 34 * 1024**3, "ttl": 60})
+        assert r.status_code == 200 and not olmo.running  # stopped to make room
+        r = await c.post("/completion", json={"model": "sun.gguf", "prompt": "b"})
+        assert r.status_code == 503 and "leased" in r.text and not sun.running
+        assert (await c.get("/supervisor/status")).json()["leases"] == {"direct": 34 * 1024**3}
+        await c.delete("/supervisor/lease", params={"name": "direct"})
+        r = await c.post("/completion", json={"model": "sun.gguf", "prompt": "c"})
+        assert r.status_code == 200 and sun.running
+    for m in (sun, olmo):
+        await m.stop()
+
+
+async def test_a_lease_not_renewed_lapses(tmp_path):
+    import asyncio
+
+    from qivis.tools.llama_supervisor import Pool
+
+    path = tmp_path / "sun.gguf"
+    with open(path, "wb") as f:
+        f.truncate(5 * 1024**3)
+    sun = Supervisor(model=path, backend_port=free_port(), idle_seconds=3600,
+                     llama_cmd=[sys.executable, str(STUB)], extra_args=[], startup_timeout=20)
+    pool = Pool([sun], memory_budget=36 * 1024**3)
+    await pool.lease("direct", 34 * 1024**3, ttl=0.2)
+    assert pool.leased() > 0
+    await asyncio.sleep(0.3)
+    assert pool.leased() == 0

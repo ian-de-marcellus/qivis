@@ -32,7 +32,9 @@ def _bind(path: str) -> ct.CDLL:
     lib.eng_free.argtypes = [ct.c_void_p]
     lib.eng_n_vocab.argtypes = [ct.c_void_p]
     ids = ct.POINTER(ct.c_int32)
-    lib.eng_tokenize.argtypes = [ct.c_void_p, ct.c_char_p, ct.c_int, ids, ct.c_int]
+    lib.eng_tokenize.argtypes = [ct.c_void_p, ct.c_char_p, ct.c_int, ids, ct.c_int, ct.c_int]
+    lib.eng_adds_bos.argtypes = [ct.c_void_p]
+    lib.eng_eos.argtypes = [ct.c_void_p]
     lib.eng_piece.argtypes = [ct.c_void_p, ct.c_int32, ct.c_char_p, ct.c_int]
     lib.eng_decode.argtypes = [ct.c_void_p, ct.c_int, ids, ids, ids, ct.POINTER(ct.c_int8)]
     lib.eng_seq_cp.argtypes = [ct.c_void_p, ct.c_int, ct.c_int, ct.c_int, ct.c_int]
@@ -46,7 +48,7 @@ def _bind(path: str) -> ct.CDLL:
 
 class Model:
     def __init__(self, lib: ct.CDLL, path: str, n_ctx: int) -> None:
-        self.lib, self.path = lib, path
+        self.lib, self.path, self.n_ctx = lib, path, n_ctx
         self.e = lib.eng_load(path.encode(), n_ctx, PROMPT_SEQS + SCRATCH_SEQS, N_BATCH)
         if not self.e:
             raise RuntimeError(f"llama.cpp couldn't load {path}")
@@ -69,10 +71,11 @@ class Model:
     def close(self) -> None:
         self.lib.eng_free(self.e)
 
-    def tokenize(self, text: str) -> list[int]:
+    def tokenize(self, text: str, add_special: bool = True) -> list[int]:
+        """As llama-server tokenizes a string prompt (add_special), or a piece of text."""
         raw = text.encode()
         out = (ct.c_int32 * (len(raw) + 8))()
-        n = self.lib.eng_tokenize(self.e, raw, len(raw), out, len(out))
+        n = self.lib.eng_tokenize(self.e, raw, len(raw), out, len(out), int(add_special))
         if n < 0:
             raise RuntimeError("couldn't tokenize the prompt")
         return list(out[:n])
@@ -92,22 +95,42 @@ class Model:
             if status != 0:
                 raise RuntimeError(f"llama_decode failed ({status})")
 
-    def resident(self, prompts: list[str]) -> None:
-        """Each prompt's tokens but the last, in a sequence of its own."""
+    def _evict(self, keep: set[str]) -> bool:
+        """Drop the least recently used prompt not in `keep`; False if there's none."""
+        for p in self.prompts:
+            if p not in keep:
+                seq, _ = self.prompts.pop(p)
+                self.lib.eng_seq_rm(self.e, seq, -1, -1)
+                self.free.append(seq)
+                return True
+        return False
+
+    def resident(self, prompts: list[str], extra: int) -> None:
+        """Each prompt's tokens but the last, in a sequence of its own, with room
+        left in the attention cache for `extra` more tokens."""
+        keep = set(prompts)
         new = [p for p in dict.fromkeys(prompts) if p not in self.prompts]
         for p in prompts:
             if p in self.prompts:
                 self.prompts.move_to_end(p)
+        tokenized = {p: self.tokenize(p) for p in new}
+        if any(not t for t in tokenized.values()):
+            raise RuntimeError("a prompt has no tokens")
+        needed = sum(len(t) for t in tokenized.values()) + extra
+        def short() -> bool:  # of sequences, or of room in the attention cache
+            held = sum(len(t) for _, t in self.prompts.values())
+            return len(self.free) < len(new) or needed + held > self.n_ctx - 64
+
+        while short() and self._evict(keep):
+            pass
+        if needed + sum(len(t) for _, t in self.prompts.values()) > self.n_ctx - 64:
+            raise RuntimeError(f"these prompts don't fit in {self.n_ctx} tokens at once")
         items = []
         for p in new:
             if not self.free:
-                _, (seq, _) = self.prompts.popitem(last=False)
-                self.lib.eng_seq_rm(self.e, seq, -1, -1)
-                self.free.append(seq)
+                raise RuntimeError("no free sequence for a prompt")
             seq = self.free.pop()
-            tokens = self.tokenize(p)
-            if not tokens:
-                raise RuntimeError("the prompt has no tokens")
+            tokens = tokenized[p]
             self.prompts[p] = (seq, tokens)
             items += [(t, i, seq, False) for i, t in enumerate(tokens[:-1])]
         try:
@@ -141,7 +164,7 @@ class Model:
                 seen.add(p)
                 chunk.append(items[start])
                 start += 1
-            self.resident([p for p, _ in chunk])
+            self.resident([p for p, _ in chunk], extra=sum(1 + len(path) for _, path in chunk))
             batch, last = [], []
             for j, (p, path) in enumerate(chunk):
                 seq, tokens = self.prompts[p]
@@ -200,6 +223,15 @@ def main() -> None:
                 model = Model(lib, req["path"], req["n_ctx"])
             if req["op"] == "vocab":
                 reply: Any = model.pieces
+            elif req["op"] == "tokenize":
+                tokens = model.tokenize(req["text"], add_special=False)
+                reply = [(t, model.pieces[t]) for t in tokens]
+            elif req["op"] == "info":
+                eos = model.lib.eng_eos(model.e)
+                reply = {
+                    "adds_bos": bool(model.lib.eng_adds_bos(model.e)),
+                    "eos": model.pieces[eos] if 0 <= eos < model.n_vocab else None,
+                }
             else:
                 reply = model.lookups(req["bias"], req["floor"], req["items"])
             _write(replies, {"ok": reply})

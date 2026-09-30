@@ -37,9 +37,13 @@ SOURCE = Path(__file__).with_name("direct_lookups.c")
 CACHE_DIR = Path(os.environ.get("QIVIS_CACHE_DIR", Path.home() / "Library" / "Caches" / "qivis"))
 N_CTX = int(os.environ.get("QIVIS_DIRECT_N_CTX", "4096"))
 MAX_BATCH = 256  # lookups per request to the worker
-# The worker lets its model go after this long without lookups: llama-server's
-# supervisor budgets memory for its own models and doesn't know about this one
+# The worker lets its model go after this long without lookups
 IDLE_SECONDS = 120
+# The GPU memory it holds is leased from llama-server's supervisor, so the two
+# don't both fill it: the model file plus its attention cache and buffers
+LEASE = "qivis-direct-lookups"
+LEASE_EXTRA = 1024**3
+LEASE_TTL = 180.0
 
 
 def enabled() -> bool:
@@ -95,9 +99,15 @@ def identity() -> dict[str, Any]:
 
 class DirectEngine:
     """Lookups gathered into batches for the worker: while it's busy with one
-    batch, the next accumulates."""
+    batch, the next accumulates.
 
-    def __init__(self) -> None:
+    `gpu` (the llama.cpp provider) leases the memory the worker's model needs
+    from llama-server's supervisor before loading it, renews the lease while
+    working, and releases it when the worker stops."""
+
+    def __init__(self, gpu: Any = None) -> None:
+        self.gpu = gpu
+        self._leased: tuple[str, float] | None = None  # (model path, when renewed)
         self._proc: asyncio.subprocess.Process | None = None
         self._pending: list[tuple[tuple, str, list[int], asyncio.Future]] = []
         self._runner: asyncio.Task | None = None
@@ -119,8 +129,22 @@ class DirectEngine:
             log.close()
         return self._proc
 
+    async def _lease(self, path: str) -> None:
+        """Hold GPU memory for `path` (renewed when a third of its time is gone)."""
+        if self.gpu is None:
+            return
+        now = asyncio.get_running_loop().time()
+        if self._leased and self._leased[0] == path and now - self._leased[1] < LEASE_TTL / 3:
+            return
+        if self._leased and self._leased[0] != path and self._proc is not None:
+            await self._stop()  # one model at a time: let the other go first
+        size = os.path.getsize(path) + LEASE_EXTRA
+        await self.gpu.lease_gpu(LEASE, size, LEASE_TTL)
+        self._leased = (path, now)
+
     async def _ask(self, request: dict) -> Any:
         async with self._talk:
+            await self._lease(request["path"])
             proc = await self._start()
             assert proc.stdin is not None and proc.stdout is not None
             data = pickle.dumps(request, protocol=pickle.HIGHEST_PROTOCOL)
@@ -136,6 +160,15 @@ class DirectEngine:
         if "error" in reply:
             raise RuntimeError(f"Direct lookup failed: {reply['error']}")
         return reply["ok"]
+
+    async def tokenize(self, path: str, text: str) -> list[dict]:
+        """Text as the model's tokens, as llama-server's /tokenize gives them: [{id, token}]."""
+        got = await self._ask({"op": "tokenize", "path": path, "n_ctx": N_CTX, "text": text})
+        return [{"id": i, "token": t} for i, t in got]
+
+    async def info(self, path: str) -> dict:
+        """Whether the model's string prompts get its BOS; its end-of-text token."""
+        return await self._ask({"op": "info", "path": path, "n_ctx": N_CTX})
 
     async def vocab(self, path: str) -> list[str]:
         if path not in self._vocab:
@@ -199,6 +232,9 @@ class DirectEngine:
         await self._stop()
 
     async def _stop(self) -> None:
+        if self._leased is not None and self.gpu is not None:
+            await self.gpu.release_gpu(LEASE)
+        self._leased = None
         if self._proc is not None and self._proc.returncode is None:
             assert self._proc.stdin is not None
             self._proc.stdin.close()  # the worker exits at the end of its input
@@ -212,15 +248,17 @@ class DirectEngine:
 _engine: DirectEngine | None = None
 
 
-def get_engine() -> DirectEngine:
+def get_engine(gpu: Any = None) -> DirectEngine:
     global _engine
+    if _engine is not None and gpu is not None:
+        _engine.gpu = gpu
     if _engine is None:
         if (sys.platform, platform.machine()) != ("darwin", "arm64"):
             logger.warning(
                 "Direct lookups have only been tested on Apple silicon; if they fail, "
                 "unset QIVIS_DIRECT_LOOKUPS to go through llama-server",
             )
-        _engine = DirectEngine()
+        _engine = DirectEngine(gpu)
     return _engine
 
 

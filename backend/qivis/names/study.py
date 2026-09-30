@@ -240,7 +240,7 @@ class NameStudyService:
         llama = get_provider("llamacpp")
         if not isinstance(llama, LlamaCppProvider):
             raise InvalidRequestError("Name studies need a llama.cpp model")
-        start = await llama.document_start(model)
+        start = await self._cache_for(llama).document_start(model)
         mine = [c for c in cells_of(spec) if c[0] == model]
 
         def prompt_of(c: tuple[str, str, str, str]) -> str:
@@ -408,7 +408,7 @@ class NameStudyService:
         if p not in study.pronouns:
             raise InvalidRequestError(f"The study has no '{p}' pronoun set")
         frames = study.frames[p]
-        start = await llama.document_start(spec.model)
+        start = await self._cache_for(llama).document_start(spec.model)
 
         def texts(s: StudySpec, pronoun: str, condition: str) -> list[str]:
             fs = s.frames[pronoun][: len(frames)]
