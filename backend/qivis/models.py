@@ -189,6 +189,8 @@ class NodeCreatedPayload(BaseModel):
     cut_from: str | None = None
     # A probe's sample the researcher continued from: the probe it came from
     from_probe: str | None = None
+    # A new version of a reply branched at one of its tokens: {node_id, keep}
+    branched_from: dict[str, Any] | None = None
 
 
 class NodeAnchoredPayload(BaseModel):

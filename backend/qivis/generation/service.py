@@ -152,6 +152,11 @@ class Prepared:
     include_timestamps: bool
     include_thinking: bool
     prefill: str | None = None
+    # The prefill's token records, when it's the start of a reply branched at a
+    # token (the model's kept tokens, the researcher's chosen ones): they head
+    # the stored reply's tokens, so its record covers all of it
+    prefill_tokens: list[TokenLogprob] | None = None
+    branched_from: dict | None = None
     device_id: str = "local"
     completion_index: int | None = None
     steered: bool = False  # token by token, by a researcher (qivis.steering)
@@ -162,6 +167,15 @@ class Prepared:
         if self.steered:
             return "steered"
         return "prefill" if self.prefill else self.mode
+
+
+@dataclass
+class Branch:
+    """A reply's new version starting partway: the start's token records (its
+    text is the prefill) and where it branched from ({node_id, keep})."""
+
+    tokens: list[TokenLogprob]
+    origin: dict
 
 
 @dataclass
@@ -241,12 +255,17 @@ class GenerationService:
         sampling_params: SamplingParams | None = None,
         prefill_content: str | None = None,
         mode_override: str | None = None,
+        branch: Branch | None = None,
     ) -> NodeResponse:
         """Generate a non-streaming response and store as a new node."""
         p = await self._prepare_one(
             rhizome_id, node_id, provider, model, system_prompt, sampling_params,
             prefill_content, mode_override,
         )
+        if branch is not None:
+            p = dataclasses.replace(
+                p, prefill_tokens=branch.tokens, branched_from=branch.origin,
+            )
         await self._started(p)
         return await self.complete(p)
 
@@ -261,12 +280,17 @@ class GenerationService:
         sampling_params: SamplingParams | None = None,
         prefill_content: str | None = None,
         mode_override: str | None = None,
+        branch: Branch | None = None,
     ) -> AsyncIterator[StreamChunk]:
         """Generate a streaming response, yielding chunks."""
         p = await self._prepare_one(
             rhizome_id, node_id, provider, model, system_prompt, sampling_params,
             prefill_content, mode_override,
         )
+        if branch is not None:
+            p = dataclasses.replace(
+                p, prefill_tokens=branch.tokens, branched_from=branch.origin,
+            )
         await self._started(p)
         async for chunk in self.stream(p):
             yield chunk
@@ -852,7 +876,16 @@ class GenerationService:
         """The whole reply: a prefilled start is part of what the model said."""
         if not p.prefill:
             return result
-        return result.model_copy(update={"content": p.prefill + result.content})
+        update: dict[str, Any] = {"content": p.prefill + result.content}
+        if p.prefill_tokens is not None:
+            generated = result.logprobs
+            update["logprobs"] = LogprobData(
+                tokens=[*p.prefill_tokens, *(generated.tokens if generated else [])],
+                provider_format=generated.provider_format if generated else "llamacpp",
+                top_k_available=generated.top_k_available if generated else 0,
+                full_vocab_available=generated.full_vocab_available if generated else False,
+            )
+        return result.model_copy(update=update)
 
     async def persist(self, p: Prepared, result: GenerationResult) -> NodeResponse:
         """Store a reply as a node, recording exactly what produced it."""
@@ -896,6 +929,7 @@ class GenerationService:
             active_interventions=p.active_interventions,
             context_usage=p.context_usage,
             raw_response=result.raw_response,
+            branched_from=p.branched_from,
         )
 
 

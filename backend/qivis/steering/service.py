@@ -134,25 +134,7 @@ class SteeringService:
         if session is None:
             raise SteeringSessionNotFoundError(session_id)
         try:
-            tokens: list[TokenLogprob] = []
-            for i, (tid, who) in enumerate(zip(token_ids, chosen_by, strict=True)):
-                shown = await self._distribution(session, token_ids[:i], tid)
-                chosen = next((c for c in shown if c["id"] == tid), None)
-                if chosen is None:
-                    raise InvalidRequestError(f"Token {tid} isn't in this model's vocabulary")
-                tokens.append(TokenLogprob(
-                    token=chosen["token"],
-                    token_id=tid,
-                    logprob=_log(chosen["prob"]),
-                    linear_prob=chosen["prob"],
-                    top_alternatives=[
-                        AlternativeToken(
-                            token=c["token"], logprob=_log(c["prob"]), linear_prob=c["prob"],
-                        )
-                        for c in shown[:DEFAULT_K] if c["id"] != tid
-                    ],
-                    chosen_by=who,
-                ))
+            tokens = await self._records(session, [], token_ids, chosen_by)
 
             # A reply that reaches the model's end of turn ends there, like any
             # generation: a stop token (chat templates) or a stop string the text
@@ -185,6 +167,68 @@ class SteeringService:
             ),
             effective_prompt_text=session.effective_prompt,
         ))
+
+    async def _records(
+        self,
+        session: SteeringSession,
+        before: list[int],
+        token_ids: list[int],
+        chosen_by: list[Literal["model", "researcher"]],
+    ) -> list[TokenLogprob]:
+        """Each token's record: the model's probability for it where it was chosen
+        (after `before` and the tokens ahead of it), its alternatives, who chose it."""
+        tokens: list[TokenLogprob] = []
+        for i, (tid, who) in enumerate(zip(token_ids, chosen_by, strict=True)):
+            shown = await self._distribution(session, before + token_ids[:i], tid)
+            chosen = next((c for c in shown if c["id"] == tid), None)
+            if chosen is None:
+                raise InvalidRequestError(f"Token {tid} isn't in this model's vocabulary")
+            tokens.append(TokenLogprob(
+                token=chosen["token"],
+                token_id=tid,
+                logprob=_log(chosen["prob"]),
+                linear_prob=chosen["prob"],
+                top_alternatives=[
+                    AlternativeToken(
+                        token=c["token"], logprob=_log(c["prob"]), linear_prob=c["prob"],
+                    )
+                    for c in shown[:DEFAULT_K] if c["id"] != tid
+                ],
+                chosen_by=who,
+            ))
+        return tokens
+
+    async def branch_start(
+        self,
+        rhizome_id: str,
+        node: NodeResponse,
+        keep: int,
+        token_ids: list[int],
+        provider: LLMProvider,
+    ) -> tuple[str, list[TokenLogprob]]:
+        """The start of a new version of a reply: its first `keep` tokens (the
+        model's, with their records), then tokens the researcher chose (each with
+        the probability the model gave it there). Returns the text and records."""
+        tokens = [TokenLogprob.model_validate(t) for t in (node.logprobs or {}).get("tokens") or []]
+        if node.role != "assistant" or node.edited_content is not None:
+            raise InvalidRequestError("Only an unedited reply can be branched from its tokens")
+        if not 0 <= keep <= len(tokens):
+            raise InvalidRequestError(f"Can keep between 0 and {len(tokens)} tokens")
+        kept = tokens[:keep]
+        text = "".join(t.token for t in kept)
+        if not token_ids:
+            return text, kept
+        session = await self.start(
+            rhizome_id, node.parent_id, provider, model=node.model,
+        )
+        try:
+            state = self._session(session["session_id"])
+            tokenize = getattr(provider, "tokenize")  # steerable providers have it
+            before = [t["id"] for t in await tokenize(text, state.prepared.model)] if text else []
+            chosen = await self._records(state, before, token_ids, ["researcher"] * len(token_ids))
+        finally:
+            self.discard(session["session_id"])
+        return text + "".join(t.token for t in chosen), kept + chosen
 
     async def tokenize(self, session_id: str, text: str) -> list[dict[str, Any]]:
         """Typed text as the session model's tokens, to append as researcher choices."""

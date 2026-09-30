@@ -16,10 +16,10 @@ from qivis.generation.service import GenerationService
 from qivis.main import app
 from qivis.providers.base import GenerationRequest, GenerationResult, LLMProvider, StreamChunk
 from qivis.providers.registry import clear_providers, register_provider
-from qivis.rhizomes.router import get_rhizome_service
+from qivis.rhizomes.router import get_generation_service, get_rhizome_service
 from qivis.rhizomes.schemas import CreateNodeRequest, CreateRhizomeRequest
 from qivis.rhizomes.service import RhizomeService
-from qivis.steering.router import get_steering_service
+from qivis.steering.router import get_optional_steering_service, get_steering_service
 from qivis.steering.service import SteeringService
 
 VOCAB = {1: "Hi", 2: " there", 3: "!", 4: "<|eot_id|>", 5: " friend", 6: "<|start_header_id|>"}
@@ -91,6 +91,8 @@ async def env(db: Database):
     register_provider(ChatOnly())
     app.dependency_overrides[get_rhizome_service] = lambda: service
     app.dependency_overrides[get_steering_service] = lambda: steering
+    app.dependency_overrides[get_optional_steering_service] = lambda: steering
+    app.dependency_overrides[get_generation_service] = lambda: steering._gen
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
         rid = (await c.post("/api/rhizomes", json={
             "title": "steer", "default_provider": "steerable", "default_model": "m",
@@ -196,3 +198,46 @@ async def test_transcript_turn_ends_at_the_next_speaker(db):
     node = await steering.commit(s["session_id"], [1, 2], ["researcher", "researcher"])
     assert node.content == "Hi there" and node.finish_reason == "stop"
     clear_providers()
+
+
+async def test_branching_a_reply_at_a_token(env):
+    """A new version of a reply: its kept tokens (the model's records), the researcher's
+    token (with the model's probability for it there), then what the model goes on to say."""
+    c, model, rid, nid = env
+
+    async def finish(request):
+        from qivis.models import LogprobData, TokenLogprob
+        return GenerationResult(
+            content="!", model="m", finish_reason="stop",
+            logprobs=LogprobData(
+                tokens=[TokenLogprob(token="!", logprob=-2.3, linear_prob=0.1, top_alternatives=[])],
+                provider_format="llamacpp", top_k_available=5,
+            ),
+        )
+
+    model.generate = finish  # type: ignore[method-assign]
+    s = (await _start(c, rid, nid)).json()
+    original = (await c.post(f"/api/steer/{s['session_id']}/commit", json={
+        "token_ids": [1, 2, 3], "chosen_by": ["model", "model", "model"],
+    })).json()
+    assert original["content"] == "Hi there!"
+
+    r = await c.post(f"/api/rhizomes/{rid}/nodes/{nid}/generate", json={
+        "provider": "steerable", "model": "m",
+        "branch": {"node_id": original["node_id"], "keep": 1, "token_ids": [5]},
+    })
+    assert r.status_code == 201, r.text
+    node = r.json()
+    assert node["parent_id"] == nid and node["content"] == "Hi friend!"
+    tokens = node["logprobs"]["tokens"]
+    assert [(t["token"], t["chosen_by"]) for t in tokens] == [
+        ("Hi", "model"), (" friend", "researcher"), ("!", None),
+    ]
+    assert tokens[0]["linear_prob"] == original["logprobs"]["tokens"][0]["linear_prob"]
+    assert tokens[1]["linear_prob"] == 0.01  # the model's own odds for it, looked up
+
+    # Only a reply to this point can be branched here
+    bad = await c.post(f"/api/rhizomes/{rid}/nodes/{original['node_id']}/generate", json={
+        "provider": "steerable", "branch": {"node_id": original["node_id"], "keep": 1},
+    })
+    assert bad.status_code == 400

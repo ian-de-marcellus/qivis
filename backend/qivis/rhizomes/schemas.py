@@ -55,6 +55,15 @@ class PatchNodeContentRequest(BaseModel):
     edited_content: str | None
 
 
+class BranchSpec(BaseModel):
+    """A new version of a reply, branched at one of its tokens: keep its first
+    `keep` tokens, then the chosen `token_ids` (may be none), and generate on."""
+
+    node_id: str
+    keep: int = Field(ge=0)
+    token_ids: list[int] = Field(default_factory=list)
+
+
 class GenerateRequest(BaseModel):
     """Request body for POST /api/rhizomes/{rhizome_id}/nodes/{node_id}/generate."""
 
@@ -68,6 +77,8 @@ class GenerateRequest(BaseModel):
     # Force chat or completion (e.g. GPT inside a completion-mode rhizome).
     # None keeps the rhizome's behavior.
     mode: Literal["chat", "completion"] | None = None
+    # Generate a new version of this node's reply, starting partway through it
+    branch: BranchSpec | None = None
 
 
 class ReplayRequest(BaseModel):

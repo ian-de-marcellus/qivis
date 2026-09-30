@@ -9,10 +9,11 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 
-from qivis.errors import QivisError
+from qivis.errors import InvalidRequestError, NotConfiguredError, QivisError
 from qivis.generation.perturbation import PerturbationService
 from qivis.generation.replay import ReplayService
 from qivis.generation.service import (
+    Branch,
     GenerationService,
 )
 from qivis.providers.base import LLMProvider, StreamChunk
@@ -53,6 +54,8 @@ from qivis.rhizomes.schemas import (
 from qivis.rhizomes.service import (
     RhizomeService,
 )
+from qivis.steering.router import get_optional_steering_service
+from qivis.steering.service import SteeringService
 
 logger = logging.getLogger(__name__)
 
@@ -453,8 +456,37 @@ async def generate(
     node_id: str,
     request: GenerateRequest,
     gen_service: GenerationService = Depends(get_generation_service),
+    service: RhizomeService = Depends(get_rhizome_service),
+    steering: SteeringService | None = Depends(get_optional_steering_service),
 ) -> NodeResponse | StreamingResponse:
-    return await _dispatch_generate(rhizome_id, node_id, request, gen_service)
+    branch = None
+    if request.branch is not None:
+        if steering is None:
+            raise NotConfiguredError("Branching at a token needs the steering service")
+        branch = await _branch_start(rhizome_id, node_id, request, service, steering)
+    return await _dispatch_generate(rhizome_id, node_id, request, gen_service, branch)
+
+
+async def _branch_start(
+    rhizome_id: str,
+    node_id: str,
+    request: GenerateRequest,
+    service: RhizomeService,
+    steering: SteeringService,
+) -> tuple[str, Branch]:
+    """The prefill and records for a reply branched at a token (the reply must
+    answer node_id: the new version is its sibling)."""
+    spec = request.branch
+    assert spec is not None
+    original = await service.node_response(rhizome_id, spec.node_id)
+    if original.parent_id != node_id:
+        raise InvalidRequestError("A branched reply is generated under the original's parent")
+    if request.n > 1:
+        raise InvalidRequestError("A branch can't be combined with n > 1")
+    text, tokens = await steering.branch_start(
+        rhizome_id, original, spec.keep, spec.token_ids, _provider(request.provider),
+    )
+    return text, Branch(tokens=tokens, origin={"node_id": spec.node_id, "keep": spec.keep})
 
 
 @router.post(
@@ -476,8 +508,12 @@ async def _dispatch_generate(
     node_id: str | None,
     request: GenerateRequest,
     gen_service: GenerationService,
+    branch: tuple[str, Branch] | None = None,
 ) -> NodeResponse | StreamingResponse:
     provider = _provider(request.provider, request.mode)
+    if branch is not None:
+        # The branch's start is the prefill (and its records head the reply's)
+        request = request.model_copy(update={"prefill_content": branch[0]})
     if request.prefill_content and request.n > 1:
         raise HTTPException(
             status_code=400,
@@ -490,6 +526,8 @@ async def _dispatch_generate(
         prefill_content=request.prefill_content,
         mode_override=request.mode,
     )
+    if branch is not None:
+        kwargs["branch"] = branch[1]
 
     if request.stream:
         chunks = (

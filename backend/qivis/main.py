@@ -46,7 +46,7 @@ from qivis.rhizomes.service import RhizomeService
 from qivis.search.router import get_search_service
 from qivis.search.router import router as search_router
 from qivis.search.service import SearchService
-from qivis.steering.router import get_steering_service
+from qivis.steering.router import get_optional_steering_service, get_steering_service
 from qivis.steering.router import router as steering_router
 from qivis.steering.service import SteeringService
 
@@ -121,6 +121,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Steering (token-by-token) sessions
     steering_service = SteeringService(gen_service)
     app.dependency_overrides[get_steering_service] = lambda: steering_service
+    app.dependency_overrides[get_optional_steering_service] = lambda: steering_service
 
     # Answer probes
     probe_service = ProbeService(service, gen_service, store, projector)

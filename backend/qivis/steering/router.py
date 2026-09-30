@@ -18,6 +18,11 @@ def get_steering_service() -> SteeringService:
     raise RuntimeError("SteeringService not initialized")
 
 
+def get_optional_steering_service() -> SteeringService | None:
+    """For routes that only sometimes need steering (replaced at app startup)."""
+    return None
+
+
 class StartSteering(BaseModel):
     provider: str = "llamacpp"
     model: str | None = None
