@@ -68,6 +68,7 @@ interface RhizomeStore {
   splitViewNodeId: string | null
   canvasOpen: boolean
   libraryOpen: boolean
+  studiesOpen: boolean
   nodeAnnotations: Record<string, AnnotationResponse[]>
   taxonomy: TaxonomyResponse | null
   bookmarks: BookmarkResponse[]
@@ -134,6 +135,7 @@ interface RhizomeStore {
   setSplitViewNodeId: (nodeId: string | null) => void
   setCanvasOpen: (open: boolean) => void
   setLibraryOpen: (open: boolean) => void
+  setStudiesOpen: (open: boolean) => void
   forkAndGenerate: (
     parentId: string,
     content: string,
@@ -506,6 +508,7 @@ export const useRhizomeStore = create<RhizomeStore>((set, get) => ({
   splitViewNodeId: null,
   canvasOpen: false,
   libraryOpen: false,
+  studiesOpen: false,
   nodeAnnotations: {},
   taxonomy: null,
   bookmarks: [],
@@ -855,6 +858,10 @@ export const useRhizomeStore = create<RhizomeStore>((set, get) => ({
 
   setLibraryOpen: (open: boolean) => {
     set({ libraryOpen: open })
+  },
+
+  setStudiesOpen: (open: boolean) => {
+    set({ studiesOpen: open })
   },
 
   forkAndGenerate: async (parentId: string, content: string, overrides: GenerateRequest) => {

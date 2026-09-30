@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { CanvasView } from './components/CanvasView/CanvasView.tsx'
 import { LibraryView } from './components/Library/LibraryView.tsx'
+import { NameStudiesView } from './components/Studies/NameStudiesView.tsx'
 import { GraphView } from './components/GraphView/GraphView.tsx'
 import { ResearchPanel } from './components/Library/ResearchPanel.tsx'
 import { SearchPanel } from './components/Library/SearchPanel.tsx'
@@ -55,6 +56,8 @@ function App() {
   const clearError = useRhizomeStore(s => s.clearError)
   const setCanvasOpen = useRhizomeStore(s => s.setCanvasOpen)
   const setLibraryOpen = useRhizomeStore(s => s.setLibraryOpen)
+  const studiesOpen = useRhizomeStore(s => s.studiesOpen)
+  const setStudiesOpen = useRhizomeStore(s => s.setStudiesOpen)
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [theme, setTheme] = useState<ThemeMode>(getInitialTheme)
@@ -196,6 +199,10 @@ function App() {
 
         {libraryOpen && (
           <LibraryView onDismiss={() => setLibraryOpen(false)} />
+        )}
+
+        {studiesOpen && (
+          <NameStudiesView onDismiss={() => setStudiesOpen(false)} />
         )}
       </main>
     </div>

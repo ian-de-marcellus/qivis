@@ -494,6 +494,13 @@ export function RhizomeList() {
         </label>
         <button
           className="library-open-btn"
+          onClick={() => useRhizomeStore.getState().setStudiesOpen(true)}
+          title="Name studies: which names models give a described mind"
+        >
+          Studies
+        </button>
+        <button
+          className="library-open-btn"
           onClick={() => useRhizomeStore.getState().setLibraryOpen(true)}
           title="Open library (Cmd+Shift+L)"
         >

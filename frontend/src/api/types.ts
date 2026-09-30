@@ -597,3 +597,58 @@ export interface Probe {
     messages: { role: string; content: string }[]
   } | null
 }
+
+// -- Name studies --
+
+export interface NameStudySpec {
+  title: string
+  models: string[]
+  pronouns: string[]
+  /** Per pronoun set, with {subject} where the subject goes */
+  descriptions: Record<string, string>
+  frames: Record<string, string[]>
+  subject: string
+  control: string
+  include_bare: boolean
+  top: number
+  extra_names: string[]
+}
+
+export type NameCondition = 'model' | 'control' | 'bare'
+
+export interface NameStudyCell {
+  model: string
+  pronoun: string
+  frame: string
+  condition: NameCondition
+  /** Exactly what the model continued, document start included */
+  prompt: string | null
+  top: Record<string, number> | null
+  capital_mass: number | null
+  scores: Record<string, number> | null
+  queries: number
+}
+
+export interface NameStudyProgress {
+  model: string
+  phase: string
+  done: number
+  of: number
+}
+
+export interface NameStudySummary {
+  study_id: string
+  title: string
+  status: 'running' | 'done' | 'failed' | 'stopped'
+  models: string[]
+  created_at: string
+  updated_at: string
+  progress: NameStudyProgress | null
+}
+
+export interface NameStudy extends Omit<NameStudySummary, 'models'> {
+  error: string | null
+  spec: NameStudySpec
+  rules: string
+  cells: NameStudyCell[]
+}

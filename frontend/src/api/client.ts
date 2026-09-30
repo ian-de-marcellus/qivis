@@ -3,6 +3,9 @@
 import { postSSE, sseError, type SSEMessage } from './sse.ts'
 import type {
   AddAnnotationRequest,
+  NameStudy,
+  NameStudySpec,
+  NameStudySummary,
   Probe,
   ModelEntry,
   AnnotationResponse,
@@ -744,4 +747,30 @@ export function continueFromProbeSample(
   rhizomeId: string, probeId: string, index: number,
 ): Promise<NodeResponse> {
   return request(`/rhizomes/${rhizomeId}/probes/${probeId}/samples/${index}/continue`, { method: 'POST' })
+}
+
+// -- Name studies --
+
+export function nameStudyDefaults(): Promise<{ frames: Record<string, string[]> }> {
+  return request('/name-studies/defaults')
+}
+
+export function listNameStudies(): Promise<NameStudySummary[]> {
+  return request('/name-studies')
+}
+
+export function getNameStudy(studyId: string): Promise<NameStudy> {
+  return request(`/name-studies/${studyId}`)
+}
+
+export function createNameStudy(spec: NameStudySpec): Promise<NameStudy> {
+  return request('/name-studies', { method: 'POST', body: JSON.stringify(spec) })
+}
+
+export function stopNameStudy(studyId: string): Promise<NameStudy> {
+  return request(`/name-studies/${studyId}/stop`, { method: 'POST' })
+}
+
+export function resumeNameStudy(studyId: string): Promise<NameStudy> {
+  return request(`/name-studies/${studyId}/resume`, { method: 'POST' })
 }
