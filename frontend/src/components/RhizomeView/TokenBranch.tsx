@@ -8,7 +8,7 @@ import { useEffect, useRef, useState } from 'react'
 import * as api from '../../api/client.ts'
 import type { NodeResponse, TokenCandidate } from '../../api/types.ts'
 import { useRhizomeStore } from '../../store/rhizomeStore.ts'
-import { tokenLabel } from '../Steering/dasherModel.ts'
+import { tokenLabel, wordsOnly } from '../Steering/dasherModel.ts'
 
 // Next-token distributions come from llama.cpp only, for now
 const STEERABLE = 'llamacpp'
@@ -33,6 +33,7 @@ export function TokenBranch({ rhizomeId, node, index, onWrite, onClose }: TokenB
   const [session, setSession] = useState<string | null>(null)
   const [candidates, setCandidates] = useState<TokenCandidate[] | null>(null)
   const [typed, setTyped] = useState('')
+  const [words, setWords] = useState(false)
   const anchorRef = useRef<{ index: number; id: string } | null>(null)
   const sessionRef = useRef<string | null>(null)
 
@@ -79,7 +80,8 @@ export function TokenBranch({ rhizomeId, node, index, onWrite, onClose }: TokenB
     const s = await api.startSteering(rhizomeId, at || null, { provider: STEERABLE, model: node.model })
     sessionRef.current = s.session_id
     setSession(s.session_id)
-    setCandidates(await api.steerNext(s.session_id, [], SHOWN))
+    // Enough to fill the chips after hiding numbers and symbols
+    setCandidates(await api.steerNext(s.session_id, [], 200))
   })
 
   const commit = (ids: number[]) => run(async () => {
@@ -136,16 +138,28 @@ export function TokenBranch({ rhizomeId, node, index, onWrite, onClose }: TokenB
 
       {candidates && (
         <div className="token-branch-candidates">
-          {candidates.map((c) => (
+          <button
+            className={`token-chip-filter${words ? ' active' : ''}`}
+            onClick={() => setWords((w) => !w)}
+            title="Hide numbers and symbols; show the options given the next token is a word"
+          >
+            words only
+          </button>
+          {(words ? wordsOnly(candidates) : candidates).slice(0, SHOWN).map((c) => (
             <button
               key={c.id}
               className={`token-chip${c.token === original ? ' token-chip-original' : ''}`}
               disabled={busy}
               onClick={() => commit([c.id])}
-              title={c.token === original ? 'What the model sampled here' : undefined}
+              title={[
+                c.token === original && 'What the model sampled here',
+                c.conditional && `* given it's a word; the model's own odds: ${((c.raw_prob ?? c.prob) * 100).toFixed(2)}%`,
+              ].filter(Boolean).join('. ') || undefined}
             >
               <span className="token-chip-text">{label(c.token)}</span>
-              <span className="token-chip-prob">{(c.prob * 100).toFixed(1)}%</span>
+              <span className="token-chip-prob">
+                {(c.prob * 100).toFixed(1)}%{c.conditional && '*'}
+              </span>
             </button>
           ))}
           <form

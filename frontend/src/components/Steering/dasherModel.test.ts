@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { advance, boxAt, enter, exit, layout, screenY, throttle, tokenLabel } from './dasherModel.ts'
+import { advance, boxAt, enter, exit, layout, screenY, throttle, tokenLabel, wordsOnly } from './dasherModel.ts'
 
 const cands = [
   { id: 2, token: ' b', bytes: null, prob: 0.25 },
@@ -51,5 +51,21 @@ describe('pointer pace', () => {
     expect(throttle(1000, cross, W)).toBeCloseTo(1)
     // gentle at first: halfway through the forward range is well under half speed
     expect(throttle((344 + 1000) / 2, cross, W)).toBeLessThan(0.4)
+  })
+})
+
+describe('wordsOnly', () => {
+  const c = (token: string, prob: number) => ({ id: prob * 1000, token, bytes: null, prob })
+
+  it('keeps words and the turn end, renormalized, and remembers the model\'s own odds', () => {
+    const shown = wordsOnly([c('3', 0.4), c(' John', 0.3), c('<|eot_id|>', 0.1), c(' A', 0.1), c('!', 0.1)], ['<|eot_id|>'])
+    expect(shown.map((x) => x.token)).toEqual([' John', '<|eot_id|>', ' A'])
+    expect(shown.map((x) => Math.round(x.prob * 100))).toEqual([60, 20, 20])
+    expect(shown[0].raw_prob).toBe(0.3)
+    expect(shown.every((x) => x.conditional)).toBe(true)
+  })
+
+  it('counts letters of any script as words', () => {
+    expect(wordsOnly([c('日本', 0.5), c(' é', 0.5)]).length).toBe(2)
   })
 })

@@ -350,3 +350,19 @@
   font-size: var(--text-base);
   text-transform: none;
 }
+
+.token-chip-filter {
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  padding: 2px var(--space-sm);
+  background: none;
+  color: var(--text-tertiary);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.token-chip-filter.active {
+  color: var(--text-accent);
+  border-color: var(--text-accent);
+}

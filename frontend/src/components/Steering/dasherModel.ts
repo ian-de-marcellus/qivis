@@ -88,3 +88,15 @@ export function throttle(x: number, crossX: number, W: number): number {
   if (x <= holdR) return 0
   return Math.min(1, (x - holdR) / (W - holdR)) ** 1.6
 }
+
+/**
+ * Only the options that are words (a letter, after an optional leading space),
+ * and the turn's end, with probabilities renormalized among them: the
+ * distribution given the next token is a word. What's shown, not what's
+ * recorded (the record keeps the model's own probabilities).
+ */
+export function wordsOnly(candidates: TokenCandidate[], keep: string[] = []): TokenCandidate[] {
+  const kept = candidates.filter((c) => /^\s?\p{L}/u.test(c.token) || keep.includes(c.token))
+  const total = kept.reduce((sum, c) => sum + c.prob, 0) || 1
+  return kept.map((c) => ({ ...c, prob: c.prob / total, raw_prob: c.raw_prob ?? c.prob, conditional: true }))
+}

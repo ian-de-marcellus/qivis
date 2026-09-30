@@ -16,7 +16,8 @@ import * as api from '../../api/client.ts'
 import type { SteeringSession, TokenCandidate } from '../../api/types.ts'
 import { useRhizomeStore } from '../../store/rhizomeStore.ts'
 import {
-  advance, type Box, boxAt, enter, exit, layout, screenY, throttle, tokenLabel, type View, zones,
+  advance, type Box, boxAt, enter, exit, layout, screenY, throttle, tokenLabel, type View,
+  wordsOnly, zones,
 } from './dasherModel.ts'
 import './SteerView.css'
 
@@ -48,6 +49,10 @@ interface SteerViewProps {
 
 const keyOf = (ids: number[]) => ids.join(',')
 
+/** The options as shown: all of them, or words only (renormalized, the turn's end kept) */
+const shown = (L: { words: boolean; stops: string[] }, dist: TokenCandidate[]) =>
+  (L.words ? wordsOnly(dist, L.stops) : dist)
+
 /** The reply has reached its end of turn: a stop token (chat templates), or
  *  text ending in a stop string (a transcript's next speaker line). */
 function reachedEnd(tokens: { token: string }[], stops: string[]): boolean {
@@ -74,6 +79,8 @@ export function SteerView({
   const [saving, setSaving] = useState(false)
   // Steer through end of turn into the model's version of the next turn (user sim)
   const [pastEnd, setPastEnd] = useState(false)
+  // Hide numbers and symbols: options given the next token is a word
+  const [words, setWords] = useState(false)
   // The reply ended and was kept: the researcher writes the next turn
   const [yourTurn, setYourTurn] = useState<string | null>(null)
   const [myMessage, setMyMessage] = useState('')
@@ -93,7 +100,7 @@ export function SteerView({
     pointer: { x: 0, y: 0, inside: false },
     // Where each drawn option is on screen, with the path of options to it (deepest last)
     hits: [] as { x: number; y: number; h: number; path: Box[] }[],
-    paused: true, cruise: false, speed: 1.2, ended: false, pastEnd: false,
+    paused: true, cruise: false, speed: 1.2, ended: false, pastEnd: false, words: false,
     // How far the current column has traveled toward the line, 0..1
     progress: 0,
     stops: [] as string[],
@@ -106,8 +113,8 @@ export function SteerView({
     height: 600,
   })
   useEffect(() => {
-    Object.assign(live.current, { paused, cruise, speed, ended, pastEnd })
-  }, [paused, cruise, speed, ended, pastEnd])
+    Object.assign(live.current, { paused, cruise, speed, ended, pastEnd, words })
+  }, [paused, cruise, speed, ended, pastEnd, words])
 
   // -- Session --
 
@@ -189,7 +196,7 @@ export function SteerView({
     if (!last) return
     L.passed.pop()
     const parent = L.cache.get(keyOf(L.tokens.map((t) => t.id)))
-    const box = parent && layout(parent).find((b) => b.id === last.id)
+    const box = parent && layout(shown(L, parent)).find((b) => b.id === last.id)
     // Back out to where we arrived from: the parent column at the line, this box filling the screen
     L.view = box ? exit({ c: 0.5, s: L.height * REST }, box) : { c: 0.5, s: L.height * REST }
     L.progress = box ? 0.999 : 0
@@ -202,7 +209,7 @@ export function SteerView({
     const L = live.current
     if (L.ended) return
     const dist = L.cache.get(keyOf(L.tokens.map((t) => t.id)))
-    const box = dist && layout(dist)[rank]
+    const box = dist && layout(shown(L, dist))[rank]
     if (box) choose(box, 'researcher')
   }, [choose])
 
@@ -360,7 +367,7 @@ export function SteerView({
       const ids = L.tokens.map((t) => t.id)
       const dist = L.cache.get(keyOf(ids))
       if (!dist) fetchDist(ids)
-      const boxes = dist ? layout(dist) : []
+      const boxes = dist ? layout(shown(L, dist)) : []
 
       const restH = H * REST
       // Steering stays within the listed options (the rest is reachable by typing)
@@ -418,7 +425,7 @@ export function SteerView({
         g.font = `14px ${color('--font-ui')}`
         g.fillText('Asking the model…', Math.max(x0, crossX) + 16, crossY)
       } else {
-        const column = layout(dist)
+        const column = layout(shown(L, dist))
         const listed = column.length ? column[column.length - 1].b : 0
         // Probability not among the listed tokens: reachable only by typing
         const restTop = top + listed * L.view.s
@@ -432,11 +439,17 @@ export function SteerView({
             g.fillText('other tokens (type to choose)', x0 + 8, restTop + 14)
           }
         }
-        // Options shown conditioned (a healed trailing space: they must start a word)
-        if (dist[0]?.conditional) {
+        // Options shown conditioned: a healed trailing space (they must start a
+        // word), or words only
+        if (dist[0]?.conditional || L.words) {
           g.fillStyle = color('--text-tertiary')
           g.font = `11px ${color('--font-ui')}`
-          g.fillText('given it starts a new word (your text ended in a space)', x0 + 8, 34)
+          g.fillText(
+            L.words
+              ? 'words only: numbers and symbols hidden (probabilities given a word)'
+              : 'given it starts a new word (your text ended in a space)',
+            x0 + 8, 34,
+          )
         }
         const widths: number[] = []
         L.hits = []
@@ -549,7 +562,7 @@ export function SteerView({
           if (!children) fetchDist(childIds)
           else {
             drawColumn(
-              g, layout(children), childIds, y, h, depth + 1, childX, W, H, color, widths,
+              g, layout(shown(L, children)), childIds, y, h, depth + 1, childX, W, H, color, widths,
               [...path, box],
             )
           }
@@ -654,6 +667,13 @@ export function SteerView({
               title="Steer through end of turn into the model's version of the next turn"
             >
               Past end of turn
+            </button>
+            <button
+              onClick={() => setWords((v) => !v)}
+              className={words ? 'active' : ''}
+              title="Hide numbers and symbols; show the options given the next token is a word"
+            >
+              Words only
             </button>
           </div>
 
