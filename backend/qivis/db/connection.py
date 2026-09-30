@@ -70,6 +70,15 @@ class Database:
             await self._conn.commit()
             return cursor
 
+    async def executemany(self, sql: str, rows: list[tuple]) -> None:
+        """One statement for many rows (committed now, or with the enclosing transaction)."""
+        if self._in_transaction():
+            await self._conn.executemany(sql, rows)
+            return
+        async with self._write_lock:
+            await self._conn.executemany(sql, rows)
+            await self._conn.commit()
+
     @asynccontextmanager
     async def transaction(self) -> AsyncIterator[None]:
         """Commit every write inside the block together, or none of them."""

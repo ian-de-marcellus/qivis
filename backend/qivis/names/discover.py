@@ -28,9 +28,17 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from qivis.names.engine import FUNCTION_WORDS, PUNCTUATION, TITLES, _continues, _starts_name
+from qivis.names.engine import (
+    FUNCTION_WORDS,
+    TITLES,
+    Summary,
+    _continues,
+    _starts_name,
+    summarize,
+)
 
-Fetch = Callable[[str, list[int]], Awaitable[list[dict]]]
+# A prompt's next-token distribution after token ids: the candidates, or their Summary
+Fetch = Callable[[str, list[int]], Awaitable["list[dict] | Summary"]]
 
 FLOOR = 1e-12
 
@@ -128,16 +136,10 @@ async def discover(
 
         async def one(prompt: str) -> tuple[str, dict[str, Any]]:
             async with slots:
-                dist = await fetch(prompt, ids)
-            return prompt, {
-                # Only tokens a name can start or go on with (the rest can't be chosen)
-                "probs": {
-                    d["id"]: (d["token"], d["prob"]) for d in dist
-                    if d["prob"] > 1e-10 and (_starts_name(d["token"]) or _continues(d["token"]))
-                },
-                "ends": sum(d["prob"] for d in dist if not _continues(d["token"])),
-                "punct": sum(d["prob"] for d in dist if d["token"].startswith(PUNCTUATION)),
-            }
+                got = await fetch(prompt, ids)
+            # Only tokens a name can start or go on with (the rest can't be chosen)
+            s = got if isinstance(got, Summary) else summarize(got)
+            return prompt, {"probs": s.probs, "ends": s.ends, "punct": s.ends_with_punctuation}
 
         queries += len(prompts)
         return dict(await asyncio.gather(*[one(p) for p in prompts]))

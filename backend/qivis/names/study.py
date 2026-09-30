@@ -28,10 +28,9 @@ from qivis.errors import InvalidRequestError, NotFoundError
 from qivis.events.log import EventLog
 from qivis.events.projector import StateProjector
 from qivis.events.store import EventStore
-from qivis.models import SamplingParams
 from qivis.names import discover as discovery
 from qivis.names import engine
-from qivis.providers.base import GenerationRequest
+from qivis.names.cache import DistributionCache
 from qivis.providers.llamacpp import LlamaCppProvider
 from qivis.providers.registry import get_provider
 
@@ -126,6 +125,9 @@ class NameStudyService:
         self._events = EventLog(store, projector)
         self._db = projector._db
         self._tasks: dict[str, asyncio.Task] = {}
+        # The persistent memo of lookups, for the current llama.cpp provider
+        self._cache: DistributionCache | None = None
+        self._cache_llama: LlamaCppProvider | None = None
         self._progress: dict[str, dict[str, Any]] = {}
 
     # -- Lifecycle --
@@ -282,8 +284,8 @@ class NameStudyService:
             cell = await self._cell(study_id, c)
             if set(names) <= set(cell.get("firsts") or {}):
                 continue
-            dist = await self._fetcher(llama, model, prompt_of(c))([])
-            probs = {d["id"]: d["prob"] for d in dist}
+            first = await self._fetcher(llama, model, prompt_of(c))([])
+            probs = {tid: p for tid, (_, p) in first.probs.items()}
             firsts = dict(cell.get("firsts") or {})
             for name, tokens in spellings.items():
                 if tokens:
@@ -311,14 +313,17 @@ class NameStudyService:
                 "scores": scores, "queries": lookups.queries,
             })
 
-    @staticmethod
-    def _fetcher(llama: LlamaCppProvider, model: str, prompt: str) -> engine.Distribution:
-        request = GenerationRequest(
-            model=model, messages=[], prompt_text=prompt, sampling_params=SamplingParams(),
-        )
+    def _cache_for(self, llama: LlamaCppProvider) -> DistributionCache:
+        if self._cache is None or self._cache_llama is not llama:
+            self._cache, self._cache_llama = DistributionCache(self._db, llama), llama
+        return self._cache
 
-        async def fetch(ids: list[int]) -> list[dict]:
-            return (await llama.next_tokens(request, ids, LOOKUP_K))["candidates"]
+    def _fetcher(self, llama: LlamaCppProvider, model: str, prompt: str):
+        """Lookups for one prompt, through the persistent cache."""
+        cache = self._cache_for(llama)
+
+        async def fetch(ids: list[int]) -> engine.Summary:
+            return await cache.summary(model, prompt, ids)
 
         return fetch
 
@@ -395,14 +400,12 @@ class NameStudyService:
         assert isinstance(llama, LlamaCppProvider)
         queries = 0
 
-        async def fetch(prompt: str, ids: list[int]) -> list[dict]:
+        cache = self._cache_for(llama)
+
+        async def fetch(prompt: str, ids: list[int]) -> engine.Summary:
             nonlocal queries
             queries += 1
-            request = GenerationRequest(
-                model=spec.model, messages=[], prompt_text=prompt,
-                sampling_params=SamplingParams(),
-            )
-            return (await llama.next_tokens(request, ids, LOOKUP_K))["candidates"]
+            return await cache.summary(spec.model, prompt, ids)
 
         def progress(done: int, of: int) -> None:
             self._progress[discovery_id] = {

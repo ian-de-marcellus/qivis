@@ -329,6 +329,13 @@ _MIGRATIONS: list[tuple[str, str]] = [
      "queries INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)"),
     ("029_create_app_settings",
      "CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)"),
+    # Name searches' memo of next-token distributions (derived, clearable)
+    ("030_create_name_lookup_cache",
+     "CREATE TABLE IF NOT EXISTS name_lookup_cache (key TEXT PRIMARY KEY, identity TEXT NOT NULL, "
+     "data BLOB NOT NULL, ends REAL NOT NULL, punct REAL NOT NULL)"),
+    ("031_create_name_vocab",
+     "CREATE TABLE IF NOT EXISTS name_vocab (identity TEXT NOT NULL, id INTEGER NOT NULL, "
+     "token TEXT NOT NULL, PRIMARY KEY (identity, id))"),
 ]
 
 

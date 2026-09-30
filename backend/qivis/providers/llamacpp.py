@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import os
 import re
 from collections.abc import AsyncIterator
 from typing import Any
@@ -655,6 +656,28 @@ class LlamaCppProvider(LLMProvider):
         ]
         return {
             "candidates": candidates, "logit_bias": applied, "effective_prompt": effective_prompt,
+        }
+
+    async def model_identity(self, model: str = "") -> dict[str, Any]:
+        """Everything about the served model that shapes its distributions: its
+        file (path and size), the llama.cpp build, and its profile's settings.
+        A sleeping model's stand-in props lack the build, so it's woken first."""
+        props = await self._props(model)
+        if "build_info" not in props:
+            await self._client.post(
+                f"{self._base_url}/tokenize", json={"model": model, "content": ""},
+            )
+            props = await self._props(model)
+        path = props.get("model_path") or ""
+        try:
+            size = os.path.getsize(path) if path else None
+        except OSError:
+            size = None
+        served = _served_name(props)
+        profile = self._model_defaults.get(served or "", {})
+        return {
+            "model": served, "path": path, "size": size, "build": props.get("build_info"),
+            "logit_bias": profile.get("logit_bias"), "bos_tokens": profile.get("bos_tokens"),
         }
 
     async def document_start(self, model: str = "") -> str:

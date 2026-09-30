@@ -22,7 +22,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
 # Probability below which a token is not worth keeping from a distribution
-FLOOR = 1e-8
+FLOOR = 1e-10
 
 FUNCTION_WORDS = frozenset("""
 The An This That These Those It Its He She They We You His Her Hers Their Theirs Our Ours
@@ -67,11 +67,27 @@ class Summary:
     ends_with_punctuation: float
 
 
+def keeps(token: str) -> bool:
+    """A token a name can start or go on with (or the "." after a title)."""
+    return _starts_name(token) or _continues(token) or token == "."
+
+
+def summarize(dist: list[Candidate], floor: float = FLOOR) -> Summary:
+    """One distribution, reduced to what a name search needs."""
+    return Summary(
+        probs={c["id"]: (c["token"], c["prob"]) for c in dist
+               if c["prob"] > floor and keeps(c["token"])},
+        ends=sum(c["prob"] for c in dist if not _continues(c["token"])),
+        ends_with_punctuation=sum(c["prob"] for c in dist if c["token"].startswith(PUNCTUATION)),
+    )
+
+
 @dataclass
 class Lookups:
-    """Distributions fetched for one text, kept so a study's scoring reuses them."""
+    """Distributions fetched for one text, kept so a study's scoring reuses them.
+    `fetch` returns a distribution, or its Summary (e.g. from a persistent cache)."""
 
-    fetch: Distribution
+    fetch: Callable[[list[int]], Awaitable[list[Candidate] | Summary]]
     cache: dict[tuple[int, ...], Summary] = field(default_factory=dict)
     queries: int = 0
 
@@ -79,14 +95,8 @@ class Lookups:
         key = tuple(ids)
         if key not in self.cache:
             self.queries += 1
-            dist = await self.fetch(ids)
-            self.cache[key] = Summary(
-                probs={c["id"]: (c["token"], c["prob"]) for c in dist if c["prob"] > FLOOR},
-                ends=sum(c["prob"] for c in dist if not _continues(c["token"])),
-                ends_with_punctuation=sum(
-                    c["prob"] for c in dist if c["token"].startswith(PUNCTUATION)
-                ),
-            )
+            result = await self.fetch(ids)
+            self.cache[key] = result if isinstance(result, Summary) else summarize(result)
         return self.cache[key]
 
 

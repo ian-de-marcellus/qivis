@@ -23,6 +23,9 @@ class FakeLlama(LlamaCppProvider):
     async def document_start(self, model: str = "") -> str:
         return "<|endoftext|>"
 
+    async def model_identity(self, model: str = "") -> dict:
+        return {"model": model, "fake": True}
+
     async def tokenize(self, text: str, model: str = "") -> list[dict]:
         by_text = {v: k for k, v in TOK.items()}
         return [{"id": by_text[text], "token": text}] if text in by_text else []
@@ -107,4 +110,21 @@ async def test_a_study_is_extended_with_more_pronouns(db: Database):
     assert it_cell["prompt"].endswith("It is kind. Its name is")
     for cell in study["cells"]:
         assert value(cell, "Sun") is not None and value(cell, "HAL") is not None
+    clear_providers()
+
+
+async def test_repeated_lookups_are_read_from_the_cache(db: Database):
+    """The same model, prompt and token path: a second study asks the model nothing."""
+    clear_providers()
+    llama = FakeLlama()
+    register_provider(llama)
+    svc = NameStudyService(EventStore(db), StateProjector(db))
+    first = await _finish(svc, (await svc.create(SPEC))["study_id"])
+    asked = llama.queries
+    assert asked > 0
+
+    second = await _finish(svc, (await svc.create(SPEC.model_copy(update={"title": "again"})))["study_id"])
+    assert llama.queries == asked  # every lookup came from the cache
+    assert [c["top"] for c in second["cells"]] == [c["top"] for c in first["cells"]]
+    assert [c["scores"] for c in second["cells"]] == [c["scores"] for c in first["cells"]]
     clear_providers()
