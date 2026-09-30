@@ -28,8 +28,8 @@ from qivis.errors import InvalidRequestError, NotFoundError
 from qivis.events.log import EventLog
 from qivis.events.projector import StateProjector
 from qivis.events.store import EventStore
+from qivis.names import direct, engine
 from qivis.names import discover as discovery
-from qivis.names import engine
 from qivis.names.cache import DistributionCache
 from qivis.providers.llamacpp import LlamaCppProvider
 from qivis.providers.registry import get_provider
@@ -37,8 +37,10 @@ from qivis.providers.registry import get_provider
 logger = logging.getLogger(__name__)
 
 LOOKUP_K = 1_000_000  # the whole vocabulary (llama.cpp clamps it)
-CELLS_AT_ONCE = 4  # one per llama.cpp slot, so each keeps its prompt cached
-NAMES_AT_ONCE = 4  # within a cell, names scored at once
+# Cells at once, and within a cell names scored at once: through llama-server,
+# one cell per slot (each keeps its prompt cached); direct, as many as batch well
+CELLS_AT_ONCE = {False: 4, True: 16}
+NAMES_AT_ONCE = {False: 4, True: 8}
 
 DEFAULT_FRAMES = {
     "he": ["His name is", "He is called", "His name was", "He calls himself"],
@@ -247,7 +249,8 @@ class NameStudyService:
             if (await self._cell(study_id, c)).get("top") is not None:
                 return
             lookups = engine.Lookups(self._fetcher(llama, model, prompt_of(c)))
-            top, capital = await engine.enumerate_names(lookups, spec.top)
+            ahead = 8 if direct.enabled() else 4
+            top, capital = await engine.enumerate_names(lookups, spec.top, ahead=ahead)
             await self._record(study_id, "NameStudyCellEnumerated", c, prompt_of(c), {
                 "top": top, "capital_mass": capital, "queries": lookups.queries,
             })
@@ -286,12 +289,11 @@ class NameStudyService:
             if set(names) <= set(cell.get("firsts") or {}):
                 return
             first = await self._fetcher(llama, model, prompt_of(c))([])
-            probs = {tid: p for tid, (_, p) in first.probs.items()}
             firsts = dict(cell.get("firsts") or {})
             for name, tokens in spellings.items():
                 if tokens:
                     firsts[name] = {
-                        "p": probs.get(tokens[0]["id"], 0.0),
+                        "p": first.prob(tokens[0]["id"]),
                         "t": tokens[0]["token"], "n": len(tokens),
                     }
             await self._record(study_id, "NameStudyCellFirsts", c, prompt_of(c), {
@@ -304,7 +306,7 @@ class NameStudyService:
         """`work` on every cell, CELLS_AT_ONCE at a time: a cell's lookups follow
         one another (each depends on the last), so it's cells that overlap, one
         per llama.cpp slot. One failing stops the rest."""
-        slots = asyncio.Semaphore(CELLS_AT_ONCE)
+        slots = asyncio.Semaphore(CELLS_AT_ONCE[direct.enabled()])
         done = 0
 
         def report() -> None:
@@ -336,7 +338,8 @@ class NameStudyService:
             lookups = engine.Lookups(self._fetcher(llama, model, prompt_of(c)))
             spell = self._cache_for(llama).spelling
             scores = dict(cell.get("scores") or {})
-            slots = asyncio.Semaphore(NAMES_AT_ONCE)  # a name's prefixes are shared, not refetched
+            # A name's prefixes are shared, not refetched
+            slots = asyncio.Semaphore(NAMES_AT_ONCE[self._cache_for(llama).direct])
 
             async def score(name: str) -> None:
                 ids = [t["id"] for t in await spell(model, name)]
@@ -369,7 +372,8 @@ class NameStudyService:
         model, pronoun, frame, condition = c
         await self._events.emit(study_id, event_type, {
             "study_id": study_id, "key": cell_key(*c), "model": model, "pronoun": pronoun,
-            "frame": frame, "condition": condition, "prompt": prompt, **data,
+            "frame": frame, "condition": condition, "prompt": prompt,
+            "engine": direct.engine_name(), **data,
         })
 
     # -- Excluded names --
@@ -454,7 +458,7 @@ class NameStudyService:
         try:
             found = await discovery.discover(
                 fetch, roles, weights, beam=spec.beam, depth=spec.depth,
-                alpha=spec.alpha, top=spec.top, progress=progress,
+                alpha=spec.alpha, top=spec.top, progress=progress, parallel=cache.parallel,
                 excluded=set(await self.excluded_names()), name_floor=spec.name_floor,
             )
             results = [
@@ -463,7 +467,7 @@ class NameStudyService:
             ]
             await self._events.emit(discovery_id, "NameDiscoveryFinished", {
                 "discovery_id": discovery_id, "status": "done", "results": results,
-                "queries": queries,
+                "queries": queries, "engine": direct.engine_name(),
             })
         except asyncio.CancelledError:
             raise

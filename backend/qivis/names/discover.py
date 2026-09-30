@@ -26,7 +26,6 @@ import asyncio
 import math
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Any
 
 from qivis.names.engine import (
     FUNCTION_WORDS,
@@ -134,33 +133,32 @@ async def discover(
     slots = asyncio.Semaphore(parallel)
     queries = 0
 
-    async def look(ids: list[int]) -> dict[str, dict[str, Any]]:
+    async def look(ids: list[int]) -> dict[str, Summary]:
         nonlocal queries
 
-        async def one(prompt: str) -> tuple[str, dict[str, Any]]:
+        async def one(prompt: str) -> tuple[str, Summary]:
             async with slots:
                 got = await fetch(prompt, ids)
             # Only tokens a name can start or go on with (the rest can't be chosen)
-            s = got if isinstance(got, Summary) else summarize(got)
-            return prompt, {"probs": s.probs, "ends": s.ends, "punct": s.ends_with_punctuation}
+            return prompt, got if isinstance(got, Summary) else summarize(got)
 
         queries += len(prompts)
         return dict(await asyncio.gather(*[one(p) for p in prompts]))
 
-    def candidates(looked: dict[str, dict], first: bool) -> list[int]:
+    def candidates(looked: dict[str, Summary], first: bool) -> list[int]:
         """Tokens the model finds plausible for the description (averaged over frames)."""
         g = roles.description
         pool: dict[int, float] = {}
-        for tid, (tok, _) in looked[g[0]]["probs"].items():
+        for tid, tok, _ in looked[g[0]].items():
             if (_starts_name(tok) if first else _continues(tok)):
-                pool[tid] = sum(looked[p]["probs"].get(tid, ("", 0.0))[1] for p in g) / len(g)
+                pool[tid] = sum(looked[p].prob(tid) for p in g) / len(g)
         if not pool:
             return []
         best = max(pool.values())
         return [tid for tid, p in pool.items() if p >= alpha * best]
 
-    def extend(logs: dict[str, float], looked: dict[str, dict], tid: int) -> dict[str, float]:
-        return {p: logs[p] + _ln(looked[p]["probs"].get(tid, ("", 0.0))[1]) for p in prompts}
+    def extend(logs: dict[str, float], looked: dict[str, Summary], tid: int) -> dict[str, float]:
+        return {p: logs[p] + _ln(looked[p].prob(tid)) for p in prompts}
 
     floor = math.log(name_floor) if name_floor > 0 else None
 
@@ -176,7 +174,7 @@ async def discover(
     zero = {p: 0.0 for p in prompts}
     frontier = []
     for tid in candidates(root, first=True):
-        tok = root[roles.description[0]]["probs"][tid][0]
+        tok = root[roles.description[0]].token(tid)
         logs = extend(zero, root, tid)
         if name_shaped(logs):
             frontier.append((score(roles, weights, logs), tok, [tid], logs))
@@ -189,7 +187,9 @@ async def discover(
                 progress(level * beam + i, depth * beam)
             looked = await look(ids)
             name = text.strip()
-            ends = {p: _ends(name, looked[p]["ends"], looked[p]["punct"]) for p in prompts}
+            ends = {
+                p: _ends(name, looked[p].ends, looked[p].ends_with_punctuation) for p in prompts
+            }
             if all(e > 0 for e in ends.values()) and name not in (excluded or set()):
                 final = {p: logs[p] + _ln(ends[p]) for p in prompts}
             else:
@@ -200,7 +200,7 @@ async def discover(
                     found[name] = Found(name, s, final)
             if level + 1 < depth:
                 for tid in candidates(looked, first=False):
-                    tok = looked[roles.description[0]]["probs"][tid][0]
+                    tok = looked[roles.description[0]].token(tid)
                     child = extend(logs, looked, tid)
                     if not name_shaped(child):
                         continue

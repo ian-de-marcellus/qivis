@@ -372,6 +372,9 @@ class NameStudyCellPayload(BaseModel):
     prompt: str
     top: dict[str, float] | None = None  # the cell's own top names
     capital_mass: float | None = None
+    # What computed it: "llama-server", or "direct" (llama.cpp itself; see
+    # qivis.names.direct). None: recorded before engines were named (llama-server)
+    engine: str | None = None
     scores: dict[str, float] | None = None  # the study's names, scored here
     # Per study name, its first token here: {"p": probability, "t": token, "n": tokens
     # in the name}, so a name's lean can be split from its first token's (" Mind"+"y")
@@ -406,6 +409,7 @@ class NameDiscoveryFinishedPayload(BaseModel):
     results: list[dict] = []
     error: str | None = None
     queries: int = 0
+    engine: str | None = None  # as for a study's cells
 
 
 class ExcludedNamesSetPayload(BaseModel):

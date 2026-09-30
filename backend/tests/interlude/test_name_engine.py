@@ -103,3 +103,11 @@ async def test_a_lookup_in_flight_is_fetched_once():
     lookups = Lookups(slow)
     await asyncio.gather(lookups.get([1]), lookups.get([1]), lookups.get([1, 2]))
     assert sorted(calls) == [(1,), (1, 2)] and lookups.queries == 2
+
+
+def test_a_summary_reads_likeliest_first():
+    from qivis.names.engine import Summary
+
+    s = Summary.of({7: (" Ada", 0.1), 3: (" Eve", 0.3), 9: ("n", 0.3)}, 0.9, 0.2)
+    assert [tid for tid, _, _ in s.items()] == [3, 9, 7]  # ties by id
+    assert s.prob(7) == 0.1 and s.prob(42) == 0.0 and s.token(9) == "n"

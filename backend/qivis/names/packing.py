@@ -16,8 +16,9 @@ from qivis.names import engine
 
 
 def pack(s: engine.Summary) -> bytes:
-    ids = sorted(s.probs)
-    probs = [s.probs[i][1] for i in ids]
+    pairs = sorted(zip(s.ids, s.ps, strict=True))
+    ids = [i for i, _ in pairs]
+    probs = [p for _, p in pairs]
     narrow = array("f", probs)
     if narrow.tolist() != probs:
         body = array("i", ids).tobytes() + array("d", probs).tobytes()

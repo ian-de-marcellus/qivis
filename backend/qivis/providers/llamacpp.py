@@ -636,21 +636,27 @@ class LlamaCppProvider(LLMProvider):
             "candidates": candidates, "logit_bias": applied, "effective_prompt": effective_prompt,
         }
 
+    async def lookup_inputs(
+        self, request: GenerationRequest,
+    ) -> tuple[str, dict[int, float] | None, str | None]:
+        """What a next-token lookup gives the model: the prompt text to tokenize
+        (the server adds its BOS, as for any string prompt), the logit bias
+        applied, and the effective prompt if it differs from the rendered one."""
+        served = await self._served_model(request.model) if self._model_defaults else None
+        applied = self._effective_logit_bias(request, served)
+        prompt, effective_prompt = await self._prompt_to_send(
+            request.prompt_text or "", served, request.model,
+        )
+        return prompt, applied, effective_prompt
+
     async def next_tokens_raw(
         self, request: GenerationRequest, continuation: list[int], k: int,
     ) -> tuple[bytes, dict | None, str | None]:
         """next_tokens' server response, unparsed (a full vocabulary is megabytes
         of JSON: a caller may parse it off the event loop), with the logit bias
         applied and the effective prompt."""
-        served = await self._served_model(request.model) if self._model_defaults else None
-        applied = self._effective_logit_bias(request, served)
+        prompt, applied, effective_prompt = await self.lookup_inputs(request)
         body = self._build_request_body(request, applied)
-        prompt = body["prompt"]
-        effective_prompt = None
-        if isinstance(prompt, str):
-            prompt, effective_prompt = await self._prompt_to_send(
-                prompt, served, request.model,
-            )
         body.update({
             # Text first (the server adds its BOS as for a string prompt), then ids
             "prompt": [prompt, *continuation],

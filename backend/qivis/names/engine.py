@@ -23,8 +23,9 @@ Rules for what counts (a name study records them with its results):
 import asyncio
 import heapq
 import json
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
+from functools import cached_property
 
 # Probability below which a token is not worth keeping from a distribution
 FLOOR = 1e-10
@@ -62,14 +63,41 @@ def _continues(token: str) -> bool:
     return token[0] in "'-" and len(token) > 1 and token[1].isalpha()
 
 
-@dataclass
+@dataclass(eq=False)
 class Summary:
     """What a name search needs from one distribution: every token above FLOOR,
-    and how much probability ends a word (all of it, and punctuation's)."""
+    likeliest first, and how much probability ends a word (all of it, and
+    punctuation's). Arrays, not a dict: a distribution keeps tens of thousands
+    of tokens, and most searches read only the top of it."""
 
-    probs: dict[int, tuple[str, float]]
+    ids: Sequence[int]
+    ps: Sequence[float]
+    vocab: Mapping[int, str] | Sequence[str]  # token text by id
     ends: float
     ends_with_punctuation: float
+
+    @classmethod
+    def of(cls, probs: Mapping[int, tuple[str, float]], ends: float, punct: float) -> Summary:
+        """From {id: (token, probability)}."""
+        order = sorted(probs, key=lambda i: (-probs[i][1], i))
+        vocab = {i: probs[i][0] for i in order}
+        return cls(order, [probs[i][1] for i in order], vocab, ends, punct)
+
+    @cached_property
+    def _index(self) -> dict[int, float]:
+        return dict(zip(self.ids, self.ps, strict=True))
+
+    def prob(self, tid: int) -> float:
+        return self._index.get(tid, 0.0)
+
+    def token(self, tid: int) -> str:
+        return self.vocab[tid]
+
+    def items(self) -> Iterator[tuple[int, str, float]]:
+        """(id, token, probability), likeliest first."""
+        vocab = self.vocab
+        for tid, p in zip(self.ids, self.ps, strict=True):
+            yield tid, vocab[tid], p
 
 
 def keeps(token: str) -> bool:
@@ -79,11 +107,11 @@ def keeps(token: str) -> bool:
 
 def summarize(dist: list[Candidate], floor: float = FLOOR) -> Summary:
     """One distribution, reduced to what a name search needs."""
-    return Summary(
-        probs={c["id"]: (c["token"], c["prob"]) for c in dist
-               if c["prob"] > floor and keeps(c["token"])},
-        ends=sum(c["prob"] for c in dist if not _continues(c["token"])),
-        ends_with_punctuation=sum(c["prob"] for c in dist if c["token"].startswith(PUNCTUATION)),
+    return Summary.of(
+        {c["id"]: (c["token"], c["prob"]) for c in dist
+         if c["prob"] > floor and keeps(c["token"])},
+        sum(c["prob"] for c in dist if not _continues(c["token"])),
+        sum(c["prob"] for c in dist if c["token"].startswith(PUNCTUATION)),
     )
 
 
@@ -145,7 +173,7 @@ async def enumerate_names(
     next `ahead` are started early, so several are in flight at once. Which are
     expanded, and in what order, is the same as without: the answer is too."""
     first = await lookups.get([])
-    capital = {tid: (tok, p) for tid, (tok, p) in first.probs.items() if _starts_name(tok)}
+    capital = {tid: (tok, p) for tid, tok, p in first.items() if _starts_name(tok)}
     capital_mass = sum(p for _, p in capital.values())
     # (negative probability, text so far, token ids, in a title)
     heap: list[tuple[float, str, list[int], bool]] = [
@@ -178,10 +206,10 @@ async def enumerate_names(
                 heapq.heappush(best, total)
                 if len(best) > top:
                     heapq.heappop(best)
-            for tid, (tok, q) in s.probs.items():
+            for tid, tok, q in s.items():
                 nxt = p * q
                 if nxt <= bound() or nxt < FLOOR:
-                    continue
+                    break  # likeliest first: the rest are smaller still
                 if _continues(tok):
                     heapq.heappush(heap, (-nxt, text + tok, ids + [tid], titled))
                 elif titled and name in TITLES and tok == ".":
@@ -199,7 +227,7 @@ async def score_name(lookups: Lookups, ids: list[int], name: str) -> float:
     p = 1.0
     for i, tid in enumerate(ids):
         s = await lookups.get(ids[:i])
-        p *= s.probs.get(tid, ("", 0.0))[1]
+        p *= s.prob(tid)
         if p == 0.0:
             return 0.0
     return p * _word_end(name, await lookups.get(ids))

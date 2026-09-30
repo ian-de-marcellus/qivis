@@ -5,7 +5,7 @@ from qivis.names.engine import Summary
 
 
 def _roundtrip(probs: dict[int, float]) -> list[tuple[int, float]]:
-    s = Summary(probs={i: (f"t{i}", p) for i, p in probs.items()}, ends=0.5, ends_with_punctuation=0.1)
+    s = Summary.of({i: (f"t{i}", p) for i, p in probs.items()}, 0.5, 0.1)
     ids, back = packing.unpack(packing.pack(s))
     return list(zip(ids, back, strict=True))
 
@@ -13,8 +13,8 @@ def _roundtrip(probs: dict[int, float]) -> list[tuple[int, float]]:
 def test_float32_probabilities_are_stored_compactly_and_exactly():
     probs = {5: 0.5, 70000: 0.25, 12: 2.0 ** -30, 99999: 0.125}  # float32 holds these exactly
     assert _roundtrip(probs) == sorted(probs.items())
-    wide = Summary(probs={i: ("", 0.1) for i in range(1000)}, ends=0, ends_with_punctuation=0)
-    narrow = Summary(probs={i: ("", 0.125) for i in range(1000)}, ends=0, ends_with_punctuation=0)
+    wide = Summary.of({i: ("", 0.1) for i in range(1000)}, 0, 0)
+    narrow = Summary.of({i: ("", 0.125) for i in range(1000)}, 0, 0)
     assert len(packing.pack(narrow)) < len(packing.pack(wide))
 
 

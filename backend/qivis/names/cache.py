@@ -13,6 +13,9 @@ with, above the engine's floor, and the probability of ending a word.
 It's derived data, like a projection, not a record: clearing it loses
 nothing but time.
 
+With direct lookups on (qivis.names.direct), lookups go to llama.cpp itself
+and skip this table: computing one takes less time than reading it back.
+
 A lookup's response is the whole vocabulary as JSON (about 9 MB for OLMo);
 parsing it takes longer than the model takes to read the prompt. So it's
 parsed in worker processes, several at once, and only the small Summary
@@ -28,7 +31,7 @@ from typing import Any
 
 from qivis.db.connection import Database
 from qivis.models import SamplingParams
-from qivis.names import engine, packing
+from qivis.names import direct, engine, packing
 from qivis.providers.base import GenerationRequest
 from qivis.providers.llamacpp import LlamaCppProvider
 
@@ -74,12 +77,20 @@ class DistributionCache:
         self._identities: dict[str, str] = {}
         self._vocab: dict[str, dict[int, str]] = {}
         self._spellings: dict[tuple[str, str], list[dict]] = {}
+        self._paths: dict[str, str] = {}
         self.hits = 0
         self.misses = 0
+        # Lookups worth having in flight at once: llama-server has 4 slots; the
+        # direct engine batches whatever's waiting
+        self.direct = direct.enabled()
+        self.parallel = 32 if self.direct else 4
 
     async def identity(self, model: str) -> str:
         if model not in self._identities:
             ident = await self._llama.model_identity(model)
+            self._paths[model] = ident.get("path") or ""
+            if self.direct:
+                ident = {**ident, **direct.identity()}
             self._identities[model] = hashlib.sha256(
                 json.dumps(ident, sort_keys=True).encode(),
             ).hexdigest()[:32]
@@ -93,6 +104,8 @@ class DistributionCache:
         return self._spellings[key]
 
     async def summary(self, model: str, prompt: str, ids: list[int]) -> engine.Summary:
+        if self.direct:
+            return await self._direct(model, prompt, ids)
         ident = await self.identity(model)
         key = hashlib.sha256(json.dumps([ident, prompt, ids]).encode()).hexdigest()
         row = await self._db.fetchone(
@@ -110,9 +123,21 @@ class DistributionCache:
         await self._store(ident, key, summary, data)
         return summary
 
+    async def _direct(self, model: str, prompt: str, ids: list[int]) -> engine.Summary:
+        await self.identity(model)
+        path = self._paths[model]
+        if not path:
+            raise RuntimeError(f"llama-server doesn't say where {model}'s file is")
+        request = GenerationRequest(
+            model=model, messages=[], prompt_text=prompt, sampling_params=SamplingParams(),
+        )
+        text, bias, _ = await self._llama.lookup_inputs(request)
+        self.misses += 1
+        return await direct.get_engine().summary(path, text, ids, bias)
+
     async def _store(self, ident: str, key: str, s: engine.Summary, data: bytes) -> None:
         vocab = self._vocab.setdefault(ident, {})
-        new = [(ident, i, t) for i, (t, _) in s.probs.items() if i not in vocab]
+        new = [(ident, i, s.token(i)) for i in s.ids if i not in vocab]
         if new:
             await self._db.executemany(
                 "INSERT OR IGNORE INTO name_vocab (identity, id, token) VALUES (?, ?, ?)", new,
@@ -130,8 +155,9 @@ class DistributionCache:
         if any(i not in vocab for i in ids):  # stored by an earlier run: read them in
             self._vocab.pop(ident, None)
             vocab = await self._vocabulary(ident)
+        order = sorted(zip(probs, ids), key=lambda x: (-x[0], x[1]))
         return engine.Summary(
-            probs={i: (vocab[i], p) for i, p in zip(ids, probs, strict=True)},
+            ids=[i for _, i in order], ps=[p for p, _ in order], vocab=vocab,
             ends=row["ends"], ends_with_punctuation=row["punct"],
         )
 
