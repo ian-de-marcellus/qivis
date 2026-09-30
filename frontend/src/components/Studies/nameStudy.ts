@@ -32,6 +32,8 @@ export interface NameRow extends Comparison {
   name: string
   extra: boolean
   byPronoun: Record<string, Comparison>
+  /** Per pronoun set: how many times more likely than with "it", for the subject */
+  overIt: Record<string, number>
 }
 
 function cellsOf(study: NameStudy, model: string, condition: NameCondition, pronoun?: string) {
@@ -75,7 +77,30 @@ export function nameRows(study: NameStudy, model: string): NameRow[] {
     ...compare(study, cellsOf(study, model, 'model'), name),
     byPronoun: Object.fromEntries(study.spec.pronouns.map((pronoun) =>
       [pronoun, compare(study, cellsOf(study, model, 'model', pronoun), name)])),
+    overIt: Object.fromEntries(study.spec.pronouns.filter((p) => p !== 'it')
+      .map((pronoun) => [pronoun, pronounPull(study, model, name, pronoun, 'it')])),
   }))
+}
+
+/**
+ * How much a pronoun set pulls toward a name, against another (e.g. "she" over
+ * "it"), for the subject's description: frames paired by position ("Her name
+ * is" with "Its name is"), the log ratios averaged. NaN if either is missing.
+ */
+export function pronounPull(
+  study: NameStudy, model: string, name: string, pronoun: string, base: string,
+): number {
+  const mine = cellsOf(study, model, 'model', pronoun)
+  const theirs = cellsOf(study, model, 'model', base)
+  const framesOf = (p: string) => study.spec.frames[p] ?? []
+  const logs = framesOf(pronoun).flatMap((frame, i) => {
+    const a = mine.find((c) => c.frame === frame)
+    const b = theirs.find((c) => c.frame === framesOf(base)[i])
+    const va = a && value(a, name)
+    const vb = b && value(b, name)
+    return va == null || vb == null ? [] : [ln(va) - ln(vb)]
+  })
+  return logs.length ? Math.exp(mean(logs)) : NaN
 }
 
 /**

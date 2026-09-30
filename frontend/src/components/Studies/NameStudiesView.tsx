@@ -25,7 +25,9 @@ const DEFAULT_DESCRIPTION =
   + 'the dignity of live and consciousness and the universe in general.'
 
 const pct = (p: number) => (p >= 0.001 ? `${(p * 100).toFixed(2)}%` : `${(p * 100).toExponential(1)}%`)
-const times = (x: number) => (Number.isNaN(x) ? '–' : x >= 10 || x < 0.1 ? `${x.toPrecision(2)}×` : `${x.toFixed(2)}×`)
+const times = (x: number) => (Number.isNaN(x) ? '–'
+  : x > 10_000 ? '>10,000×'
+  : x >= 10 || x < 0.1 ? `${x.toPrecision(2)}×` : `${x.toFixed(2)}×`)
 const short = (model: string) => model.replace(/\.gguf$/, '')
 
 export function NameStudiesView({ onDismiss }: { onDismiss: () => void }) {
@@ -237,7 +239,14 @@ function NewStudy({ onCreated }: { onCreated: (studyId: string) => void }) {
 
 // -- A study's results --
 
-type SortKey = 'p' | 'vsControl' | 'vsBare' | 'name'
+/** A column to sort by: an overall one, or a pronoun's ("over:she", "human:she") */
+type SortKey = 'p' | 'vsControl' | 'vsBare' | 'name' | `over:${string}` | `human:${string}`
+
+function sortValue(r: NameRow, key: SortKey): number {
+  if (key.startsWith('over:')) return r.overIt[key.slice(5)] ?? NaN
+  if (key.startsWith('human:')) return r.byPronoun[key.slice(6)]?.vsControl ?? NaN
+  return r[key as 'p' | 'vsControl' | 'vsBare']
+}
 
 function StudyResults({ studyId, onChange }: { studyId: string; onChange: () => void }) {
   const [study, setStudy] = useState<NameStudy | null>(null)
@@ -245,6 +254,8 @@ function StudyResults({ studyId, onChange }: { studyId: string; onChange: () => 
   const [sort, setSort] = useState<SortKey>('vsControl')
   const [open, setOpen] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // Only names more likely for the subject than for the control (2x or more)
+  const [aiOnly, setAiOnly] = useState(false)
 
   const load = useCallback(() => {
     api.getNameStudy(studyId).then((s) => {
@@ -262,10 +273,11 @@ function StudyResults({ studyId, onChange }: { studyId: string; onChange: () => 
 
   const rows = useMemo(() => {
     if (!study || !model) return []
-    const r = nameRows(study, model)
-    const key: (x: NameRow) => number | string = sort === 'name' ? (x) => x.name : (x) => -x[sort]
-    return r.sort((a, b) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0))
-  }, [study, model, sort])
+    const r = nameRows(study, model).filter((x) => !aiOnly || x.vsControl >= 2)
+    if (sort === 'name') return r.sort((a, b) => a.name.localeCompare(b.name))
+    const v = (x: NameRow) => { const n = sortValue(x, sort); return Number.isNaN(n) ? -Infinity : n }
+    return r.sort((a, b) => v(b) - v(a))
+  }, [study, model, sort, aiOnly])
 
   if (error) return <div className="study-error">{error}</div>
   if (!study || !model) return <div className="hint">Loading…</div>
@@ -275,6 +287,8 @@ function StudyResults({ studyId, onChange }: { studyId: string; onChange: () => 
     onChange()
   }
   const agreement = frameAgreement(study, model)
+  const hasIt = study.spec.pronouns.includes('it')
+  const pulled = study.spec.pronouns.filter((p) => p !== 'it')
   const conditions = study.spec.include_bare ? (['model', 'control', 'bare'] as const) : (['model', 'control'] as const)
   const label = { model: study.spec.subject, control: study.spec.control, bare: 'no description' }
 
@@ -308,8 +322,12 @@ function StudyResults({ studyId, onChange }: { studyId: string; onChange: () => 
         <section className="names-table">
           <h4>
             Names for {study.spec.subject}
-            <span className="hint"> · averaged over {study.spec.pronouns.join('/')} and their frames</span>
+            <span className="hint"> · averaged over {study.spec.pronouns.join('/')} and their frames · click a column to sort</span>
           </h4>
+          <label className="choice ai-only">
+            <input type="checkbox" checked={aiOnly} onChange={(e) => setAiOnly(e.target.checked)} />
+            only names at least 2× likelier than for {study.spec.control}
+          </label>
           {rows.length === 0 ? (
             <p className="hint">The comparison appears once the names are scored in every cell.</p>
           ) : (
@@ -329,7 +347,16 @@ function StudyResults({ studyId, onChange }: { studyId: string; onChange: () => 
                     </th>
                   )}
                   {study.spec.pronouns.length > 1 && study.spec.pronouns.map((p) => (
-                    <th key={p} className="minor" title={`× vs ${study.spec.control}, for "${p}"`}>{p}</th>
+                    <th key={p} className="minor" onClick={() => setSort(`human:${p}`)}
+                      title={`× vs ${study.spec.control}, for "${p}"`}>
+                      {p} vs {study.spec.control}{sort === `human:${p}` && ' ↓'}
+                    </th>
+                  ))}
+                  {hasIt && pulled.map((p) => (
+                    <th key={`over-${p}`} className="pull" onClick={() => setSort(`over:${p}`)}
+                      title={`How many times more likely with "${p}" than with "it", for ${study.spec.subject} (frames paired)`}>
+                      {p} ÷ it{sort === `over:${p}` && ' ↓'}
+                    </th>
                   ))}
                 </tr>
               </thead>
@@ -347,10 +374,13 @@ function StudyResults({ studyId, onChange }: { studyId: string; onChange: () => 
                       {study.spec.pronouns.length > 1 && study.spec.pronouns.map((p) => (
                         <td key={p} className="minor">{times(r.byPronoun[p].vsControl)}</td>
                       ))}
+                      {hasIt && pulled.map((p) => (
+                        <td key={`over-${p}`} className={`pull ${r.overIt[p] > 1 ? 'up' : 'down'}`}>{times(r.overIt[p])}</td>
+                      ))}
                     </tr>
                     {open === r.name && (
                       <tr className="cells-row">
-                        <td colSpan={4 + study.spec.pronouns.length}>
+                        <td colSpan={4 + 2 * study.spec.pronouns.length}>
                           <CellValues study={study} model={model} name={r.name} />
                         </td>
                       </tr>

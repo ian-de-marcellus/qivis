@@ -196,3 +196,6 @@
 .names-table { overflow-x: auto; }
 .cell-values td { white-space: nowrap; }
 .field-row .choice { white-space: nowrap; padding-bottom: var(--space-sm); }
+
+.names-table th.pull, .names-table td.pull { border-left: 1px dashed var(--border); }
+.ai-only { margin-bottom: var(--space-sm); color: var(--text-secondary); }

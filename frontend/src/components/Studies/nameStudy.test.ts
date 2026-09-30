@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { NameStudy, NameStudyCell } from '../../api/types.ts'
-import { frameAgreement, nameRows, ownTop, studyNames, withPronouns } from './nameStudy.ts'
+import { frameAgreement, nameRows, ownTop, pronounPull, studyNames, withPronouns } from './nameStudy.ts'
 
 const cell = (
   pronoun: string, frame: string, condition: NameStudyCell['condition'],
@@ -63,5 +63,21 @@ describe('withPronouns', () => {
   it('makes the verb after "they" plural', () => {
     expect(withPronouns(text, 'they')).toBe(
       'They believe in minds. They are a friend, and they care about their own dignity and those they love. It pleases them.')
+  })
+})
+
+describe('pronounPull', () => {
+  it("pairs frames by position and averages the log ratios", () => {
+    const s = {
+      ...study,
+      spec: { ...study.spec, pronouns: ['she', 'it'], frames: { she: ['Her name is', 'She calls herself'], it: ['Its name is', 'It calls itself'] } },
+      cells: [
+        cell('she', 'Her name is', 'model', { Eliza: 0.04 }),
+        cell('she', 'She calls herself', 'model', { Eliza: 0.01 }),
+        cell('it', 'Its name is', 'model', { Eliza: 0.001 }),
+        cell('it', 'It calls itself', 'model', { Eliza: 0.004 }),
+      ],
+    } as NameStudy
+    expect(pronounPull(s, 'm', 'Eliza', 'she', 'it')).toBeCloseTo(Math.sqrt(40 * 2.5))  // 10
   })
 })
