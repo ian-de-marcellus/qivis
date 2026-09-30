@@ -134,6 +134,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     name_studies = NameStudyService(store, projector)
     app.dependency_overrides[get_name_study_service] = lambda: name_studies
     await name_studies.resume_unfinished()
+    await name_studies.resume_unfinished_discoveries()
 
     # Replay service
     replay_service = ReplayService(service, gen_service, store, projector)

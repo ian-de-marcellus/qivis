@@ -29,6 +29,7 @@ from qivis.events.log import EventLog
 from qivis.events.projector import StateProjector
 from qivis.events.store import EventStore
 from qivis.models import SamplingParams
+from qivis.names import discover as discovery
 from qivis.names import engine
 from qivis.providers.base import GenerationRequest
 from qivis.providers.llamacpp import LlamaCppProvider
@@ -60,6 +61,23 @@ class StudySpec(BaseModel):
     include_bare: bool = True
     top: int = Field(default=40, ge=1, le=200)
     extra_names: list[str] = Field(default_factory=lambda: ["Sun"])
+
+
+class DiscoverySpec(BaseModel):
+    title: str
+    model: str
+    pronoun: str
+    # The description (and its control, and its "it" version) come from this study;
+    # the failure modes from these (their descriptions for the same pronoun)
+    study_id: str
+    failure_study_ids: list[str] = Field(default_factory=list)
+    weights: dict[str, float] = Field(
+        default_factory=lambda: {"ai": 1.0, "gender": 1.0, "character": 1.0},
+    )
+    beam: int = Field(default=40, ge=1, le=400)
+    depth: int = Field(default=4, ge=1, le=8)
+    alpha: float = Field(default=0.01, gt=0, le=1)
+    top: int = Field(default=60, ge=1, le=500)
 
 
 class StudyNotFoundError(NotFoundError):
@@ -112,7 +130,8 @@ class NameStudyService:
 
     # -- Lifecycle --
 
-    async def create(self, spec: StudySpec) -> dict[str, Any]:
+    async def create(self, spec: StudySpec, start: bool = True) -> dict[str, Any]:
+        """A new study; it runs now, or waits ("queued") until resumed."""
         for pronoun in spec.pronouns:
             if pronoun not in spec.descriptions or not spec.frames.get(pronoun):
                 raise InvalidRequestError(f"Pronoun set '{pronoun}' needs a description and frames")
@@ -121,7 +140,10 @@ class NameStudyService:
             "study_id": study_id, "title": spec.title, "spec": spec.model_dump(),
             "rules": engine.__doc__ or "",
         })
-        self.start(study_id)
+        if start:
+            self.start(study_id)
+        else:
+            await self._status(study_id, "queued")
         return await self.get(study_id)
 
     def start(self, study_id: str) -> None:
@@ -135,13 +157,16 @@ class NameStudyService:
         pronouns: list[str],
         descriptions: dict[str, str],
         frames: dict[str, list[str]],
+        names: list[str] | None = None,
     ) -> dict[str, Any]:
-        """Add pronoun sets; the study goes on to fill in their cells (and to score
-        any names they bring in everywhere else)."""
+        """Add pronoun sets and names to score; the study goes on to fill in the
+        cells they add, and to score every new name in every cell."""
         spec = StudySpec.model_validate(json.loads((await self._row(study_id))["spec"]))
         new = [p for p in pronouns if p not in spec.pronouns]
-        if not new:
-            raise InvalidRequestError("Those pronoun sets are already in the study")
+        cleaned = [n.strip() for n in names or [] if n.strip()]
+        new_names = [n for n in dict.fromkeys(cleaned) if n not in spec.extra_names]
+        if not new and not new_names:
+            raise InvalidRequestError("Nothing new to add to the study")
         for pronoun in new:
             if pronoun not in descriptions or not frames.get(pronoun):
                 raise InvalidRequestError(f"Pronoun set '{pronoun}' needs a description and frames")
@@ -152,7 +177,11 @@ class NameStudyService:
             "study_id": study_id, "pronouns": new,
             "descriptions": {p: descriptions[p] for p in new},
             "frames": {p: frames[p] for p in new},
+            "extra_names": new_names,
         })
+        status = (await self._row(study_id))["status"]
+        if status == "queued":
+            return await self.get(study_id)  # it'll score them when it runs
         return await self.resume(study_id)
 
     async def stop(self, study_id: str) -> dict[str, Any]:
@@ -299,6 +328,132 @@ class NameStudyService:
             "study_id": study_id, "key": cell_key(*c), "model": model, "pronoun": pronoun,
             "frame": frame, "condition": condition, "prompt": prompt, **data,
         })
+
+    # -- Discovery --
+
+    async def create_discovery(self, spec: DiscoverySpec) -> dict[str, Any]:
+        llama = get_provider("llamacpp")
+        if not isinstance(llama, LlamaCppProvider):
+            raise InvalidRequestError("Discovery needs a llama.cpp model")
+        study = StudySpec.model_validate(json.loads((await self._row(spec.study_id))["spec"]))
+        failures = [
+            StudySpec.model_validate(json.loads((await self._row(f))["spec"]))
+            for f in spec.failure_study_ids
+        ]
+        p = spec.pronoun
+        if p not in study.pronouns:
+            raise InvalidRequestError(f"The study has no '{p}' pronoun set")
+        frames = study.frames[p]
+        start = await llama.document_start(spec.model)
+
+        def texts(s: StudySpec, pronoun: str, condition: str) -> list[str]:
+            fs = s.frames[pronoun][: len(frames)]
+            if len(fs) < len(frames):
+                raise InvalidRequestError(f"'{s.title}' has too few '{pronoun}' frames")
+            return [start + study_text(s, pronoun, f, condition) for f in fs]
+
+        use_it = p != "it" and "it" in study.pronouns and spec.weights.get("gender", 0) != 0
+        for f in failures:
+            if p not in f.pronouns:
+                raise InvalidRequestError(f"'{f.title}' has no '{p}' pronoun set")
+        prompts = {
+            "description": texts(study, p, "model"),
+            "control": texts(study, p, "control"),
+            "it": texts(study, "it", "model") if use_it else None,
+            "failures": [texts(f, p, "model") for f in failures],
+            "failure_titles": [f.title for f in failures],
+        }
+        discovery_id = f"discovery-{uuid4()}"
+        await self._events.emit(discovery_id, "NameDiscoveryCreated", {
+            "discovery_id": discovery_id, "title": spec.title,
+            "spec": spec.model_dump(), "prompts": prompts,
+        })
+        self._tasks[discovery_id] = asyncio.create_task(self._run_discovery(discovery_id))
+        return await self.get_discovery(discovery_id)
+
+    async def _run_discovery(self, discovery_id: str) -> None:
+        row = await self._discovery_row(discovery_id)
+        spec = DiscoverySpec.model_validate(json.loads(row["spec"]))
+        prompts = json.loads(row["prompts"])
+        roles = discovery.Roles(
+            description=prompts["description"], control=prompts["control"],
+            it=prompts["it"], failures=prompts["failures"],
+        )
+        weights = discovery.Weights(**spec.weights)
+        llama = get_provider("llamacpp")
+        assert isinstance(llama, LlamaCppProvider)
+        queries = 0
+
+        async def fetch(prompt: str, ids: list[int]) -> list[dict]:
+            nonlocal queries
+            queries += 1
+            request = GenerationRequest(
+                model=spec.model, messages=[], prompt_text=prompt,
+                sampling_params=SamplingParams(),
+            )
+            return (await llama.next_tokens(request, ids, LOOKUP_K))["candidates"]
+
+        def progress(done: int, of: int) -> None:
+            self._progress[discovery_id] = {
+                "model": spec.model, "phase": "searching", "done": done, "of": of,
+            }
+
+        try:
+            found = await discovery.discover(
+                fetch, roles, weights, beam=spec.beam, depth=spec.depth,
+                alpha=spec.alpha, top=spec.top, progress=progress,
+            )
+            results = [
+                {"name": f.name, "score": f.score, **discovery.terms(roles, f.logs)}
+                for f in found
+            ]
+            await self._events.emit(discovery_id, "NameDiscoveryFinished", {
+                "discovery_id": discovery_id, "status": "done", "results": results,
+                "queries": queries,
+            })
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.exception("Name discovery %s failed", discovery_id)
+            await self._events.emit(discovery_id, "NameDiscoveryFinished", {
+                "discovery_id": discovery_id, "status": "failed",
+                "error": str(e) or type(e).__name__, "queries": queries,
+            })
+        finally:
+            self._progress.pop(discovery_id, None)
+
+    async def _discovery_row(self, discovery_id: str) -> dict:
+        row = await self._db.fetchone(
+            "SELECT * FROM name_discoveries WHERE discovery_id = ?", (discovery_id,),
+        )
+        if row is None:
+            raise NotFoundError(f"Name discovery not found: {discovery_id}")
+        return dict(row)
+
+    async def list_discoveries(self) -> list[dict[str, Any]]:
+        rows = await self._db.fetchall(
+            "SELECT discovery_id FROM name_discoveries ORDER BY created_at DESC",
+        )
+        return [await self.get_discovery(r["discovery_id"]) for r in rows]
+
+    async def get_discovery(self, discovery_id: str) -> dict[str, Any]:
+        row = await self._discovery_row(discovery_id)
+        return {
+            "discovery_id": discovery_id, "title": row["title"], "status": row["status"],
+            "spec": json.loads(row["spec"]), "prompts": json.loads(row["prompts"]),
+            "results": json.loads(row["results"]) if row["results"] else None,
+            "error": row["error"], "queries": row["queries"],
+            "created_at": row["created_at"], "progress": self._progress.get(discovery_id),
+        }
+
+    async def resume_unfinished_discoveries(self) -> None:
+        """Discoveries cut off by a restart start over (they keep no partial state)."""
+        rows = await self._db.fetchall(
+            "SELECT discovery_id FROM name_discoveries WHERE status = 'running'",
+        )
+        for row in rows:
+            did = row["discovery_id"]
+            self._tasks[did] = asyncio.create_task(self._run_discovery(did))
 
     # -- Reading --
 

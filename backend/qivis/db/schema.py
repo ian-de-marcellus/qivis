@@ -322,6 +322,11 @@ _MIGRATIONS: list[tuple[str, str]] = [
      "prompt TEXT NOT NULL, top TEXT, capital_mass REAL, scores TEXT, "
      "queries INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (study_id, key))"),
     ("027_name_study_cells_firsts", "ALTER TABLE name_study_cells ADD COLUMN firsts TEXT"),
+    ("028_create_name_discoveries",
+     "CREATE TABLE IF NOT EXISTS name_discoveries ("
+     "discovery_id TEXT PRIMARY KEY, title TEXT NOT NULL, spec TEXT NOT NULL, "
+     "prompts TEXT NOT NULL, status TEXT NOT NULL, results TEXT, error TEXT, "
+     "queries INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)"),
 ]
 
 

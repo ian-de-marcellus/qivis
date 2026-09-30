@@ -384,14 +384,33 @@ class NameStudyExtendedPayload(BaseModel):
     goes on to fill in what they add."""
 
     study_id: str
-    pronouns: list[str]
-    descriptions: dict[str, str]
-    frames: dict[str, list[str]]
+    pronouns: list[str] = []
+    descriptions: dict[str, str] = {}
+    frames: dict[str, list[str]] = {}
+    # Names to score in every cell, beside the study's own (e.g. found by discovery)
+    extra_names: list[str] = []
+
+
+class NameDiscoveryCreatedPayload(BaseModel):
+    """A search for names by what they lean toward (qivis.names.discover)."""
+
+    discovery_id: str
+    title: str
+    spec: dict  # model, pronoun, the studies it reads descriptions from, weights, search sizes
+    prompts: dict  # every prompt it compares, by role, exactly as sent
+
+
+class NameDiscoveryFinishedPayload(BaseModel):
+    discovery_id: str
+    status: str  # "done", "failed"
+    results: list[dict] = []
+    error: str | None = None
+    queries: int = 0
 
 
 class NameStudyStatusPayload(BaseModel):
     study_id: str
-    status: str  # "running", "done", "failed", "stopped"
+    status: str  # "queued", "running", "done", "failed", "stopped"
     error: str | None = None
 
 
@@ -443,6 +462,8 @@ EVENT_TYPES: dict[str, type[BaseModel]] = {
     "NameStudyStatus": NameStudyStatusPayload,
     "NameStudyExtended": NameStudyExtendedPayload,
     "NameStudyCellFirsts": NameStudyCellPayload,
+    "NameDiscoveryCreated": NameDiscoveryCreatedPayload,
+    "NameDiscoveryFinished": NameDiscoveryFinishedPayload,
     # Backward compat: old event type names from before the rename
     "TreeCreated": RhizomeCreatedPayload,
     "TreeMetadataUpdated": RhizomeMetadataUpdatedPayload,

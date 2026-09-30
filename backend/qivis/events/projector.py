@@ -19,6 +19,8 @@ from qivis.models import (
     DigressionGroupDeletedPayload,
     DigressionGroupToggledPayload,
     EventEnvelope,
+    NameDiscoveryCreatedPayload,
+    NameDiscoveryFinishedPayload,
     NameStudyCellPayload,
     NameStudyCreatedPayload,
     NameStudyExtendedPayload,
@@ -90,6 +92,8 @@ class StateProjector:
             "NameStudyCellEnumerated": self._handle_name_study_cell,
             "NameStudyCellScored": self._handle_name_study_cell,
             "NameStudyCellFirsts": self._handle_name_study_cell,
+            "NameDiscoveryCreated": self._handle_name_discovery_created,
+            "NameDiscoveryFinished": self._handle_name_discovery_finished,
             "NameStudyStatus": self._handle_name_study_status,
             "NameStudyExtended": self._handle_name_study_extended,
         }
@@ -606,6 +610,24 @@ class StateProjector:
             (event.timestamp.isoformat(), p.study_id),
         )
 
+    async def _handle_name_discovery_created(self, event: EventEnvelope) -> None:
+        p = NameDiscoveryCreatedPayload.model_validate(event.payload)
+        now = event.timestamp.isoformat()
+        await self._db.execute(
+            "INSERT OR REPLACE INTO name_discoveries (discovery_id, title, spec, prompts, status, "
+            "created_at, updated_at) VALUES (?, ?, ?, ?, 'running', ?, ?)",
+            (p.discovery_id, p.title, json.dumps(p.spec), json.dumps(p.prompts), now, now),
+        )
+
+    async def _handle_name_discovery_finished(self, event: EventEnvelope) -> None:
+        p = NameDiscoveryFinishedPayload.model_validate(event.payload)
+        await self._db.execute(
+            "UPDATE name_discoveries SET status = ?, results = ?, error = ?, queries = ?, "
+            "updated_at = ? WHERE discovery_id = ?",
+            (p.status, json.dumps(p.results), p.error, p.queries, event.timestamp.isoformat(),
+             p.discovery_id),
+        )
+
     async def _handle_name_study_extended(self, event: EventEnvelope) -> None:
         p = NameStudyExtendedPayload.model_validate(event.payload)
         row = await self._db.fetchone(
@@ -617,6 +639,9 @@ class StateProjector:
         spec["pronouns"] = spec["pronouns"] + [x for x in p.pronouns if x not in spec["pronouns"]]
         spec["descriptions"] = {**spec["descriptions"], **p.descriptions}
         spec["frames"] = {**spec["frames"], **p.frames}
+        spec["extra_names"] = spec.get("extra_names", []) + [
+            n for n in p.extra_names if n not in spec.get("extra_names", [])
+        ]
         await self._db.execute(
             "UPDATE name_studies SET spec = ?, updated_at = ? WHERE study_id = ?",
             (json.dumps(spec), event.timestamp.isoformat(), p.study_id),

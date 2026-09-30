@@ -5,7 +5,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, status
 from pydantic import BaseModel
 
-from qivis.names.study import DEFAULT_FRAMES, NameStudyService, StudySpec
+from qivis.names.study import DEFAULT_FRAMES, DiscoverySpec, NameStudyService, StudySpec
 
 router = APIRouter(prefix="/api/name-studies", tags=["name-studies"])
 
@@ -15,6 +15,25 @@ def get_name_study_service() -> NameStudyService:
     raise RuntimeError("NameStudyService not initialized")
 
 
+@router.post("/discoveries", status_code=status.HTTP_201_CREATED)
+async def create_discovery(
+    spec: DiscoverySpec, svc: NameStudyService = Depends(get_name_study_service),
+) -> dict[str, Any]:
+    return await svc.create_discovery(spec)
+
+
+@router.get("/discoveries")
+async def list_discoveries(svc: NameStudyService = Depends(get_name_study_service)) -> list[dict]:
+    return await svc.list_discoveries()
+
+
+@router.get("/discoveries/{discovery_id}")
+async def get_discovery(
+    discovery_id: str, svc: NameStudyService = Depends(get_name_study_service),
+) -> dict[str, Any]:
+    return await svc.get_discovery(discovery_id)
+
+
 @router.get("/defaults")
 async def defaults() -> dict[str, Any]:
     return {"frames": DEFAULT_FRAMES}
@@ -22,9 +41,9 @@ async def defaults() -> dict[str, Any]:
 
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create(
-    spec: StudySpec, svc: NameStudyService = Depends(get_name_study_service),
+    spec: StudySpec, start: bool = True, svc: NameStudyService = Depends(get_name_study_service),
 ) -> dict[str, Any]:
-    return await svc.create(spec)
+    return await svc.create(spec, start)
 
 
 @router.get("")
@@ -40,16 +59,17 @@ async def get_study(
 
 
 class Extension(BaseModel):
-    pronouns: list[str]
-    descriptions: dict[str, str]
-    frames: dict[str, list[str]]
+    pronouns: list[str] = []
+    descriptions: dict[str, str] = {}
+    frames: dict[str, list[str]] = {}
+    names: list[str] = []
 
 
 @router.post("/{study_id}/extend")
 async def extend(
     study_id: str, body: Extension, svc: NameStudyService = Depends(get_name_study_service),
 ) -> dict:
-    return await svc.extend(study_id, body.pronouns, body.descriptions, body.frames)
+    return await svc.extend(study_id, body.pronouns, body.descriptions, body.frames, body.names)
 
 
 @router.post("/{study_id}/stop")
