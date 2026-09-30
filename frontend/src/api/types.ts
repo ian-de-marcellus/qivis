@@ -285,6 +285,8 @@ export interface GenerateRequest {
   prefill_content?: string
   /** Force chat or completion; omitted keeps the rhizome's behavior */
   mode?: 'chat' | 'completion'
+  /** A new version of this reply, starting partway: its first `keep` tokens, then these */
+  branch?: { node_id: string; keep: number; token_ids: number[] }
 }
 
 export interface ReplayRequest {

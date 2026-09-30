@@ -1,0 +1,138 @@
+/* The branch bar, in a document's passage bar or under a reply */
+.token-branch .passage-bar-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm);
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+}
+
+.token-branch .passage-bar-spacer {
+  flex: 1;
+}
+
+.token-branch .passage-bar-row button {
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  padding: 2px var(--space-sm);
+  background: none;
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.token-branch .passage-bar-row button:hover:not(:disabled) {
+  color: var(--text-accent);
+  border-color: var(--text-accent);
+}
+
+.token-branch .passage-bar-row button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.token-branch .passage-close {
+  border: none !important;
+  font-size: var(--text-base) !important;
+  color: var(--text-tertiary);
+}
+
+/* Branching from a token */
+.token-branch {
+  max-width: var(--content-width);
+  margin: var(--space-sm) auto 0;
+  padding-top: var(--space-sm);
+  border-top: 1px dashed var(--border);
+}
+
+.token-branch-label {
+  color: var(--text-secondary);
+}
+
+.token-branch-label code {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  padding: 1px 4px;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-sm);
+}
+
+.token-branch-candidates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  margin-top: var(--space-sm);
+}
+
+.token-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-xs);
+  padding: 2px var(--space-sm);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.token-chip:hover:not(:disabled) {
+  border-color: var(--text-accent);
+}
+
+.token-chip:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+
+.token-chip-original {
+  border-style: dashed;
+}
+
+.token-chip-prob {
+  color: var(--text-tertiary);
+}
+
+.token-chip-typed input {
+  width: 9rem;
+  padding: 2px var(--space-sm);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.token-chip-typed input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.token-branch-error {
+  margin-top: var(--space-xs);
+  font-size: var(--text-xs);
+  color: var(--error-text);
+}
+
+
+.token-chip-filter {
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  padding: 2px var(--space-sm);
+  background: none;
+  color: var(--text-tertiary);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.token-chip-filter.active {
+  color: var(--text-accent);
+  border-color: var(--text-accent);
+}

@@ -143,6 +143,8 @@ interface RhizomeStore {
     parentNodeId: string,
     overrides: GenerateRequest,
   ) => Promise<void>
+  /** A new version of a reply, branched at one of its tokens (shown as it streams) */
+  branchReply: (node: NodeResponse, keep: number, tokenIds: number[], startText: string) => Promise<void>
   prefillAssistant: (parentId: string, content: string) => Promise<void>
   prefillAndGenerate: (parentId: string, prefillContent: string, overrides: GenerateRequest) => Promise<void>
   addAnnotation: (nodeId: string, tag: string, value?: unknown, notes?: string) => Promise<void>
@@ -879,6 +881,24 @@ export const useRhizomeStore = create<RhizomeStore>((set, get) => ({
       parentId: parentNodeId,
       req: overrides,
       regenerating: true,
+    })
+  },
+
+  branchReply: async (node: NodeResponse, keep: number, tokenIds: number[], startText: string) => {
+    const { currentRhizome } = get()
+    if (!currentRhizome) return
+    set({ error: null, generationError: null })
+    await runGeneration(set, {
+      rhizomeId: currentRhizome.rhizome_id,
+      parentId: node.parent_id ?? '',
+      req: {
+        ...(node.provider ? { provider: node.provider } : {}),
+        ...(node.model ? { model: node.model } : {}),
+        stream: currentRhizome.metadata?.stream_responses !== false,
+        branch: { node_id: node.node_id, keep, token_ids: tokenIds },
+      },
+      regenerating: true,
+      initialContent: startText.trimStart(),
     })
   },
 

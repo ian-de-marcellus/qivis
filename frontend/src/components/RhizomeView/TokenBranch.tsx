@@ -1,7 +1,11 @@
 /**
  * Branching from one token of a model's passage: keep what came before it
- * (a cut of the passage that is still the model's, with its record), then
- * either pick the next token from the model's live distribution, or write.
+ * (still the model's, with its record), then pick the next token from the
+ * model's live distribution, or write.
+ *
+ * In a document, the kept part is a cut of the passage and what follows is a
+ * new passage. In a conversation (onBranch), a turn is one node: the new
+ * version of the whole turn is generated from the kept part and the choice.
  */
 
 import { useEffect, useRef, useState } from 'react'
@@ -9,6 +13,7 @@ import * as api from '../../api/client.ts'
 import type { NodeResponse, TokenCandidate } from '../../api/types.ts'
 import { useRhizomeStore } from '../../store/rhizomeStore.ts'
 import { tokenLabel, wordsOnly } from '../Steering/dasherModel.ts'
+import './TokenBranch.css'
 
 // Next-token distributions come from llama.cpp only, for now
 const STEERABLE = 'llamacpp'
@@ -22,11 +27,13 @@ interface TokenBranchProps {
   /** Branch before this token (0: in place of the whole passage) */
   index: number
   /** Where writing goes: under this node ('' for the beginning) */
-  onWrite: (anchorId: string) => void
+  onWrite?: (anchorId: string) => void
+  /** A turn: generate its new version from the kept tokens and these chosen ones */
+  onBranch?: (keep: number, tokenIds: number[], startText: string) => void
   onClose: () => void
 }
 
-export function TokenBranch({ rhizomeId, node, index, onWrite, onClose }: TokenBranchProps) {
+export function TokenBranch({ rhizomeId, node, index, onWrite, onBranch, onClose }: TokenBranchProps) {
   const showNode = useRhizomeStore(s => s.showNode)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -35,10 +42,13 @@ export function TokenBranch({ rhizomeId, node, index, onWrite, onClose }: TokenB
   const [typed, setTyped] = useState('')
   const [words, setWords] = useState(false)
   const anchorRef = useRef<{ index: number; id: string } | null>(null)
+  // A turn: the kept tokens' ids, as the session's tokenizer reads their text
+  const keptIdsRef = useRef<number[]>([])
   const sessionRef = useRef<string | null>(null)
 
   const tokens = node.logprobs?.tokens ?? []
   const original = tokens[index]?.token ?? ''
+  const keptText = tokens.slice(0, index).map((t) => t.token).join('')
   const canPick = node.provider === STEERABLE
 
   // A new cut point starts over; a session left open is let go
@@ -76,15 +86,33 @@ export function TokenBranch({ rhizomeId, node, index, onWrite, onClose }: TokenB
   }
 
   const pick = () => run(async () => {
-    const at = await anchor()
+    // A turn continues from its reply's parent, after the kept tokens
+    const at = onBranch ? node.parent_id ?? '' : await anchor()
     const s = await api.startSteering(rhizomeId, at || null, { provider: STEERABLE, model: node.model })
     sessionRef.current = s.session_id
     setSession(s.session_id)
+    const kept = onBranch && keptText
+      ? (await api.steerTokenize(s.session_id, keptText)).map((t) => t.id)
+      : []
+    keptIdsRef.current = kept
     // Enough to fill the chips after hiding numbers and symbols
-    setCandidates(await api.steerNext(s.session_id, [], 200))
+    setCandidates(await api.steerNext(s.session_id, kept, 200))
   })
 
-  const commit = (ids: number[]) => run(async () => {
+  /** A turn: let go of the session; the new version is generated from the choice */
+  const branch = (ids: number[], text: string) => {
+    const sid = sessionRef.current
+    sessionRef.current = null
+    if (sid) api.steerDiscard(sid).catch(() => {})
+    onBranch?.(index, ids, keptText + text)
+    onClose()
+  }
+
+  const commit = (ids: number[], text = '') => run(async () => {
+    if (onBranch) {
+      branch(ids, text)
+      return
+    }
     if (!session || ids.length === 0) return
     const made = await api.steerCommit(session, ids, ids.map(() => 'researcher'))
     sessionRef.current = null
@@ -95,6 +123,10 @@ export function TokenBranch({ rhizomeId, node, index, onWrite, onClose }: TokenB
   const commitTyped = () => run(async () => {
     if (!session || !typed) return
     const ids = (await api.steerTokenize(session, typed)).map((t) => t.id)
+    if (onBranch) {
+      branch(ids, typed)
+      return
+    }
     const made = await api.steerCommit(session, ids, ids.map(() => 'researcher'))
     sessionRef.current = null
     await showNode(made.node_id)
@@ -104,7 +136,7 @@ export function TokenBranch({ rhizomeId, node, index, onWrite, onClose }: TokenB
   const write = () => run(async () => {
     const at = await anchor()
     if (index > 0) await showNode(at)
-    onWrite(at)
+    onWrite?.(at)
     onClose()
   })
 
@@ -126,9 +158,19 @@ export function TokenBranch({ rhizomeId, node, index, onWrite, onClose }: TokenB
             >
               Pick the next token
             </button>
-            <button disabled={busy} onClick={write} title="Write your own text from here">
-              Write from here
-            </button>
+            {onBranch ? (
+              <button
+                disabled={busy}
+                onClick={() => branch([], '')}
+                title="Keep the turn up to here and let the model go on again"
+              >
+                Regenerate from here
+              </button>
+            ) : (
+              <button disabled={busy} onClick={write} title="Write your own text from here">
+                Write from here
+              </button>
+            )}
           </>
         )}
         <button className="passage-close" onClick={onClose} aria-label="Cancel branch">
@@ -150,7 +192,7 @@ export function TokenBranch({ rhizomeId, node, index, onWrite, onClose }: TokenB
               key={c.id}
               className={`token-chip${c.token === original ? ' token-chip-original' : ''}`}
               disabled={busy}
-              onClick={() => commit([c.id])}
+              onClick={() => commit([c.id], c.token)}
               title={[
                 c.token === original && 'What the model sampled here',
                 c.conditional && `* given it's a word; the model's own odds: ${((c.raw_prob ?? c.prob) * 100).toFixed(2)}%`,
@@ -172,7 +214,7 @@ export function TokenBranch({ rhizomeId, node, index, onWrite, onClose }: TokenB
             <input
               value={typed}
               onChange={(e) => setTyped(e.target.value)}
-              placeholder="or type tokens"
+              placeholder={onBranch ? 'or type your own words' : 'or type tokens'}
               disabled={busy}
             />
           </form>

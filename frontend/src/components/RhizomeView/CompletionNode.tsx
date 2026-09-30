@@ -22,6 +22,7 @@ import { averageCertainty, uncertaintyColor } from './logprobColor.ts'
 import { NotePanel } from './NotePanel.tsx'
 import { PromptTextViewer } from './PromptTextViewer.tsx'
 import { ThinkingSection } from './ThinkingSection.tsx'
+import { TokenBranch } from './TokenBranch.tsx'
 import { formatTimestamp, formatSamplingMeta, formatUsage } from './nodeFormat.ts'
 import './CompletionNode.css'
 
@@ -57,6 +58,11 @@ export const CompletionNode = memo(function CompletionNode({
   const [showLogprobs, setShowLogprobs] = useState(logprobs != null)
   const [showAnnotations, setShowAnnotations] = useState(false)
   const [showNotes, setShowNotes] = useState(false)
+  // A token to branch this turn at
+  const [cut, setCut] = useState<number | null>(null)
+  const rhizomeId = useRhizomeStore((s) => s.currentRhizome?.rhizome_id)
+  const branchReply = useRhizomeStore((s) => s.branchReply)
+  const canBranch = logprobs != null && logprobs.tokens.length > 0 && node.edited_content == null
 
   const editHistoryCache = useRhizomeStore((s) => s.editHistoryCache)
 
@@ -191,11 +197,27 @@ export const CompletionNode = memo(function CompletionNode({
       {/* Content: heatmap primary, raw text secondary */}
       <div className="message-content">
         {showLogprobs && logprobs ? (
-          <LogprobOverlay logprobs={logprobs} content={node.content} />
+          <LogprobOverlay
+            logprobs={logprobs}
+            content={node.content}
+            onTokenClick={canBranch ? (i) => setCut(cut === i ? null : i) : undefined}
+            cutAt={cut}
+          />
         ) : (
           <span className="raw-text">{node.content}</span>
         )}
       </div>
+
+      {cut != null && rhizomeId && (
+        <TokenBranch
+          key={cut}
+          rhizomeId={rhizomeId}
+          node={node}
+          index={cut}
+          onBranch={(keep, tokenIds, startText) => branchReply(node, keep, tokenIds, startText)}
+          onClose={() => setCut(null)}
+        />
+      )}
 
       {/* Prompt text — collapsible */}
       {node.prompt_text && (
