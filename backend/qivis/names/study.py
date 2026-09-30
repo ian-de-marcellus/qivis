@@ -129,6 +129,32 @@ class NameStudyService:
             return
         self._tasks[study_id] = asyncio.create_task(self._run(study_id))
 
+    async def extend(
+        self,
+        study_id: str,
+        pronouns: list[str],
+        descriptions: dict[str, str],
+        frames: dict[str, list[str]],
+    ) -> dict[str, Any]:
+        """Add pronoun sets; the study goes on to fill in their cells (and to score
+        any names they bring in everywhere else)."""
+        spec = StudySpec.model_validate(json.loads((await self._row(study_id))["spec"]))
+        new = [p for p in pronouns if p not in spec.pronouns]
+        if not new:
+            raise InvalidRequestError("Those pronoun sets are already in the study")
+        for pronoun in new:
+            if pronoun not in descriptions or not frames.get(pronoun):
+                raise InvalidRequestError(f"Pronoun set '{pronoun}' needs a description and frames")
+        task = self._tasks.get(study_id)
+        if task and not task.done():
+            raise InvalidRequestError("Stop the study (or let it finish) before extending it")
+        await self._events.emit(study_id, "NameStudyExtended", {
+            "study_id": study_id, "pronouns": new,
+            "descriptions": {p: descriptions[p] for p in new},
+            "frames": {p: frames[p] for p in new},
+        })
+        return await self.resume(study_id)
+
     async def stop(self, study_id: str) -> dict[str, Any]:
         task = self._tasks.get(study_id)
         if task and not task.done():

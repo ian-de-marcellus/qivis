@@ -3,6 +3,7 @@
 from typing import Any
 
 from fastapi import APIRouter, Depends, status
+from pydantic import BaseModel
 
 from qivis.names.study import DEFAULT_FRAMES, NameStudyService, StudySpec
 
@@ -36,6 +37,19 @@ async def get_study(
     study_id: str, svc: NameStudyService = Depends(get_name_study_service),
 ) -> dict[str, Any]:
     return await svc.get(study_id)
+
+
+class Extension(BaseModel):
+    pronouns: list[str]
+    descriptions: dict[str, str]
+    frames: dict[str, list[str]]
+
+
+@router.post("/{study_id}/extend")
+async def extend(
+    study_id: str, body: Extension, svc: NameStudyService = Depends(get_name_study_service),
+) -> dict:
+    return await svc.extend(study_id, body.pronouns, body.descriptions, body.frames)
 
 
 @router.post("/{study_id}/stop")

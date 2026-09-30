@@ -376,6 +376,16 @@ class NameStudyCellPayload(BaseModel):
     queries: int = 0
 
 
+class NameStudyExtendedPayload(BaseModel):
+    """More pronoun sets for a study (their descriptions and frames); the study
+    goes on to fill in what they add."""
+
+    study_id: str
+    pronouns: list[str]
+    descriptions: dict[str, str]
+    frames: dict[str, list[str]]
+
+
 class NameStudyStatusPayload(BaseModel):
     study_id: str
     status: str  # "running", "done", "failed", "stopped"
@@ -428,6 +438,7 @@ EVENT_TYPES: dict[str, type[BaseModel]] = {
     "NameStudyCellEnumerated": NameStudyCellPayload,
     "NameStudyCellScored": NameStudyCellPayload,
     "NameStudyStatus": NameStudyStatusPayload,
+    "NameStudyExtended": NameStudyExtendedPayload,
     # Backward compat: old event type names from before the rename
     "TreeCreated": RhizomeCreatedPayload,
     "TreeMetadataUpdated": RhizomeMetadataUpdatedPayload,

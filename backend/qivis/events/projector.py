@@ -21,6 +21,7 @@ from qivis.models import (
     EventEnvelope,
     NameStudyCellPayload,
     NameStudyCreatedPayload,
+    NameStudyExtendedPayload,
     NameStudyStatusPayload,
     NodeAnchoredPayload,
     NodeContentEditedPayload,
@@ -89,6 +90,7 @@ class StateProjector:
             "NameStudyCellEnumerated": self._handle_name_study_cell,
             "NameStudyCellScored": self._handle_name_study_cell,
             "NameStudyStatus": self._handle_name_study_status,
+            "NameStudyExtended": self._handle_name_study_extended,
         }
 
     async def project(self, events: list[EventEnvelope]) -> None:
@@ -598,6 +600,22 @@ class StateProjector:
         await self._db.execute(
             "UPDATE name_studies SET updated_at = ? WHERE study_id = ?",
             (event.timestamp.isoformat(), p.study_id),
+        )
+
+    async def _handle_name_study_extended(self, event: EventEnvelope) -> None:
+        p = NameStudyExtendedPayload.model_validate(event.payload)
+        row = await self._db.fetchone(
+            "SELECT spec FROM name_studies WHERE study_id = ?", (p.study_id,),
+        )
+        if row is None:
+            return
+        spec = json.loads(row["spec"])
+        spec["pronouns"] = spec["pronouns"] + [x for x in p.pronouns if x not in spec["pronouns"]]
+        spec["descriptions"] = {**spec["descriptions"], **p.descriptions}
+        spec["frames"] = {**spec["frames"], **p.frames}
+        await self._db.execute(
+            "UPDATE name_studies SET spec = ?, updated_at = ? WHERE study_id = ?",
+            (json.dumps(spec), event.timestamp.isoformat(), p.study_id),
         )
 
     async def _handle_name_study_status(self, event: EventEnvelope) -> None:

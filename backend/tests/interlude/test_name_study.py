@@ -85,3 +85,23 @@ async def test_a_study_runs_and_resumes(db: Database):
     assert (await _finish(svc, study["study_id"]))["status"] == "done"
     assert llama.queries == before
     clear_providers()
+
+
+async def test_a_study_is_extended_with_more_pronouns(db: Database):
+    clear_providers()
+    llama = FakeLlama()
+    register_provider(llama)
+    svc = NameStudyService(EventStore(db), StateProjector(db))
+    study_id = (await svc.create(SPEC))["study_id"]
+    await _finish(svc, study_id)
+
+    await svc.extend(study_id, ["it"], {"it": "There is {subject}. It is kind."},
+                     {"it": ["Its name is", "It calls itself"]})
+    study = await _finish(svc, study_id)
+    assert study["status"] == "done" and study["spec"]["pronouns"] == ["he", "it"]
+    assert len(study["cells"]) == 2 * 2 * 3
+    it_cell = next(c for c in study["cells"] if c["pronoun"] == "it" and c["condition"] == "model")
+    assert it_cell["prompt"].endswith("It is kind. Its name is")
+    for cell in study["cells"]:
+        assert value(cell, "Sun") is not None and value(cell, "HAL") is not None
+    clear_providers()
