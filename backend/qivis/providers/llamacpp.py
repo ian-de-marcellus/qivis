@@ -657,6 +657,14 @@ class LlamaCppProvider(LLMProvider):
             "candidates": candidates, "logit_bias": applied, "effective_prompt": effective_prompt,
         }
 
+    async def document_start(self, model: str = "") -> str:
+        """What the model has seen right before a document begins: BOS if its
+        server adds one (written out, so a model's BOS count applies), else its
+        end-of-text token."""
+        if await self._server_adds_bos(model):
+            return _LLAMA3_BOS
+        return await self._eos_token(model) or ""
+
     async def tokenize(self, text: str, model: str = "") -> list[dict[str, Any]]:
         """Text as this model's tokens (no BOS): [{id, piece}]."""
         resp = await self._client.post(

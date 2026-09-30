@@ -19,6 +19,9 @@ from qivis.models import (
     DigressionGroupDeletedPayload,
     DigressionGroupToggledPayload,
     EventEnvelope,
+    NameStudyCellPayload,
+    NameStudyCreatedPayload,
+    NameStudyStatusPayload,
     NodeAnchoredPayload,
     NodeContentEditedPayload,
     NodeContextExcludedPayload,
@@ -82,6 +85,10 @@ class StateProjector:
             "PerturbationReportRemoved": self._handle_perturbation_report_removed,
             "ProbeRecorded": self._handle_probe_recorded,
             "ProbeJudged": self._handle_probe_judged,
+            "NameStudyCreated": self._handle_name_study_created,
+            "NameStudyCellEnumerated": self._handle_name_study_cell,
+            "NameStudyCellScored": self._handle_name_study_cell,
+            "NameStudyStatus": self._handle_name_study_status,
         }
 
     async def project(self, events: list[EventEnvelope]) -> None:
@@ -563,6 +570,42 @@ class StateProjector:
         )
 
     # -- Perturbation reports --
+
+    async def _handle_name_study_created(self, event: EventEnvelope) -> None:
+        p = NameStudyCreatedPayload.model_validate(event.payload)
+        now = event.timestamp.isoformat()
+        await self._db.execute(
+            "INSERT OR REPLACE INTO name_studies (study_id, title, spec, rules, status, "
+            "created_at, updated_at) VALUES (?, ?, ?, ?, 'running', ?, ?)",
+            (p.study_id, p.title, json.dumps(p.spec), p.rules, now, now),
+        )
+
+    async def _handle_name_study_cell(self, event: EventEnvelope) -> None:
+        p = NameStudyCellPayload.model_validate(event.payload)
+        await self._db.execute(
+            "INSERT INTO name_study_cells (study_id, key, model, pronoun, frame, condition, "
+            "prompt, top, capital_mass, scores, queries) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT (study_id, key) DO UPDATE SET "
+            "top = COALESCE(excluded.top, top), "
+            "capital_mass = COALESCE(excluded.capital_mass, capital_mass), "
+            "scores = COALESCE(excluded.scores, scores), queries = queries + excluded.queries",
+            (
+                p.study_id, p.key, p.model, p.pronoun, p.frame, p.condition, p.prompt,
+                json.dumps(p.top) if p.top is not None else None, p.capital_mass,
+                json.dumps(p.scores) if p.scores is not None else None, p.queries,
+            ),
+        )
+        await self._db.execute(
+            "UPDATE name_studies SET updated_at = ? WHERE study_id = ?",
+            (event.timestamp.isoformat(), p.study_id),
+        )
+
+    async def _handle_name_study_status(self, event: EventEnvelope) -> None:
+        p = NameStudyStatusPayload.model_validate(event.payload)
+        await self._db.execute(
+            "UPDATE name_studies SET status = ?, error = ?, updated_at = ? WHERE study_id = ?",
+            (p.status, p.error, event.timestamp.isoformat(), p.study_id),
+        )
 
     async def _handle_probe_recorded(self, event: EventEnvelope) -> None:
         payload = ProbeRecordedPayload.model_validate(event.payload)

@@ -349,6 +349,39 @@ class ProbeRecordedPayload(BaseModel):
     judge: dict | None = None
 
 
+class NameStudyCreatedPayload(BaseModel):
+    """A name study: which names models give a mind described one way, against a
+    human described the same way and no description at all."""
+
+    study_id: str
+    title: str
+    spec: dict  # models, pronouns, descriptions, subjects, frames, top, extra names
+    rules: str  # what counted as a name (the engine's rules, as run)
+
+
+class NameStudyCellPayload(BaseModel):
+    """One cell's results: a model, pronoun set, frame and condition (model,
+    human, bare); its exact prompt, top names, and scores for the study's names."""
+
+    study_id: str
+    key: str
+    model: str
+    pronoun: str
+    frame: str
+    condition: str
+    prompt: str
+    top: dict[str, float] | None = None  # the cell's own top names
+    capital_mass: float | None = None
+    scores: dict[str, float] | None = None  # the study's names, scored here
+    queries: int = 0
+
+
+class NameStudyStatusPayload(BaseModel):
+    study_id: str
+    status: str  # "running", "done", "failed", "stopped"
+    error: str | None = None
+
+
 class ProbeJudgedPayload(BaseModel):
     probe_id: str
     judge: dict
@@ -391,6 +424,10 @@ EVENT_TYPES: dict[str, type[BaseModel]] = {
     "PerturbationReportRemoved": PerturbationReportRemovedPayload,
     "ProbeRecorded": ProbeRecordedPayload,
     "ProbeJudged": ProbeJudgedPayload,
+    "NameStudyCreated": NameStudyCreatedPayload,
+    "NameStudyCellEnumerated": NameStudyCellPayload,
+    "NameStudyCellScored": NameStudyCellPayload,
+    "NameStudyStatus": NameStudyStatusPayload,
     # Backward compat: old event type names from before the rename
     "TreeCreated": RhizomeCreatedPayload,
     "TreeMetadataUpdated": RhizomeMetadataUpdatedPayload,

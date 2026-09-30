@@ -309,6 +309,18 @@ _MIGRATIONS: list[tuple[str, str]] = [
     ("023_probes_rhizome_id_index",
      "CREATE INDEX IF NOT EXISTS idx_probes_rhizome_id ON probes(rhizome_id)"),
     ("024_probes_asked", "ALTER TABLE probes ADD COLUMN asked INTEGER"),
+    # Name studies: which names models give a described mind, against controls
+    ("025_create_name_studies",
+     "CREATE TABLE IF NOT EXISTS name_studies ("
+     "study_id TEXT PRIMARY KEY, title TEXT NOT NULL, spec TEXT NOT NULL, "
+     "rules TEXT NOT NULL, status TEXT NOT NULL, error TEXT, "
+     "created_at TEXT NOT NULL, updated_at TEXT NOT NULL)"),
+    ("026_create_name_study_cells",
+     "CREATE TABLE IF NOT EXISTS name_study_cells ("
+     "study_id TEXT NOT NULL, key TEXT NOT NULL, model TEXT NOT NULL, "
+     "pronoun TEXT NOT NULL, frame TEXT NOT NULL, condition TEXT NOT NULL, "
+     "prompt TEXT NOT NULL, top TEXT, capital_mass REAL, scores TEXT, "
+     "queries INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (study_id, key))"),
 ]
 
 

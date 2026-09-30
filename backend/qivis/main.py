@@ -28,6 +28,9 @@ from qivis.importer.router import get_import_service
 from qivis.importer.router import router as import_router
 from qivis.importer.service import ImportService
 from qivis.model_catalog import ModelCatalog, get_catalog, set_catalog
+from qivis.names.router import get_name_study_service
+from qivis.names.router import router as names_router
+from qivis.names.study import NameStudyService
 from qivis.probes.router import get_probe_service
 from qivis.probes.router import router as probes_router
 from qivis.probes.service import ProbeService
@@ -127,6 +130,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     probe_service = ProbeService(service, gen_service, store, projector)
     app.dependency_overrides[get_probe_service] = lambda: probe_service
 
+    # Name studies (long-running; any interrupted by a restart go on)
+    name_studies = NameStudyService(store, projector)
+    app.dependency_overrides[get_name_study_service] = lambda: name_studies
+    await name_studies.resume_unfinished()
+
     # Replay service
     replay_service = ReplayService(service, gen_service, store, projector)
     app.dependency_overrides[get_replay_service] = lambda: replay_service
@@ -190,6 +198,7 @@ app.include_router(import_router)
 app.include_router(merge_router)
 app.include_router(steering_router)
 app.include_router(probes_router)
+app.include_router(names_router)
 
 
 @app.get("/api/health")
