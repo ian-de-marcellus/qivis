@@ -321,6 +321,7 @@ _MIGRATIONS: list[tuple[str, str]] = [
      "pronoun TEXT NOT NULL, frame TEXT NOT NULL, condition TEXT NOT NULL, "
      "prompt TEXT NOT NULL, top TEXT, capital_mass REAL, scores TEXT, "
      "queries INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (study_id, key))"),
+    ("027_name_study_cells_firsts", "ALTER TABLE name_study_cells ADD COLUMN firsts TEXT"),
 ]
 
 

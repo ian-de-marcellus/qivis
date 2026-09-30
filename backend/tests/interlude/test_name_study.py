@@ -78,6 +78,9 @@ async def test_a_study_runs_and_resumes(db: Database):
         assert {"HAL", "Mind", "Sun"} <= set(known)
     human = next(c for c in study["cells"] if c["condition"] == "control")
     assert value(human, "HAL") == 0.1 and value(human, "John") == 0.7
+    # Each name's first token, in every cell (these fake names are one token each)
+    assert human["firsts"]["HAL"] == {"p": 0.1, "t": " HAL", "n": 1}
+    assert model_cell["firsts"]["Mind"]["p"] == 0.3
 
     # Resuming a finished study fetches nothing again: every result was recorded
     before = llama.queries

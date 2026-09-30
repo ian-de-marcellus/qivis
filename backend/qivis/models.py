@@ -373,6 +373,9 @@ class NameStudyCellPayload(BaseModel):
     top: dict[str, float] | None = None  # the cell's own top names
     capital_mass: float | None = None
     scores: dict[str, float] | None = None  # the study's names, scored here
+    # Per study name, its first token here: {"p": probability, "t": token, "n": tokens
+    # in the name}, so a name's lean can be split from its first token's (" Mind"+"y")
+    firsts: dict[str, dict] | None = None
     queries: int = 0
 
 
@@ -439,6 +442,7 @@ EVENT_TYPES: dict[str, type[BaseModel]] = {
     "NameStudyCellScored": NameStudyCellPayload,
     "NameStudyStatus": NameStudyStatusPayload,
     "NameStudyExtended": NameStudyExtendedPayload,
+    "NameStudyCellFirsts": NameStudyCellPayload,
     # Backward compat: old event type names from before the rename
     "TreeCreated": RhizomeCreatedPayload,
     "TreeMetadataUpdated": RhizomeMetadataUpdatedPayload,

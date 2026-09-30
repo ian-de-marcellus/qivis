@@ -241,6 +241,31 @@ class NameStudyService:
         # 3. The study's names, in every cell
         await self._score_all(study_id, llama, model, mine, names, prompt_of, "scoring the names")
 
+        # 4. Each name's first token in every cell, to split its lean from its
+        # first token's (" Mind" + "y": Mindy's lean may be all Mind's)
+        spellings: dict[str, list[dict]] = {}
+        for name in sorted(names):
+            spellings[name] = await llama.tokenize(" " + name, model)
+        for i, c in enumerate(mine):
+            self._progress[study_id] = {
+                "model": model, "phase": "first tokens", "done": i, "of": len(mine),
+            }
+            cell = await self._cell(study_id, c)
+            if set(names) <= set(cell.get("firsts") or {}):
+                continue
+            dist = await self._fetcher(llama, model, prompt_of(c))([])
+            probs = {d["id"]: d["prob"] for d in dist}
+            firsts = dict(cell.get("firsts") or {})
+            for name, tokens in spellings.items():
+                if tokens:
+                    firsts[name] = {
+                        "p": probs.get(tokens[0]["id"], 0.0),
+                        "t": tokens[0]["token"], "n": len(tokens),
+                    }
+            await self._record(study_id, "NameStudyCellFirsts", c, prompt_of(c), {
+                "firsts": firsts, "queries": 1,
+            })
+
     async def _score_all(self, study_id, llama, model, cells, names, prompt_of, phase) -> None:
         for i, c in enumerate(cells):
             self._progress[study_id] = {"model": model, "phase": phase, "done": i, "of": len(cells)}
@@ -293,6 +318,7 @@ class NameStudyService:
         cell = dict(row)
         cell["top"] = json.loads(cell["top"]) if cell["top"] else None
         cell["scores"] = json.loads(cell["scores"]) if cell["scores"] else None
+        cell["firsts"] = json.loads(cell["firsts"]) if cell.get("firsts") else None
         return cell
 
     async def list(self) -> list[dict[str, Any]]:
@@ -320,7 +346,7 @@ class NameStudyService:
                 "model": c[0], "pronoun": c[1], "frame": c[2], "condition": c[3],
                 "prompt": cell.get("prompt"), "top": cell.get("top"),
                 "capital_mass": cell.get("capital_mass"), "scores": cell.get("scores"),
-                "queries": cell.get("queries", 0),
+                "firsts": cell.get("firsts"), "queries": cell.get("queries", 0),
             })
         return {
             "study_id": study_id, "title": row["title"], "status": row["status"],

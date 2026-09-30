@@ -89,6 +89,7 @@ class StateProjector:
             "NameStudyCreated": self._handle_name_study_created,
             "NameStudyCellEnumerated": self._handle_name_study_cell,
             "NameStudyCellScored": self._handle_name_study_cell,
+            "NameStudyCellFirsts": self._handle_name_study_cell,
             "NameStudyStatus": self._handle_name_study_status,
             "NameStudyExtended": self._handle_name_study_extended,
         }
@@ -586,15 +587,18 @@ class StateProjector:
         p = NameStudyCellPayload.model_validate(event.payload)
         await self._db.execute(
             "INSERT INTO name_study_cells (study_id, key, model, pronoun, frame, condition, "
-            "prompt, top, capital_mass, scores, queries) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+            "prompt, top, capital_mass, scores, firsts, queries) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
             "ON CONFLICT (study_id, key) DO UPDATE SET "
             "top = COALESCE(excluded.top, top), "
             "capital_mass = COALESCE(excluded.capital_mass, capital_mass), "
-            "scores = COALESCE(excluded.scores, scores), queries = queries + excluded.queries",
+            "scores = COALESCE(excluded.scores, scores), "
+            "firsts = COALESCE(excluded.firsts, firsts), queries = queries + excluded.queries",
             (
                 p.study_id, p.key, p.model, p.pronoun, p.frame, p.condition, p.prompt,
                 json.dumps(p.top) if p.top is not None else None, p.capital_mass,
-                json.dumps(p.scores) if p.scores is not None else None, p.queries,
+                json.dumps(p.scores) if p.scores is not None else None,
+                json.dumps(p.firsts) if p.firsts is not None else None, p.queries,
             ),
         )
         await self._db.execute(
