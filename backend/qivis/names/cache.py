@@ -78,6 +78,7 @@ class DistributionCache:
         self._vocab: dict[str, dict[int, str]] = {}
         self._spellings: dict[tuple[str, str], list[dict]] = {}
         self._paths: dict[str, str] = {}
+        self._inputs: dict[tuple[str, str], tuple[str, dict[int, float] | None]] = {}
         self.hits = 0
         self.misses = 0
         # Lookups worth having in flight at once: llama-server has 4 slots; the
@@ -128,10 +129,13 @@ class DistributionCache:
         path = self._paths[model]
         if not path:
             raise RuntimeError(f"llama-server doesn't say where {model}'s file is")
-        request = GenerationRequest(
-            model=model, messages=[], prompt_text=prompt, sampling_params=SamplingParams(),
-        )
-        text, bias, _ = await self._llama.lookup_inputs(request)
+        if (model, prompt) not in self._inputs:  # asking llama-server once per prompt
+            request = GenerationRequest(
+                model=model, messages=[], prompt_text=prompt, sampling_params=SamplingParams(),
+            )
+            text, bias, _ = await self._llama.lookup_inputs(request)
+            self._inputs[model, prompt] = (text, bias)
+        text, bias = self._inputs[model, prompt]
         self.misses += 1
         return await direct.get_engine().summary(path, text, ids, bias)
 
