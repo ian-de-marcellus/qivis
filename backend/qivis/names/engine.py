@@ -6,8 +6,11 @@ word. Its probability is the product of its tokens' probabilities and the
 probability that the word ends there, summed over the ways of spelling it
 in tokens. The engine enumerates names best-first: a partial name's
 probability bounds every name it could become, so once no partial beats
-the top-th finished name, the top names are exact. No sampling: the same
-model and text always give the same answer.
+the top-th finished name, the top names are exact. No sampling. Exact up to
+the server's arithmetic: llama.cpp's probabilities shift in about the third
+significant figure with what else it's computing (a prompt read fresh or from
+its cache, other requests batched alongside), so names within ~0.3% of each
+other can trade places between runs. A lookup, once cached, is reused as is.
 
 Rules for what counts (a name study records them with its results):
 - Function words (articles, pronouns, conjunctions...) are not names.
@@ -17,6 +20,7 @@ Rules for what counts (a name study records them with its results):
 - A title ("Dr", "Mr", "Captain"...) is followed through to the name after it.
 """
 
+import asyncio
 import heapq
 import json
 from collections.abc import Awaitable, Callable
@@ -94,19 +98,31 @@ def summarize_response(raw: bytes, floor: float = FLOOR) -> Summary:
 @dataclass
 class Lookups:
     """Distributions fetched for one text, kept so a study's scoring reuses them.
-    `fetch` returns a distribution, or its Summary (e.g. from a persistent cache)."""
+    `fetch` returns a distribution, or its Summary (e.g. from a persistent cache).
+    A lookup asked for twice while in flight is fetched once."""
 
     fetch: Callable[[list[int]], Awaitable[list[Candidate] | Summary]]
-    cache: dict[tuple[int, ...], Summary] = field(default_factory=dict)
+    cache: dict[tuple[int, ...], asyncio.Task[Summary]] = field(default_factory=dict)
     queries: int = 0
 
-    async def get(self, ids: list[int]) -> Summary:
+    async def _fetch(self, ids: list[int]) -> Summary:
+        result = await self.fetch(ids)
+        return result if isinstance(result, Summary) else summarize(result)
+
+    def start(self, ids: list[int]) -> asyncio.Task[Summary]:
         key = tuple(ids)
         if key not in self.cache:
             self.queries += 1
-            result = await self.fetch(ids)
-            self.cache[key] = result if isinstance(result, Summary) else summarize(result)
+            self.cache[key] = asyncio.create_task(self._fetch(ids))
         return self.cache[key]
+
+    async def get(self, ids: list[int]) -> Summary:
+        return await self.start(ids)
+
+    async def settle(self) -> None:
+        """Let lookups started ahead finish (the model's already at work on them,
+        and a persistent cache keeps them for next time)."""
+        await asyncio.gather(*self.cache.values(), return_exceptions=True)
 
 
 def _word_end(name: str, s: Summary) -> float:
@@ -119,9 +135,15 @@ def _word_end(name: str, s: Summary) -> float:
     return s.ends
 
 
-async def enumerate_names(lookups: Lookups, top: int = 40) -> tuple[dict[str, float], float]:
+async def enumerate_names(
+    lookups: Lookups, top: int = 40, ahead: int = 4,
+) -> tuple[dict[str, float], float]:
     """The exact top names and their probabilities; also the probability that the
-    next token starts a capitalized word at all."""
+    next token starts a capitalized word at all.
+
+    Partial names are expanded one at a time, best first, but the lookups for the
+    next `ahead` are started early, so several are in flight at once. Which are
+    expanded, and in what order, is the same as without: the answer is too."""
     first = await lookups.get([])
     capital = {tid: (tok, p) for tid, (tok, p) in first.probs.items() if _starts_name(tok)}
     capital_mass = sum(p for _, p in capital.values())
@@ -136,30 +158,38 @@ async def enumerate_names(lookups: Lookups, top: int = 40) -> tuple[dict[str, fl
     def bound() -> float:
         return best[0] if len(best) >= top else 0.0
 
-    while heap:
-        neg, text, ids, titled = heapq.heappop(heap)
-        p = -neg
-        if p < bound():
-            break
-        s = await lookups.get(ids)
-        name = text.strip()
-        end = _word_end(name, s)
-        if end > 0 and not (titled and name in TITLES):
-            total = names.get(name, 0.0) + p * end
-            names[name] = total
-            heapq.heappush(best, total)
-            if len(best) > top:
-                heapq.heappop(best)
-        for tid, (tok, q) in s.probs.items():
-            nxt = p * q
-            if nxt <= bound() or nxt < FLOOR:
-                continue
-            if _continues(tok):
-                heapq.heappush(heap, (-nxt, text + tok, ids + [tid], titled))
-            elif titled and name in TITLES and tok == ".":
-                heapq.heappush(heap, (-nxt, text + tok, ids + [tid], True))
-            elif titled and name.rstrip(".") in TITLES and _starts_name(tok):
-                heapq.heappush(heap, (-nxt, text + tok, ids + [tid], False))
+    try:
+        while heap:
+            # Start the next few best early (they're among a binary heap's
+            # first 2^ahead - 1 entries), if they can still make the top
+            for neg, _, later, _ in heapq.nsmallest(ahead, heap[: 2 ** ahead - 1]):
+                if -neg >= bound():
+                    lookups.start(later)
+            neg, text, ids, titled = heapq.heappop(heap)
+            p = -neg
+            if p < bound():
+                break
+            s = await lookups.get(ids)
+            name = text.strip()
+            end = _word_end(name, s)
+            if end > 0 and not (titled and name in TITLES):
+                total = names.get(name, 0.0) + p * end
+                names[name] = total
+                heapq.heappush(best, total)
+                if len(best) > top:
+                    heapq.heappop(best)
+            for tid, (tok, q) in s.probs.items():
+                nxt = p * q
+                if nxt <= bound() or nxt < FLOOR:
+                    continue
+                if _continues(tok):
+                    heapq.heappush(heap, (-nxt, text + tok, ids + [tid], titled))
+                elif titled and name in TITLES and tok == ".":
+                    heapq.heappush(heap, (-nxt, text + tok, ids + [tid], True))
+                elif titled and name.rstrip(".") in TITLES and _starts_name(tok):
+                    heapq.heappush(heap, (-nxt, text + tok, ids + [tid], False))
+    finally:
+        await lookups.settle()
     ranked = dict(sorted(names.items(), key=lambda kv: -kv[1])[:top])
     return ranked, capital_mass
 

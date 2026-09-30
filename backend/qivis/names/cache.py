@@ -22,15 +22,13 @@ comes back to the event loop.
 import asyncio
 import hashlib
 import json
-import zlib
-from array import array
 from concurrent.futures import ProcessPoolExecutor
 from concurrent.futures.process import BrokenProcessPool
 from typing import Any
 
 from qivis.db.connection import Database
 from qivis.models import SamplingParams
-from qivis.names import engine
+from qivis.names import engine, packing
 from qivis.providers.base import GenerationRequest
 from qivis.providers.llamacpp import LlamaCppProvider
 
@@ -57,16 +55,16 @@ def shutdown_parsers() -> None:
         _pool = None
 
 
-async def summarize_response(raw: bytes) -> engine.Summary:
-    """engine.summarize_response, in a worker process."""
+async def parse_and_pack(raw: bytes) -> tuple[engine.Summary, bytes]:
+    """packing.parse_and_pack, in a worker process."""
     global _pool
     try:
         return await asyncio.get_running_loop().run_in_executor(
-            _parsers(), engine.summarize_response, raw,
+            _parsers(), packing.parse_and_pack, raw,
         )
     except BrokenProcessPool:  # a worker died: start fresh ones next time, parse this here
         _pool = None
-        return engine.summarize_response(raw)
+        return packing.parse_and_pack(raw)
 
 
 class DistributionCache:
@@ -75,6 +73,7 @@ class DistributionCache:
         self._llama = llama
         self._identities: dict[str, str] = {}
         self._vocab: dict[str, dict[int, str]] = {}
+        self._spellings: dict[tuple[str, str], list[dict]] = {}
         self.hits = 0
         self.misses = 0
 
@@ -85,6 +84,13 @@ class DistributionCache:
                 json.dumps(ident, sort_keys=True).encode(),
             ).hexdigest()[:32]
         return self._identities[model]
+
+    async def spelling(self, model: str, name: str) -> list[dict]:
+        """A name's tokens (" " + name), asked of the model once."""
+        key = (await self.identity(model), name)
+        if key not in self._spellings:
+            self._spellings[key] = await self._llama.tokenize(" " + name, model)
+        return self._spellings[key]
 
     async def summary(self, model: str, prompt: str, ids: list[int]) -> engine.Summary:
         ident = await self.identity(model)
@@ -100,19 +106,13 @@ class DistributionCache:
             model=model, messages=[], prompt_text=prompt, sampling_params=SamplingParams(),
         )
         raw, _, _ = await self._llama.next_tokens_raw(request, ids, LOOKUP_K)
-        summary = await summarize_response(raw)
-        await self._store(ident, key, summary)
+        summary, data = await parse_and_pack(raw)
+        await self._store(ident, key, summary, data)
         return summary
 
-    async def _store(self, ident: str, key: str, s: engine.Summary) -> None:
-        ids = sorted(s.probs)
-        data = zlib.compress(
-            len(ids).to_bytes(4, "little")
-            + array("i", ids).tobytes()
-            + array("d", [s.probs[i][1] for i in ids]).tobytes(),
-        )
+    async def _store(self, ident: str, key: str, s: engine.Summary, data: bytes) -> None:
         vocab = self._vocab.setdefault(ident, {})
-        new = [(ident, i, s.probs[i][0]) for i in ids if i not in vocab]
+        new = [(ident, i, t) for i, (t, _) in s.probs.items() if i not in vocab]
         if new:
             await self._db.executemany(
                 "INSERT OR IGNORE INTO name_vocab (identity, id, token) VALUES (?, ?, ?)", new,
@@ -125,12 +125,7 @@ class DistributionCache:
         )
 
     async def _decode(self, ident: str, row: Any) -> engine.Summary:
-        raw = zlib.decompress(row["data"])
-        n = int.from_bytes(raw[:4], "little")
-        ids = array("i")
-        ids.frombytes(raw[4:4 + 4 * n])
-        probs = array("d")
-        probs.frombytes(raw[4 + 4 * n:])
+        ids, probs = packing.unpack(row["data"])
         vocab = await self._vocabulary(ident)
         if any(i not in vocab for i in ids):  # stored by an earlier run: read them in
             self._vocab.pop(ident, None)

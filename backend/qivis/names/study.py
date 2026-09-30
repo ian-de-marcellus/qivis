@@ -38,6 +38,7 @@ logger = logging.getLogger(__name__)
 
 LOOKUP_K = 1_000_000  # the whole vocabulary (llama.cpp clamps it)
 CELLS_AT_ONCE = 4  # one per llama.cpp slot, so each keeps its prompt cached
+NAMES_AT_ONCE = 4  # within a cell, names scored at once
 
 DEFAULT_FRAMES = {
     "he": ["His name is", "He is called", "His name was", "He calls himself"],
@@ -278,9 +279,7 @@ class NameStudyService:
 
         # 4. Each name's first token in every cell, to split its lean from its
         # first token's (" Mind" + "y": Mindy's lean may be all Mind's)
-        spellings: dict[str, list[dict]] = {}
-        for name in sorted(names):
-            spellings[name] = await llama.tokenize(" " + name, model)
+        spellings = {n: await self._cache_for(llama).spelling(model, n) for n in sorted(names)}
 
         async def firsts_of(c: tuple[str, str, str, str]) -> None:
             cell = await self._cell(study_id, c)
@@ -335,10 +334,17 @@ class NameStudyService:
             if not missing:
                 return
             lookups = engine.Lookups(self._fetcher(llama, model, prompt_of(c)))
+            spell = self._cache_for(llama).spelling
             scores = dict(cell.get("scores") or {})
-            for name in sorted(missing):
-                ids = [t["id"] for t in await llama.tokenize(" " + name, model)]
-                scores[name] = await engine.score_name(lookups, ids, name) if ids else 0.0
+            slots = asyncio.Semaphore(NAMES_AT_ONCE)  # a name's prefixes are shared, not refetched
+
+            async def score(name: str) -> None:
+                ids = [t["id"] for t in await spell(model, name)]
+                async with slots:
+                    scores[name] = await engine.score_name(lookups, ids, name) if ids else 0.0
+
+            await asyncio.gather(*(score(n) for n in sorted(missing)))
+            scores = dict(sorted(scores.items()))
             await self._record(study_id, "NameStudyCellScored", c, prompt_of(c), {
                 "scores": scores, "queries": lookups.queries,
             })

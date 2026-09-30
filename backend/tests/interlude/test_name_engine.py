@@ -64,3 +64,42 @@ async def test_lookups_are_fetched_once():
     before = lookups.queries
     await score_name(lookups, [1, 2], "Aiden")
     assert lookups.queries == before  # already known from the enumeration
+
+
+def _random_tree(seed: int):
+    """A made-up model: after any prefix, a few name-ish tokens and punctuation."""
+    import random
+
+    pieces = {100 + i: t for i, t in enumerate([" Ka", " Mi", " Ro", " Ele", "on", "ra", "li", "a", "n", "."])}
+
+    async def fetch(ids: list[int]) -> list[dict]:
+        rng = random.Random(hash((seed, tuple(ids))))
+        pool = [i for i in pieces if (not ids) == pieces[i].startswith(" ")] or [109]
+        weights = [rng.random() ** 3 for _ in pool] + [rng.random()]  # the last: "."
+        total = sum(weights)
+        dist = {i: w / total for i, w in zip([*pool, 109], weights, strict=True)}
+        return [{"id": i, "token": pieces[i], "prob": p} for i, p in dist.items()]
+
+    return fetch
+
+
+async def test_looking_ahead_never_changes_the_answer():
+    for seed in range(20):
+        one, _ = await enumerate_names(Lookups(_random_tree(seed)), top=8, ahead=1)
+        four, _ = await enumerate_names(Lookups(_random_tree(seed)), top=8, ahead=4)
+        assert list(four.items()) == list(one.items())
+
+
+async def test_a_lookup_in_flight_is_fetched_once():
+    import asyncio
+
+    calls = []
+
+    async def slow(ids: list[int]) -> list[dict]:
+        calls.append(tuple(ids))
+        await asyncio.sleep(0.01)
+        return await fetch(ids)
+
+    lookups = Lookups(slow)
+    await asyncio.gather(lookups.get([1]), lookups.get([1]), lookups.get([1, 2]))
+    assert sorted(calls) == [(1,), (1, 2)] and lookups.queries == 2
