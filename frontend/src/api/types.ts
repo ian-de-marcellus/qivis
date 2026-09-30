@@ -641,7 +641,7 @@ export interface NameStudyProgress {
 export interface NameStudySummary {
   study_id: string
   title: string
-  status: 'running' | 'done' | 'failed' | 'stopped'
+  status: 'queued' | 'running' | 'done' | 'failed' | 'stopped'
   models: string[]
   created_at: string
   updated_at: string
@@ -653,4 +653,37 @@ export interface NameStudy extends Omit<NameStudySummary, 'models'> {
   spec: NameStudySpec
   rules: string
   cells: NameStudyCell[]
+}
+
+export interface NameDiscoveryResult {
+  name: string
+  score: number
+  /** Mean log-probability for the description, and the log leans (natural logs) */
+  log_p: number
+  ai: number
+  gender?: number
+  character?: number
+}
+
+export interface NameDiscovery {
+  discovery_id: string
+  title: string
+  status: 'running' | 'done' | 'failed'
+  spec: {
+    model: string
+    pronoun: string
+    study_id: string
+    failure_study_ids: string[]
+    weights: { ai: number; gender: number; character: number }
+    beam: number
+    depth: number
+    alpha: number
+    top: number
+  }
+  prompts: { failure_titles: string[] }
+  results: NameDiscoveryResult[] | null
+  error: string | null
+  queries: number
+  created_at: string
+  progress: NameStudyProgress | null
 }

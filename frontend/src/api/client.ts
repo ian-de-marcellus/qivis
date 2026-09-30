@@ -3,6 +3,7 @@
 import { postSSE, sseError, type SSEMessage } from './sse.ts'
 import type {
   AddAnnotationRequest,
+  NameDiscovery,
   NameStudy,
   NameStudySpec,
   NameStudySummary,
@@ -773,4 +774,24 @@ export function stopNameStudy(studyId: string): Promise<NameStudy> {
 
 export function resumeNameStudy(studyId: string): Promise<NameStudy> {
   return request(`/name-studies/${studyId}/resume`, { method: 'POST' })
+}
+
+export function extendNameStudy(studyId: string, names: string[]): Promise<NameStudy> {
+  return request(`/name-studies/${studyId}/extend`, { method: 'POST', body: JSON.stringify({ names }) })
+}
+
+export function listNameDiscoveries(): Promise<NameDiscovery[]> {
+  return request('/name-studies/discoveries')
+}
+
+export function getNameDiscovery(id: string): Promise<NameDiscovery> {
+  return request(`/name-studies/discoveries/${id}`)
+}
+
+export function createNameDiscovery(spec: {
+  title: string; model: string; pronoun: string; study_id: string; failure_study_ids: string[]
+  weights: { ai: number; gender: number; character: number }; beam?: number; depth?: number
+  alpha?: number; top?: number
+}): Promise<NameDiscovery> {
+  return request('/name-studies/discoveries', { method: 'POST', body: JSON.stringify(spec) })
 }

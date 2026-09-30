@@ -10,12 +10,13 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as api from '../../api/client.ts'
-import type { NameStudy, NameStudySpec, NameStudySummary } from '../../api/types.ts'
+import type { NameDiscovery, NameStudy, NameStudySpec, NameStudySummary } from '../../api/types.ts'
 import { useModalBehavior } from '../../hooks/useModalBehavior.ts'
 import { useRhizomeData, useRhizomeStore } from '../../store/rhizomeStore.ts'
 import {
   borrowed, firstToken, frameAgreement, nameRows, ownTop, studyContrast, value, withPronouns, type NameRow,
 } from './nameStudy.ts'
+import { DiscoveryView, NewDiscovery } from './DiscoveryView.tsx'
 import './NameStudiesView.css'
 
 const PRONOUNS = ['he', 'she', 'they', 'it']
@@ -36,13 +37,16 @@ export function NameStudiesView({ onDismiss }: { onDismiss: () => void }) {
   const ref = useRef<HTMLDivElement>(null)
   useModalBehavior(ref, onDismiss)
   const [studies, setStudies] = useState<NameStudySummary[]>([])
-  const [selected, setSelected] = useState<string | 'new' | null>(null)
+  const [discoveries, setDiscoveries] = useState<NameDiscovery[]>([])
+  // A study or discovery id, or 'new' / 'new-discovery'
+  const [selected, setSelected] = useState<string | null>(null)
 
   const refresh = useCallback(() => {
     api.listNameStudies().then((list) => {
       setStudies(list)
       setSelected((s) => s ?? list[0]?.study_id ?? 'new')
     }).catch(() => {})
+    api.listNameDiscoveries().then(setDiscoveries).catch(() => {})
   }, [])
   useEffect(() => { refresh() }, [refresh])
 
@@ -72,12 +76,35 @@ export function NameStudiesView({ onDismiss }: { onDismiss: () => void }) {
                 <span className="study-models">{s.models.map(short).join(', ')}</span>
               </button>
             ))}
+            <div className="studies-list-heading">Discoveries</div>
+            <button
+              className={`studies-list-item new${selected === 'new-discovery' ? ' selected' : ''}`}
+              onClick={() => setSelected('new-discovery')}
+            >
+              + New discovery
+            </button>
+            {discoveries.map((d) => (
+              <button
+                key={d.discovery_id}
+                className={`studies-list-item${selected === d.discovery_id ? ' selected' : ''}`}
+                onClick={() => setSelected(d.discovery_id)}
+              >
+                <span className={`study-status ${d.status}`} title={d.status} />
+                <span className="study-title">{d.title}</span>
+              </button>
+            ))}
           </nav>
           <main className="studies-main">
             {selected === 'new' && (
               <NewStudy onCreated={(id) => { refresh(); setSelected(id) }} />
             )}
-            {selected && selected !== 'new' && (
+            {selected === 'new-discovery' && (
+              <NewDiscovery studies={studies} onCreated={(id) => { refresh(); setSelected(id) }} />
+            )}
+            {selected?.startsWith('discovery-') && (
+              <DiscoveryView key={selected} discoveryId={selected} studies={studies} onAdded={refresh} />
+            )}
+            {selected?.startsWith('study-') && (
               <StudyResults key={selected} studyId={selected} onChange={refresh} />
             )}
           </main>
@@ -276,6 +303,9 @@ function StudyResults({ studyId, onChange }: { studyId: string; onChange: () => 
   const [shortlist, setShortlist] = useState('')
   // Shortlists also need the name's own lean (not just its first token's)
   const [needOwn, setNeedOwn] = useState(true)
+  // ...and, optionally, to beat every contrast; ranked by a weighted score
+  const [mustBeat, setMustBeat] = useState(true)
+  const [weights, setWeights] = useState({ ai: 1, gender: 1, character: 1 })
   useEffect(() => {
     api.listNameStudies().then((list) => setOthers(list.filter((x) => x.study_id !== studyId))).catch(() => {})
   }, [studyId])
@@ -321,8 +351,17 @@ function StudyResults({ studyId, onChange }: { studyId: string; onChange: () => 
           ...Object.values(vsStudy),
         ]
         : []
-      const ok = factors.every((f) => f != null && !Number.isNaN(f) && f > 1) && (own == null || own >= 1.2)
-      return { ...x, vsStudy, combined: ok ? factors.reduce((sum, f) => sum + Math.log(f), 0) : -Infinity }
+      const beats = factors.every((f) => f != null && !Number.isNaN(f) && f > 1)
+      const ok = (!mustBeat || beats) && (own == null || own >= 1.2)
+      // The score: log probability plus weighted log leans; the character term is
+      // the worst of the compared (failure-mode) descriptions
+      const character = Object.values(vsStudy).filter((v) => !Number.isNaN(v))
+      const lean = (v: number | undefined) => (v == null || Number.isNaN(v) ? 0 : Math.log(v))
+      const scoreOf = Math.log(x.p)
+        + weights.ai * lean(x.vsControl)
+        + (shortlist === 'it' ? 0 : weights.gender * lean(x.overIt[shortlist]))
+        + (character.length ? weights.character * Math.log(Math.min(...character)) : 0)
+      return { ...x, vsStudy, combined: shortlist && ok ? scoreOf : -Infinity }
     })
     // A shortlist: only names that beat every contrast, strongest first
     if (shortlist) r = r.filter((x) => x.combined > -Infinity)
@@ -330,7 +369,7 @@ function StudyResults({ studyId, onChange }: { studyId: string; onChange: () => 
     if (key === 'name') return r.sort((a, b) => a.name.localeCompare(b.name))
     const v = (x: Row) => { const n = sortValue(x, key); return Number.isNaN(n) ? -Infinity : n }
     return r.sort((a, b) => v(b) - v(a))
-  }, [study, model, sort, aiOnly, compared, shortlist, needOwn])
+  }, [study, model, sort, aiOnly, compared, shortlist, needOwn, mustBeat, weights])
 
   if (error) return <div className="study-error">{error}</div>
   if (!study || !model) return <div className="hint">Loading…</div>
@@ -354,6 +393,7 @@ function StudyResults({ studyId, onChange }: { studyId: string; onChange: () => 
         {(study.status === 'stopped' || study.status === 'failed') && (
           <button onClick={() => act(api.resumeNameStudy)}>Resume</button>
         )}
+        {study.status === 'queued' && <button onClick={() => act(api.resumeNameStudy)}>Run</button>}
       </div>
       {study.progress && (
         <div className="study-progress">
@@ -412,13 +452,32 @@ function StudyResults({ studyId, onChange }: { studyId: string; onChange: () => 
               </label>
             )}
             {shortlist && (
-              <span className="hint">
-                names that beat every contrast for "{shortlist}": more likely than for {study.spec.control}
-                {shortlist !== 'it' && hasIt && ', than with "it"'}
-                {compared.length > 0 && ', than for each compared description'}; strongest first
-              </span>
+              <label className="choice">
+                <input type="checkbox" checked={mustBeat} onChange={(e) => setMustBeat(e.target.checked)} />
+                only names that beat every contrast
+              </label>
             )}
           </div>
+          {shortlist && (
+            <div className="compare-row weights">
+              {([
+                ['ai', `vs ${study.spec.control}`],
+                ...(shortlist !== 'it' && hasIt ? [['gender', `${shortlist} over "it"`]] : []),
+                ...(compared.length ? [['character', 'vs the worst compared description']] : []),
+              ] as [keyof typeof weights, string][]).map(([key, label]) => (
+                <label key={key} className="weight">
+                  {label}: <b>{weights[key].toFixed(1)}</b>
+                  <input type="range" min={0} max={4} step={0.1} value={weights[key]}
+                    onChange={(e) => setWeights({ ...weights, [key]: Number(e.target.value) })} />
+                </label>
+              ))}
+              <span className="hint">
+                Ranked by log probability plus each lean times its weight (1: a name twice as leaning is
+                worth being half as likely). Compared studies count as failure modes: a name is scored
+                against the one it leans most toward.
+              </span>
+            </div>
+          )}
           {rows.length === 0 ? (
             <p className="hint">The comparison appears once the names are scored in every cell.</p>
           ) : (

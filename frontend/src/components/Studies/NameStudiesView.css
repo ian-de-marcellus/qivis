@@ -204,3 +204,10 @@
 .compare-row select { font-family: var(--font-ui); font-size: var(--text-sm); background: var(--bg-input); color: var(--text-primary); border: 1px solid var(--border); border-radius: var(--radius-sm); }
 
 .names-table .borrowed { font-family: var(--font-ui); font-size: var(--text-xs); color: var(--ctx-yellow); }
+
+.studies-list-heading { margin: var(--space-md) var(--space-sm) var(--space-xs); font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-tertiary); }
+.study-status.queued { background: var(--border-strong); }
+.field select { font-family: var(--font-ui); font-size: var(--text-sm); padding: var(--space-xs); background: var(--bg-input); color: var(--text-primary); border: 1px solid var(--border); border-radius: var(--radius-sm); }
+
+.compare-row.weights { align-items: flex-start; }
+.weight { display: flex; flex-direction: column; font-size: var(--text-xs); gap: 2px; min-width: 11rem; }
