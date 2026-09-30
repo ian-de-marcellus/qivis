@@ -27,14 +27,23 @@ TAIL_CHARS = 800
 
 def judge_request(context: str, texts: list[str]) -> str:
     tail = context[-TAIL_CHARS:]
-    numbered = "\n".join(f"{i + 1}. {t.strip()}" for i, t in enumerate(texts))
+    # Each continuation joined to the text's last few words, so one that finishes a
+    # word ("A" + "iden") reads whole ("...his name is Aiden")
+    end = context[-40:]
+    if len(context) > 40 and " " in end:
+        end = end[end.index(" ") + 1:]  # start at a word
+    lead = "..." + end if context.strip() else ""
+    numbered = "\n".join(
+        f"{i + 1}. {(lead + t).strip()}" for i, t in enumerate(texts)
+    )
     return (
         "The text so far ends like this:\n<<<\n" + tail + "\n>>>\n\n"
         f"Below are {len(texts)} possible continuations, numbered. For each, name the "
-        "answer, choice or stance it expresses, in one to four lowercase words: the gist, "
-        "without hedges or intensity, in its plainest form (\"probably humans\", \"humans, "
-        "i think\" and \"definitely humans!\" are all \"humans\"; \"my pet cat\" and "
-        "\"cats\" are both \"cats\"). Give continuations that give the same answer exactly "
+        "specific answer it gives to what the text leads up to (the name, the thing, the "
+        "choice itself, not its category), in one to four lowercase words, in its plainest "
+        "form, without hedges or intensity: \"probably X\", \"X, i think\", \"definitely "
+        "X!\" and \"my X\" are all \"x\". Each continuation is shown after the text's "
+        "last few words. Give continuations that give the same answer exactly "
         "the same label. If a continuation gives no answer, label it \"no answer\".\n\n"
         + numbered
     )
@@ -42,6 +51,8 @@ def judge_request(context: str, texts: list[str]) -> str:
 
 def normalize(label: str) -> str:
     """One spelling per answer: lowercase, no surrounding punctuation or extra spaces."""
+    # A small judge sometimes echoes the item number ("3: aiden")
+    label = re.sub(r"^\s*\d+\s*[:.)]\s+", "", label)
     return re.sub(r"\s+", " ", label.strip().strip(".,!?;:\"'").lower()) or "no answer"
 
 

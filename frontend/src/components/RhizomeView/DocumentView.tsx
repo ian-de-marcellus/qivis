@@ -151,6 +151,11 @@ export function DocumentView() {
       const at = text ? await addText(text) : writeUnder
       if (at != null) openSteer(at)
     },
+    // What's typed is added first, so the probe is of what comes after it
+    probe: async (text: string) => {
+      const at = text ? await addText(text) : writeUnder
+      if (at != null) setProbeAt(at)
+    },
   }
 
   useEffect(() => {
@@ -403,7 +408,7 @@ export function DocumentView() {
           onContinue={composer.continue}
           onAdd={composer.add}
           onSteer={composer.steer}
-          onProbe={() => setProbeAt(writeUnder)}
+          onProbe={composer.probe}
           onStop={stopGeneration}
         />
       </div>
@@ -428,7 +433,7 @@ function DocumentComposer({
   onContinue: (text: string) => void
   onAdd: (text: string) => void
   onSteer: (text: string) => void
-  onProbe: () => void
+  onProbe: (text: string) => void
   onStop: () => void
 }) {
   const [text, setText] = useState('')
@@ -451,6 +456,12 @@ function DocumentComposer({
   const handleAdd = () => {
     if (isGenerating || !text || onlySpace) return
     onAdd(text)
+    reset()
+  }
+
+  const handleProbe = () => {
+    if (isGenerating || onlySpace) return
+    onProbe(text)
     reset()
   }
 
@@ -525,7 +536,7 @@ function DocumentComposer({
         </button>
         <button
           className="send-only-btn"
-          onClick={onProbe}
+          onClick={handleProbe}
           disabled={isGenerating}
           title="Sample what might come next, grouped by what it says"
         >

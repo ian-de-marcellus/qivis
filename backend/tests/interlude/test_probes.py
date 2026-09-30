@@ -112,12 +112,16 @@ def test_labels_are_normalized():
     assert judging.normalize(" Cats! ") == "cats"
     assert judging.normalize("the  Giraffe.") == "the giraffe"
     assert judging.normalize("") == "no answer"
+    assert judging.normalize("3: Aiden") == "aiden"  # an echoed item number
+    assert judging.normalize("3.14159") == "3.14159"  # a number that is the answer
 
 
 def test_the_judge_sees_the_end_of_the_text_and_every_sample():
-    request = judging.judge_request("x" * 5000 + "Ian: favorite?\n\nBetsy:", ["cats", "dogs"])
+    request = judging.judge_request("x" * 5000 + "Ian: favorite?\n\nBetsy:", [" cats", " dogs"])
     assert "Ian: favorite?\n\nBetsy:" in request and "x" * 900 not in request
-    assert "1. cats\n2. dogs" in request
+    # Each continuation reads on from the text's last words
+    assert "1. ...favorite?\n\nBetsy: cats\n2. ...favorite?\n\nBetsy: dogs" in request
+    assert judging.judge_request("His name is A", ["iden."]).endswith("1. ...His name is Aiden.")
 
 
 def test_a_gpu_judge_is_skipped_when_it_would_not_fit():

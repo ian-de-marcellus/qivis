@@ -26,6 +26,7 @@ interface ProbePanelProps {
 
 export function ProbePanel({ rhizomeId, nodeId, provider, model, onClose }: ProbePanelProps) {
   const showNode = useRhizomeStore(s => s.showNode)
+  const pointNode = useRhizomeStore(s => s.currentRhizome?.nodes.find((n) => n.node_id === nodeId))
   const [probes, setProbes] = useState<Probe[]>([])
   const [shown, setShown] = useState<string | null>(null)
   const [n, setN] = useState(20)
@@ -92,6 +93,12 @@ export function ProbePanel({ rhizomeId, nodeId, provider, model, onClose }: Prob
       <div className="probe-head">
         <span className="probe-title">What would {model.replace(/\.gguf$/, '') || 'the model'} say here?</span>
         <button className="probe-close" onClick={onClose} aria-label="Close probe">×</button>
+      </div>
+
+      <div className="probe-point">
+        {nodeId && pointNode
+          ? <>after <q>…{(pointNode.edited_content ?? pointNode.content).slice(-60)}</q></>
+          : 'at the very beginning: a blank page'}
       </div>
 
       <div className="probe-controls">
