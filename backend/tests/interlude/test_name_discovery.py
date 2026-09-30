@@ -52,3 +52,12 @@ async def test_implausible_tokens_are_not_tried():
 async def test_excluded_names_are_never_found():
     found = await discover(fetch, ROLES, Weights(), alpha=0.01, excluded={"Wren"})
     assert "Wren" not in {f.name for f in found} and found
+
+
+async def test_names_under_the_floor_with_no_description_are_dropped():
+    bare = {"B": {1: 0.5, 2: 1e-9, 3: 0.01, 5: 0.01}}  # Wren: almost never a name
+    FIRST.update(bare)
+    roles = Roles(description=["D"], control=["C"], it=["I"], failures=[["F1"], ["F2"]], bare=["B"])
+    found = await discover(fetch, roles, Weights(), alpha=0.01, name_floor=1e-7)
+    assert "Wren" not in {f.name for f in found} and "Hal" in {f.name for f in found}
+    del FIRST["B"]

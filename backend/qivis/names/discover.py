@@ -55,9 +55,11 @@ class Roles:
     control: list[str]
     it: list[str] | None
     failures: list[list[str]]
+    # The frames with no description: a name must be at least somewhat likely there
+    bare: list[str] | None = None
 
     def all(self) -> list[str]:
-        prompts = [*self.description, *self.control, *(self.it or [])]
+        prompts = [*self.description, *self.control, *(self.it or []), *(self.bare or [])]
         for f in self.failures:
             prompts += f
         return list(dict.fromkeys(prompts))
@@ -125,6 +127,7 @@ async def discover(
     parallel: int = 4,
     progress: Callable[[int, int], None] | None = None,
     excluded: set[str] | None = None,
+    name_floor: float = 0.0,
 ) -> list[Found]:
     """The names with the best score, found by a beam over token paths."""
     prompts = roles.all()
@@ -159,6 +162,15 @@ async def discover(
     def extend(logs: dict[str, float], looked: dict[str, dict], tid: int) -> dict[str, float]:
         return {p: logs[p] + _ln(looked[p]["probs"].get(tid, ("", 0.0))[1]) for p in prompts}
 
+    floor = math.log(name_floor) if name_floor > 0 else None
+
+    def name_shaped(logs: dict[str, float]) -> bool:
+        """Likely enough with no description to be a name at all. A partial name's
+        bare probability only falls as it grows, so one below the floor is dropped."""
+        if floor is None or not roles.bare:
+            return True
+        return sum(logs[p] for p in roles.bare) / len(roles.bare) >= floor
+
     found: dict[str, Found] = {}
     root = await look([])
     zero = {p: 0.0 for p in prompts}
@@ -166,7 +178,8 @@ async def discover(
     for tid in candidates(root, first=True):
         tok = root[roles.description[0]]["probs"][tid][0]
         logs = extend(zero, root, tid)
-        frontier.append((score(roles, weights, logs), tok, [tid], logs))
+        if name_shaped(logs):
+            frontier.append((score(roles, weights, logs), tok, [tid], logs))
     frontier = sorted(frontier, key=lambda n: -n[0])[:beam]
 
     for level in range(depth):
@@ -179,6 +192,9 @@ async def discover(
             ends = {p: _ends(name, looked[p]["ends"], looked[p]["punct"]) for p in prompts}
             if all(e > 0 for e in ends.values()) and name not in (excluded or set()):
                 final = {p: logs[p] + _ln(ends[p]) for p in prompts}
+            else:
+                final = None
+            if final is not None and name_shaped(final):
                 s = score(roles, weights, final)
                 if name not in found or s > found[name].score:
                     found[name] = Found(name, s, final)
@@ -186,6 +202,8 @@ async def discover(
                 for tid in candidates(looked, first=False):
                     tok = looked[roles.description[0]]["probs"][tid][0]
                     child = extend(logs, looked, tid)
+                    if not name_shaped(child):
+                        continue
                     children.append((score(roles, weights, child), text + tok, ids + [tid], child))
         frontier = sorted(children, key=lambda n: -n[0])[:beam]
         if not frontier:

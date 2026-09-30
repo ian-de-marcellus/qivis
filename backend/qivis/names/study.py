@@ -77,6 +77,9 @@ class DiscoverySpec(BaseModel):
     depth: int = Field(default=4, ge=1, le=8)
     alpha: float = Field(default=0.01, gt=0, le=1)
     top: int = Field(default=60, ge=1, le=500)
+    # Name-shaped: a name must have at least this probability with no description
+    # (0: no floor); product-like coinages ("ElecMind") fall far below it
+    name_floor: float = Field(default=1e-7, ge=0, le=1)
 
 
 class StudyNotFoundError(NotFoundError):
@@ -376,6 +379,7 @@ class NameStudyService:
             "description": texts(study, p, "model"),
             "control": texts(study, p, "control"),
             "it": texts(study, "it", "model") if use_it else None,
+            "bare": texts(study, p, "bare") if spec.name_floor > 0 else None,
             "failures": [texts(f, p, "model") for f in failures],
             "failure_titles": [f.title for f in failures],
         }
@@ -393,7 +397,7 @@ class NameStudyService:
         prompts = json.loads(row["prompts"])
         roles = discovery.Roles(
             description=prompts["description"], control=prompts["control"],
-            it=prompts["it"], failures=prompts["failures"],
+            it=prompts["it"], failures=prompts["failures"], bare=prompts.get("bare"),
         )
         weights = discovery.Weights(**spec.weights)
         llama = get_provider("llamacpp")
@@ -416,7 +420,7 @@ class NameStudyService:
             found = await discovery.discover(
                 fetch, roles, weights, beam=spec.beam, depth=spec.depth,
                 alpha=spec.alpha, top=spec.top, progress=progress,
-                excluded=set(await self.excluded_names()),
+                excluded=set(await self.excluded_names()), name_floor=spec.name_floor,
             )
             results = [
                 {"name": f.name, "score": f.score, **discovery.terms(roles, f.logs)}
