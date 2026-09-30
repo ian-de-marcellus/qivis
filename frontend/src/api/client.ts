@@ -795,3 +795,12 @@ export function createNameDiscovery(spec: {
 }): Promise<NameDiscovery> {
   return request('/name-studies/discoveries', { method: 'POST', body: JSON.stringify(spec) })
 }
+
+/** Names never to shortlist: taken, as references, by AI products and the like. */
+export function getExcludedNames(): Promise<{ names: string[] }> {
+  return request('/name-studies/excluded')
+}
+
+export function setExcludedNames(names: string[]): Promise<{ names: string[] }> {
+  return request('/name-studies/excluded', { method: 'PUT', body: JSON.stringify({ names }) })
+}

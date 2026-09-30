@@ -17,6 +17,7 @@ import {
   borrowed, firstToken, frameAgreement, nameRows, ownTop, studyContrast, value, withPronouns, type NameRow,
 } from './nameStudy.ts'
 import { DiscoveryView, NewDiscovery } from './DiscoveryView.tsx'
+import { ExcludedNames } from './ExcludedNames.tsx'
 import './NameStudiesView.css'
 
 const PRONOUNS = ['he', 'she', 'they', 'it']
@@ -38,8 +39,11 @@ export function NameStudiesView({ onDismiss }: { onDismiss: () => void }) {
   useModalBehavior(ref, onDismiss)
   const [studies, setStudies] = useState<NameStudySummary[]>([])
   const [discoveries, setDiscoveries] = useState<NameDiscovery[]>([])
-  // A study or discovery id, or 'new' / 'new-discovery'
+  // A study or discovery id, or 'new' / 'new-discovery' / 'excluded'
   const [selected, setSelected] = useState<string | null>(null)
+  // Names never to shortlist (AI products and the like), shared by every view
+  const [excluded, setExcluded] = useState<string[]>([])
+  useEffect(() => { api.getExcludedNames().then(({ names }) => setExcluded(names)).catch(() => {}) }, [])
 
   const refresh = useCallback(() => {
     api.listNameStudies().then((list) => {
@@ -76,6 +80,12 @@ export function NameStudiesView({ onDismiss }: { onDismiss: () => void }) {
                 <span className="study-models">{s.models.map(short).join(', ')}</span>
               </button>
             ))}
+            <button
+              className={`studies-list-item new${selected === 'excluded' ? ' selected' : ''}`}
+              onClick={() => setSelected('excluded')}
+            >
+              Excluded names ({excluded.length})
+            </button>
             <div className="studies-list-heading">Discoveries</div>
             <button
               className={`studies-list-item new${selected === 'new-discovery' ? ' selected' : ''}`}
@@ -98,14 +108,15 @@ export function NameStudiesView({ onDismiss }: { onDismiss: () => void }) {
             {selected === 'new' && (
               <NewStudy onCreated={(id) => { refresh(); setSelected(id) }} />
             )}
+            {selected === 'excluded' && <ExcludedNames onChange={setExcluded} />}
             {selected === 'new-discovery' && (
               <NewDiscovery studies={studies} onCreated={(id) => { refresh(); setSelected(id) }} />
             )}
             {selected?.startsWith('discovery-') && (
-              <DiscoveryView key={selected} discoveryId={selected} studies={studies} onAdded={refresh} />
+              <DiscoveryView key={selected} discoveryId={selected} studies={studies} onAdded={refresh} excluded={excluded} />
             )}
             {selected?.startsWith('study-') && (
-              <StudyResults key={selected} studyId={selected} onChange={refresh} />
+              <StudyResults key={selected} studyId={selected} onChange={refresh} excluded={excluded} />
             )}
           </main>
         </div>
@@ -289,7 +300,11 @@ function sortValue(r: Row, key: SortKey): number {
 
 const shortTitle = (title: string) => title.replace(/^Names for /, '').replace(/\s*\(.*\)$/, '')
 
-function StudyResults({ studyId, onChange }: { studyId: string; onChange: () => void }) {
+function StudyResults({ studyId, onChange, excluded }: {
+  studyId: string
+  onChange: () => void
+  excluded: string[]
+}) {
   const [study, setStudy] = useState<NameStudy | null>(null)
   const [model, setModel] = useState<string | null>(null)
   const [sort, setSort] = useState<SortKey>('vsControl')
@@ -363,13 +378,13 @@ function StudyResults({ studyId, onChange }: { studyId: string; onChange: () => 
         + (character.length ? weights.character * Math.log(Math.min(...character)) : 0)
       return { ...x, vsStudy, combined: shortlist && ok ? scoreOf : -Infinity }
     })
-    // A shortlist: only names that beat every contrast, strongest first
-    if (shortlist) r = r.filter((x) => x.combined > -Infinity)
+    // A shortlist: only names that pass its filters (and aren't excluded), best first
+    if (shortlist) r = r.filter((x) => x.combined > -Infinity && !excluded.includes(x.name))
     const key: SortKey = shortlist && sort !== 'name' ? 'shortlist' : sort
     if (key === 'name') return r.sort((a, b) => a.name.localeCompare(b.name))
     const v = (x: Row) => { const n = sortValue(x, key); return Number.isNaN(n) ? -Infinity : n }
     return r.sort((a, b) => v(b) - v(a))
-  }, [study, model, sort, aiOnly, compared, shortlist, needOwn, mustBeat, weights])
+  }, [study, model, sort, aiOnly, compared, shortlist, needOwn, mustBeat, weights, excluded])
 
   if (error) return <div className="study-error">{error}</div>
   if (!study || !model) return <div className="hint">Loading…</div>
@@ -524,7 +539,7 @@ function StudyResults({ studyId, onChange }: { studyId: string; onChange: () => 
                 {rows.map((r) => (
                   <Fragment key={r.name}>
                     <tr
-                      className={`${r.extra ? 'extra' : ''}${open === r.name ? ' open' : ''}`}
+                      className={`${r.extra ? 'extra' : ''}${open === r.name ? ' open' : ''}${excluded.includes(r.name) ? ' excluded' : ''}`}
                       onClick={() => setOpen(open === r.name ? null : r.name)}
                     >
                       <td className="name">

@@ -22,10 +22,11 @@ const pct = (log: number) => {
 }
 const short = (s: string) => s.replace(/^Names for /, '').replace(/\s*\(.*\)$/, '')
 
-export function DiscoveryView({ discoveryId, studies, onAdded }: {
+export function DiscoveryView({ discoveryId, studies, onAdded, excluded }: {
   discoveryId: string
   studies: NameStudySummary[]
   onAdded: () => void
+  excluded: string[]
 }) {
   const [d, setD] = useState<NameDiscovery | null>(null)
   const [picked, setPicked] = useState<Set<string>>(new Set())
@@ -96,8 +97,13 @@ export function DiscoveryView({ discoveryId, studies, onAdded }: {
               </thead>
               <tbody>
                 {d.results.map((r) => (
-                  <tr key={r.name} onClick={() => toggle(picked, r.name, setPicked)}>
-                    <td><input type="checkbox" readOnly checked={picked.has(r.name)} /></td>
+                  <tr
+                    key={r.name}
+                    className={excluded.includes(r.name) ? 'excluded' : ''}
+                    onClick={() => { if (!excluded.includes(r.name)) toggle(picked, r.name, setPicked) }}
+                    title={excluded.includes(r.name) ? 'Excluded (see Excluded names)' : undefined}
+                  >
+                    <td><input type="checkbox" readOnly checked={picked.has(r.name)} disabled={excluded.includes(r.name)} /></td>
                     <td className="name">{r.name}</td>
                     <td>{pct(r.log_p)}</td>
                     <td className={r.ai > 0 ? 'up' : 'down'}>{times(r.ai)}</td>
