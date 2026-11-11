@@ -13,6 +13,9 @@ Qivis needs to change:
 - /props is answered from memory while the model sleeps (the last real
   /props, or a minimal one naming the model file), so Qivis starting up
   or listing models doesn't wake it. /health reports the supervisor as up.
+- With a memory budget, a model counts as its file plus its working memory
+  (context cache and compute buffers, which llama-server allocates on top of
+  the memory-mapped weights): measured once it's up, an estimate until then.
 - Another process using the GPU (Qivis's direct lookups) can lease memory:
   POST /supervisor/lease {"name", "bytes", "ttl"} makes room for it as for
   a model, and the budget counts it until DELETE /supervisor/lease?name=
@@ -31,8 +34,10 @@ file name, and to the first model when it names none.
 
 import argparse
 import asyncio
+import ctypes
 import json
 import logging
+import sys
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -43,6 +48,34 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 logger = logging.getLogger("llama_supervisor")
 HOP_HEADERS = {"content-length", "transfer-encoding", "connection", "keep-alive", "host"}
+
+
+def footprint(pid: int) -> int | None:
+    """A process's physical memory footprint (macOS; None elsewhere or on failure):
+    what it holds beyond memory-mapped files, GPU buffers included."""
+    if sys.platform != "darwin":
+        return None
+
+    class RusageInfoV2(ctypes.Structure):
+        _fields_ = [("ri_uuid", ctypes.c_uint8 * 16)] + [
+            (name, ctypes.c_uint64) for name in (
+                "ri_user_time", "ri_system_time", "ri_pkg_idle_wkups", "ri_interrupt_wkups",
+                "ri_pageins", "ri_wired_size", "ri_resident_size", "ri_phys_footprint",
+                "ri_proc_start_abstime", "ri_proc_exit_abstime", "ri_child_user_time",
+                "ri_child_system_time", "ri_child_pkg_idle_wkups", "ri_child_interrupt_wkups",
+                "ri_child_pageins", "ri_child_elapsed_abstime", "ri_diskio_bytesread",
+                "ri_diskio_byteswritten",
+            )
+        ]
+
+    try:
+        libproc = ctypes.CDLL("/usr/lib/libproc.dylib")
+        info = RusageInfoV2()
+        if libproc.proc_pid_rusage(pid, 2, ctypes.byref(info)) != 0:  # RUSAGE_INFO_V2
+            return None
+        return int(info.ri_phys_footprint)
+    except OSError:
+        return None
 
 
 class Supervisor:
@@ -56,8 +89,13 @@ class Supervisor:
         startup_timeout: float = 300.0,
         log_path: Path | None = None,
         gpu: bool = True,
+        overhead: float = 0.0,
     ):
         self.model = model
+        # Working memory beyond the file (context cache, compute buffers): this
+        # estimate until it's measured, the largest measurement after
+        self.overhead = overhead
+        self.measured_overhead: int | None = None
         # A CPU model (-ngl 0) doesn't count against the GPU memory budget
         self.gpu = gpu
         self.backend = f"http://127.0.0.1:{backend_port}"
@@ -77,12 +115,26 @@ class Supervisor:
         self.client = httpx.AsyncClient(timeout=httpx.Timeout(600, connect=5))
 
     @property
-    def size(self) -> int:
-        """Roughly what the model takes in memory: its file's size."""
+    def file_size(self) -> int:
         try:
             return self.model.stat().st_size
         except OSError:
             return 0
+
+    @property
+    def size(self) -> int:
+        """What the model takes in memory: its file plus its working memory
+        (measured once it has run, the estimate before)."""
+        extra = self.measured_overhead if self.measured_overhead is not None else self.overhead
+        return self.file_size + int(extra)
+
+    def measure(self) -> None:
+        """Note the running llama-server's working memory (it keeps the largest seen)."""
+        if self.proc is None or self.proc.returncode is not None:
+            return
+        used = footprint(self.proc.pid)
+        if used is not None and used > (self.measured_overhead or 0):
+            self.measured_overhead = used
 
     @property
     def running(self) -> bool:
@@ -131,6 +183,7 @@ class Supervisor:
                     if r.status_code == 200:
                         logger.info("llama-server ready")
                         self.ready = True
+                        self.measure()  # its context cache and buffers exist once it's loaded
                         return
                 except httpx.HTTPError:
                     pass
@@ -171,6 +224,7 @@ class Supervisor:
     async def idle_watch(self, interval: float = 30.0) -> None:
         while True:
             await asyncio.sleep(interval)
+            self.measure()
             await self.maybe_sleep()
 
 
@@ -178,7 +232,8 @@ class Pool:
     """Several supervised models behind one port; requests pick by model file name.
 
     With a memory budget, starting a model first stops idle ones (least
-    recently used first) until the running models' files fit in it, waiting
+    recently used first) until the running models (files and working memory) fit
+    in it, waiting
     for any that are mid-request: on a laptop, a big model gets the memory
     to itself instead of swapping or running out.
     """
@@ -225,6 +280,18 @@ class Pool:
         self, size: float, exclude: Supervisor | None, label: str, wait: float = 600.0,
     ) -> None:
         assert self.memory_budget is not None
+        if exclude is not None and size > self.memory_budget:
+            # Over the budget on its own (a big model, counted with its working
+            # memory): it gets all the room there is, everything else stopped
+            logger.warning(
+                "%s (%.1f GB with its working memory) is over the %.1f GB budget alone: "
+                "starting it with every other model stopped",
+                label, size / 1e9, self.memory_budget / 1e9,
+            )
+            size = self.memory_budget - self.leased()
+            if size <= 0:
+                held = ", ".join(self.leases)
+                raise RuntimeError(f"GPU memory is leased ({held}); no room until it's released")
         if self.leased() + size > self.memory_budget:
             held = ", ".join(self.leases) or "leases"
             raise RuntimeError(
@@ -300,6 +367,9 @@ def create_app(sup: Supervisor | Pool, idle_check_interval: float = 30.0) -> Fas
             "idle_for": round(time.monotonic() - m.last_activity, 1),
             "idle_limit": m.idle_seconds,
             "size": m.size,
+            "file_size": m.file_size,
+            "overhead": m.measured_overhead if m.measured_overhead is not None else m.overhead,
+            "overhead_measured": m.measured_overhead is not None,
             "gpu": m.gpu,
         }
 
@@ -432,7 +502,13 @@ def main() -> None:
     )
     parser.add_argument(
         "--memory-budget", type=float, default=None,
-        help="GB the running models' files may take together; idle ones stop to make room",
+        help="GB the running models may take together; idle ones stop to make room",
+    )
+    parser.add_argument(
+        "--overhead", type=float, default=4.0,
+        help="GB of working memory (context cache, buffers) assumed per GPU model beyond "
+             "its file, until it has run and been measured (llama-server for a 7B model at "
+             "-c 8192 holds ~4.5 GB)",
     )
     parser.add_argument("--llama-server", default="llama-server", help="llama-server binary")
     parser.add_argument("--log", type=Path, default=None, help="append llama-server output here")
@@ -447,6 +523,7 @@ def main() -> None:
             llama_cmd=[args.llama_server],
             extra_args=args.llama_args,
             log_path=args.log,
+            overhead=args.overhead * 1024**3,
         )
         for i, path in enumerate(args.model)
     ] + [

@@ -276,3 +276,75 @@ async def test_a_lease_not_renewed_lapses(tmp_path):
     assert pool.leased() > 0
     await asyncio.sleep(0.3)
     assert pool.leased() == 0
+
+
+async def test_a_model_counts_its_working_memory_not_just_its_file(tmp_path, monkeypatch):
+    """llama-server holds a context cache and buffers beyond the mapped weights: the
+    budget counts them, estimated until the running server has been measured."""
+    import qivis.tools.llama_supervisor as supervisor
+    from qivis.tools.llama_supervisor import Pool
+
+    def model(name: str, gb: int) -> Supervisor:
+        path = tmp_path / name
+        with open(path, "wb") as f:
+            f.truncate(gb * 1024**3)
+        return Supervisor(
+            model=path, backend_port=free_port(), idle_seconds=3600,
+            llama_cmd=[sys.executable, str(STUB)], extra_args=[], startup_timeout=20,
+            overhead=4 * 1024**3,
+        )
+
+    a, b = model("a.gguf", 8), model("b.gguf", 8)
+    assert a.size == 12 * 1024**3  # file + estimate, before it has run
+    # Each running server measures 5 GB of its own memory
+    monkeypatch.setattr(supervisor, "footprint", lambda pid: 5 * 1024**3)
+    pool = Pool([a, b], memory_budget=24 * 1024**3)
+    async with AsyncClient(
+        transport=ASGITransport(app=create_app(pool)), base_url="http://sup"
+    ) as c:
+        await c.post("/completion", json={"model": "a.gguf", "prompt": "x"})
+        assert a.size == 13 * 1024**3  # measured once up
+        await c.post("/completion", json={"model": "b.gguf", "prompt": "y"})
+        # Files alone (16 GB) would fit; with working memory (26 GB) they don't
+        assert b.running and not a.running
+        status = (await c.get("/supervisor/status")).json()
+        b_status = next(m for m in status["models"] if m["model"] == "b.gguf")
+        assert b_status["overhead_measured"] and b_status["file_size"] == 8 * 1024**3
+    for m in (a, b):
+        await m.stop()
+
+
+def test_footprint_reads_a_real_process():
+    import os
+
+    from qivis.tools.llama_supervisor import footprint
+    used = footprint(os.getpid())
+    if sys.platform == "darwin":
+        assert used is not None and used > 1024**2
+    else:
+        assert used is None
+
+
+async def test_a_model_over_the_budget_alone_still_starts_with_the_rest_stopped(tmp_path):
+    from qivis.tools.llama_supervisor import Pool
+
+    def model(name: str, gb: int) -> Supervisor:
+        path = tmp_path / name
+        with open(path, "wb") as f:
+            f.truncate(gb * 1024**3)
+        return Supervisor(
+            model=path, backend_port=free_port(), idle_seconds=3600,
+            llama_cmd=[sys.executable, str(STUB)], extra_args=[], startup_timeout=20,
+            overhead=4 * 1024**3,
+        )
+
+    small, big = model("small.gguf", 5), model("big.gguf", 34)  # 38 GB counted
+    pool = Pool([small, big], memory_budget=36 * 1024**3)
+    async with AsyncClient(
+        transport=ASGITransport(app=create_app(pool)), base_url="http://sup"
+    ) as c:
+        await c.post("/completion", json={"model": "small.gguf", "prompt": "a"})
+        await c.post("/completion", json={"model": "big.gguf", "prompt": "b"})
+        assert big.running and not small.running
+    for m in (small, big):
+        await m.stop()
