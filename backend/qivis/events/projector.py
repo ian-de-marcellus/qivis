@@ -669,14 +669,15 @@ class StateProjector:
             """
             INSERT OR REPLACE INTO probes
                 (probe_id, rhizome_id, node_id, provider, model, samples, asked, judge,
-                 created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 created_at, exact)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 payload.probe_id, event.rhizome_id, payload.node_id, payload.provider,
                 payload.model, json.dumps(payload.samples), payload.asked,
                 json.dumps(payload.judge) if payload.judge is not None else None,
                 event.timestamp.isoformat(),
+                json.dumps(payload.exact) if payload.exact is not None else None,
             ),
         )
 

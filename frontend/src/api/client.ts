@@ -731,7 +731,11 @@ export function steerDiscard(sessionId: string): Promise<void> {
 
 export function runProbe(
   rhizomeId: string,
-  body: { node_id: string | null; provider: string; model?: string | null; n?: number; max_tokens?: number },
+  body: {
+    node_id: string | null; provider: string; model?: string | null; n?: number; max_tokens?: number
+    mode?: 'sample' | 'exact'; epsilon?: number; tail?: number; menu?: string[] | null
+    judge?: { provider: string; model: string } | null; grain?: string | null
+  },
 ): Promise<Probe> {
   return request(`/rhizomes/${rhizomeId}/probes`, { method: 'POST', body: JSON.stringify(body) })
 }
@@ -740,8 +744,12 @@ export function listProbes(rhizomeId: string): Promise<Probe[]> {
   return request(`/rhizomes/${rhizomeId}/probes`)
 }
 
-export function judgeProbe(rhizomeId: string, probeId: string): Promise<Probe> {
-  return request(`/rhizomes/${rhizomeId}/probes/${probeId}/judge`, { method: 'POST' })
+export function judgeProbe(
+  rhizomeId: string, probeId: string, judge?: { provider: string; model: string } | null,
+): Promise<Probe> {
+  return request(`/rhizomes/${rhizomeId}/probes/${probeId}/judge`, {
+    method: 'POST', ...(judge ? { body: JSON.stringify(judge) } : {}),
+  })
 }
 
 export function continueFromProbeSample(

@@ -673,6 +673,38 @@ class LlamaCppProvider(LLMProvider):
         resp.raise_for_status()
         return resp.content, applied, effective_prompt
 
+    async def sample_after(
+        self, request: GenerationRequest, continuation: list[int], max_tokens: int,
+        forbid: list[int] | None = None, stop: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Sample after the prompt plus `continuation` (token ids), from the same
+        distribution as next_tokens (the model's logit bias, temperature 1, no
+        truncation), with `forbid` tokens never drawn. Returns {"ids", "text",
+        "stop_type"} ("eos", "limit" or "word")."""
+        prompt, applied, _ = await self.lookup_inputs(request)
+        bias = dict(applied or {})
+        for tid in forbid or []:
+            bias[tid] = False  # llama.cpp: never sample it
+        body = self._build_request_body(request, bias or None)
+        body.update({
+            "prompt": [prompt, *continuation],
+            "n_predict": max_tokens,
+            "temperature": 1.0, "top_k": 0, "top_p": 1.0, "min_p": 0.0,
+            "return_tokens": True,
+            "cache_prompt": True,
+            "n_probs": 0,
+        })
+        body.pop("grammar", None)
+        if stop:
+            body["stop"] = stop
+        else:
+            body.pop("stop", None)
+        resp = await self._client.post(f"{self._base_url}/completion", json=body)
+        resp.raise_for_status()
+        data = resp.json()
+        return {"ids": list(data.get("tokens") or []), "text": data.get("content", ""),
+                "stop_type": data.get("stop_type")}
+
     async def model_identity(self, model: str = "", wake: bool = True) -> dict[str, Any]:
         """Everything about the served model that shapes its distributions: its
         file (path and size), the llama.cpp build, and its profile's settings.

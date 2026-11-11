@@ -209,3 +209,24 @@
   font-size: var(--text-sm);
   color: var(--text-secondary);
 }
+
+/* Exact probes */
+.probe-modes { display: flex; gap: 4px; margin: 4px 0 6px; }
+.probe-modes button { font-size: 12px; padding: 2px 10px; border: 1px solid var(--border); background: transparent; color: inherit; border-radius: 4px; cursor: pointer; opacity: 0.7; }
+.probe-modes button.on { opacity: 1; font-weight: 600; background: var(--accent-muted); }
+.probe-exact-options { display: flex; flex-direction: column; gap: 6px; margin: 6px 0; font-size: 12px; }
+.probe-exact-options label { display: flex; flex-direction: column; gap: 2px; }
+.probe-exact-options textarea, .probe-exact-options input, .probe-exact-options select {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  padding: 2px var(--space-xs);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.probe-hint { opacity: 0.6; }
+.probe-bar-tail { opacity: 0.35; }
+.probe-mass { margin-left: 8px; font-size: 11px; opacity: 0.6; white-space: nowrap; }
+.probe-label { font-size: 11px; opacity: 0.75; list-style: none; margin-top: 4px; }
+.probe-small { opacity: 0.7; font-style: italic; }

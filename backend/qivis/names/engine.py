@@ -105,11 +105,18 @@ def keeps(token: str) -> bool:
     return _starts_name(token) or _continues(token) or token == "."
 
 
-def summarize(dist: list[Candidate], floor: float = FLOOR) -> Summary:
-    """One distribution, reduced to what a name search needs."""
+def keeps_any(token: str) -> bool:
+    """Every token: what an answer search (qivis.probes.exact) keeps."""
+    return True
+
+
+def summarize(dist: list[Candidate], floor: float = FLOOR,
+              keep: Callable[[str], bool] = keeps) -> Summary:
+    """One distribution, reduced to what a name search needs (or, with
+    keep=keeps_any, every token above the floor)."""
     return Summary.of(
         {c["id"]: (c["token"], c["prob"]) for c in dist
-         if c["prob"] > floor and keeps(c["token"])},
+         if c["prob"] > floor and keep(c["token"])},
         sum(c["prob"] for c in dist if not _continues(c["token"])),
         sum(c["prob"] for c in dist if c["token"].startswith(PUNCTUATION)),
     )
@@ -121,6 +128,12 @@ def summarize_response(raw: bytes, floor: float = FLOOR) -> Summary:
     Summary a few kilobytes."""
     probs = (json.loads(raw).get("completion_probabilities") or [{}])[0]
     return summarize(probs.get("top_probs", []), floor)
+
+
+def summarize_response_all(raw: bytes, floor: float = FLOOR) -> Summary:
+    """summarize_response keeping every token (for answer searches); pure, for a worker."""
+    probs = (json.loads(raw).get("completion_probabilities") or [{}])[0]
+    return summarize(probs.get("top_probs", []), floor, keeps_any)
 
 
 @dataclass

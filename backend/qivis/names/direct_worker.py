@@ -62,6 +62,8 @@ class Model:
         # Which tokens a name search keeps, which go on a word, which are punctuation
         self.keep = bytes(engine.keeps(p) for p in pieces)
         self.cont = bytes(engine._continues(p) for p in pieces)
+        # An answer search (qivis.probes.exact) keeps every token
+        self.keep_all = bytes([1]) * len(pieces)
         self.punct = bytes(p.startswith(engine.PUNCTUATION) for p in pieces)
         self.prompts: OrderedDict[str, tuple[int, list[int]]] = OrderedDict()
         self.free = list(range(PROMPT_SEQS))
@@ -143,7 +145,9 @@ class Model:
             raise
 
     def lookups(self, bias: dict[int, float] | None, floor: float,
-                items: list[tuple[str, list[int]]]) -> list[tuple[bytes, bytes, float, float]]:
+                items: list[tuple[str, list[int]]],
+                kind: str = "names") -> list[tuple[bytes, bytes, float, float]]:
+        keep = self.keep_all if kind == "answers" else self.keep
         bias_vec = None
         if bias:
             bias_vec = (ct.c_float * self.n_vocab)()
@@ -178,7 +182,7 @@ class Model:
                 self.decode(batch)
                 for i in last:
                     k = self.lib.eng_summarize(
-                        self.e, i, bias_vec, self.keep, self.cont, self.punct, ct.c_float(floor),
+                        self.e, i, bias_vec, keep, self.cont, self.punct, ct.c_float(floor),
                         self.ids, self.probs, ct.byref(ends), ct.byref(punct),
                     )
                     if k < 0:
@@ -233,7 +237,9 @@ def main() -> None:
                     "eos": model.pieces[eos] if 0 <= eos < model.n_vocab else None,
                 }
             else:
-                reply = model.lookups(req["bias"], req["floor"], req["items"])
+                reply = model.lookups(
+                    req["bias"], req["floor"], req["items"], req.get("kind", "names"),
+                )
             _write(replies, {"ok": reply})
         except Exception as e:  # the backend reports it; this process goes on
             if model is not None and "llama_decode" in str(e):

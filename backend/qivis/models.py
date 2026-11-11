@@ -347,6 +347,10 @@ class ProbeRecordedPayload(BaseModel):
     asked: int | None = None  # samples asked for (fewer come back if some fail)
     # The answer each sample gives, as a judge model named it (None: not judged)
     judge: dict | None = None
+    # An exact probe (qivis.probes.exact): its settings, the enumerated answers with
+    # their exact probabilities, the pruned mass and the tail rollouts. Its answers
+    # aren't samples, so `samples` is empty; None for a sampled probe.
+    exact: dict | None = None
 
 
 class NameStudyCreatedPayload(BaseModel):

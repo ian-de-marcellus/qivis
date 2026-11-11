@@ -336,6 +336,8 @@ _MIGRATIONS: list[tuple[str, str]] = [
     ("031_create_name_vocab",
      "CREATE TABLE IF NOT EXISTS name_vocab (identity TEXT NOT NULL, id INTEGER NOT NULL, "
      "token TEXT NOT NULL, PRIMARY KEY (identity, id))"),
+    # Exact probes: the enumerated answer distribution (qivis.probes.exact)
+    ("032_probes_exact", "ALTER TABLE probes ADD COLUMN exact TEXT"),
 ]
 
 

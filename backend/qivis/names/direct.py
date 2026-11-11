@@ -42,7 +42,7 @@ IDLE_SECONDS = 120
 # The GPU memory it holds is leased from llama-server's supervisor, so the two
 # don't both fill it: the model file plus its attention cache and buffers
 LEASE = "qivis-direct-lookups"
-LEASE_EXTRA = 1024**3
+LEASE_EXTRA = 3 * 1024**3  # its context cache and buffers (~2.2 GB measured for OLMo 3 7B)
 LEASE_TTL = 180.0
 
 
@@ -176,9 +176,11 @@ class DirectEngine:
         return self._vocab[path]
 
     async def summary(self, path: str, prompt: str, ids: list[int],
-                      bias: dict[int, float] | None = None) -> engine.Summary:
-        """One lookup: the distribution after the prompt and token ids, summarized."""
-        key = (path, tuple(sorted((bias or {}).items())))
+                      bias: dict[int, float] | None = None,
+                      kind: str = "names") -> engine.Summary:
+        """One lookup: the distribution after the prompt and token ids, summarized
+        for a name search ("names") or with every token kept ("answers")."""
+        key = (path, tuple(sorted((bias or {}).items())), kind)
         future = asyncio.get_running_loop().create_future()
         self._pending.append((key, prompt, list(ids), future))
         if self._idle is not None:
@@ -194,11 +196,11 @@ class DirectEngine:
             batch = [x for x in self._pending if x[0] == key][:MAX_BATCH]
             taken = {id(x) for x in batch}
             self._pending = [x for x in self._pending if id(x) not in taken]
-            path, bias = key[0], dict(key[1]) or None
+            path, bias, kind = key[0], dict(key[1]) or None, key[2]
             try:
                 vocab = await self.vocab(path)
                 results = await self._ask({
-                    "op": "lookups", "path": path, "n_ctx": N_CTX, "bias": bias,
+                    "op": "lookups", "path": path, "n_ctx": N_CTX, "bias": bias, "kind": kind,
                     "floor": engine.FLOOR, "items": [(p, ids) for _, p, ids, _ in batch],
                 })
             except Exception as e:
@@ -216,6 +218,14 @@ class DirectEngine:
                     f.set_result(engine.Summary(ids, probs, vocab, ends, punct))
         loop = asyncio.get_running_loop()
         self._idle = loop.call_later(IDLE_SECONDS, lambda: loop.create_task(self._rest()))
+
+    async def rest_now(self) -> None:
+        """Let the worker go now, rather than after IDLE_SECONDS, if nothing is
+        waiting (e.g. so llama-server has the memory for what comes next)."""
+        if self._idle is not None:
+            self._idle.cancel()
+            self._idle = None
+        await self._rest()
 
     async def _rest(self) -> None:
         """Stop the worker (and free its model) if nothing's come in since."""

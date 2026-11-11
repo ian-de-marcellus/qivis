@@ -579,8 +579,41 @@ export interface ProbeSample {
   logprobs: LogprobData | null
 }
 
+/** One answer of an exact probe: enumerated (exact probability) or a tail rollout (its share of the pruned mass). */
+export interface ExactItem {
+  kind: 'leaf' | 'tail'
+  text: string
+  mass: number
+  finish: string
+}
+
+/** A group of answers the judge read as the same, with the labels inside it. */
+export interface ExactGroup {
+  answer: string
+  exact: number
+  tail: number
+  labels: { label: string; exact: number; tail: number; items: number[] }[]
+}
+
+/** An exact probe's distribution (qivis.probes.exact): what was enumerated, pruned and sampled. */
+export interface ExactProbe {
+  settings: { epsilon: number; max_tokens: number; tail: number; menu: string[] | null; grain: string | null; stop: string }
+  /** Probability of the enumerated answers (cut-off ones included) */
+  explored: number
+  cut_off: number
+  /** Probability left unexpanded, estimated by the tail rollouts */
+  pruned: number
+  lookups: number
+  stopped_early: boolean
+  items: ExactItem[]
+  groups: ExactGroup[]
+}
+
 /** Samples at one point, and (if judged) the answer each gives. */
 export interface Probe {
+  /** "sample": samples, grouped; "exact": the answer distribution, enumerated */
+  mode?: 'sample' | 'exact'
+  exact?: ExactProbe
   probe_id: string
   node_id: string | null
   provider: string
@@ -595,6 +628,11 @@ export interface Probe {
     model: string
     answers: string[]
     messages: { role: string; content: string }[]
+    /** Exact probes: who judged, the menu if any, and how labels were grouped */
+    provider?: string | null
+    menu?: string[] | null
+    buckets?: Record<string, string> | null
+    bucket_judge?: { provider: string | null; model: string | null; grain: string | null } | null
   } | null
 }
 
