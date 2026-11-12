@@ -9,6 +9,9 @@ llama-server reports for the loaded model). A profile can set:
 - generation_mode   "chat" or "completion"
 - prompt_template   completion template, e.g. "llama3" (used when a rhizome
                     leaves its template on "auto")
+- transcript_name   the name the model speaks under in transcript prompts
+                    started for it from outside the UI (the MCP bridge), e.g.
+                    "Sun"; without one, the template's default applies
 - logit_bias, bos_tokens   applied by the llama.cpp provider
 
 A model's format belongs to the model, so rhizomes default to "auto" and
@@ -67,6 +70,7 @@ class ModelCatalog:
             "model": model,
             "mode": mode,
             "prompt_template": cfg.get("prompt_template"),
+            "transcript_name": cfg.get("transcript_name"),
             "source": source,
         }
 

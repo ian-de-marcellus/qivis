@@ -76,11 +76,23 @@ async def test_conversation_is_recorded_and_continues(env):
     meta = rh["metadata"]
     assert meta["folders"] == ["Connectome"] and "caller:fable" in meta["tags"]
     assert meta["prompt_template"] == "auto" and meta["generation_mode"] == "completion"
+    assert meta["speaker_name"] == "Fable" and "model_name" not in meta  # no transcript_name in this profile
     users = [n for n in rh["nodes"] if n["role"] == "user"]
     assert {n["participant_name"] for n in users} == {"Fable"}
     assert await fable.read("Sun 1.0.1") == (
         "You: hello Sun\n\nSun 1.0.1: reply 1\n\nYou: how are you?\n\nSun 1.0.1: reply 2")
     assert await fable.read("Sun 1.0.1", last=1) == "Sun 1.0.1: reply 2"
+
+
+async def test_transcript_names_the_caller_and_the_profiled_model(env):
+    """The model sees who is talking and its own profiled name, not the template's Person/Sun defaults."""
+    set_catalog(ModelCatalog({"sun.gguf": {"label": "Ed", "provider": "fakesun", "generation_mode": "completion",
+                                           "prompt_template": "transcript", "transcript_name": "Ed"}}))
+    first = await env["fable"].send("Ed", "hello")
+    rh = (await env["client"].get(f"/api/rhizomes/{first['conversation_id']}")).json()
+    assert rh["metadata"]["speaker_name"] == "Fable" and rh["metadata"]["model_name"] == "Ed"
+    reply = next(n for n in rh["nodes"] if n["role"] == "assistant")
+    assert reply["prompt_text"].endswith("Fable: hello\n\nEd:")
 
 
 async def test_new_conversation_and_resuming_by_id(env):

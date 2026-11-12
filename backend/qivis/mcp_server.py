@@ -85,6 +85,10 @@ class QivisBridge:
                 "generation_mode": model["mode"],
                 "prompt_template": "auto",
                 "stream_responses": True,
+                # Transcript prompts name both speakers: the caller under its own name, and the
+                # model under its profile's transcript_name (unset: the template's default)
+                "speaker_name": self.caller,
+                **({"model_name": name} if (name := model.get("transcript_name")) else {}),
                 "connectome": {
                     "caller": self.caller, "model_id": model["id"], "model_label": model["label"],
                 },

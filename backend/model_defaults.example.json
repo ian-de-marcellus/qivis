@@ -1,5 +1,5 @@
 {
-  "_comment": "Model profiles, keyed by model name (for llama.cpp, the name llama-server reports: model_alias, usually the GGUF filename). Copy the example to model_defaults.json (gitignored). label/provider: shown in the model picker. generation_mode/prompt_template: the model's own format (base models: 'transcript' for conversations -- rhizome metadata speaker_name/model_name, default Person/Sun -- or 'document' for continuous text), used when a rhizome leaves its template on 'auto' (the default). logit_bias: applied under any explicit value, recorded in each node's sampling_params. context_limit: the model's whole window (prompt + reply), if llama-server's n_ctx isn't the right answer; Qivis keeps the prompt within it minus max_tokens. bos_tokens: how many <|begin_of_text|> the model sees (default 1). Sun 1.0.1: +ln 386 on eot restores end-of-turn mass her untrained eot row shared with 385 twins; bos_tokens 2 because her SFT text began with <|begin_of_text|> and TRL 0.8.6 added another.",
+  "_comment": "Model profiles, keyed by model name (for llama.cpp, the name llama-server reports: model_alias, usually the GGUF filename). Copy the example to model_defaults.json (gitignored). label/provider: shown in the model picker. generation_mode/prompt_template: the model's own format (base models: 'transcript' for conversations -- rhizome metadata speaker_name/model_name, default Person/Sun; the MCP bridge names the caller and uses transcript_name for the model -- or 'document' for continuous text), used when a rhizome leaves its template on 'auto' (the default). logit_bias: applied under any explicit value, recorded in each node's sampling_params. context_limit: the model's whole window (prompt + reply), if llama-server's n_ctx isn't the right answer; Qivis keeps the prompt within it minus max_tokens. bos_tokens: how many <|begin_of_text|> the model sees (default 1). Sun 1.0.1: +ln 386 on eot restores end-of-turn mass her untrained eot row shared with 385 twins; bos_tokens 2 because her SFT text began with <|begin_of_text|> and TRL 0.8.6 added another.",
   "Sun-v1.0.1-8B.Q4_K_M.gguf": {
     "label": "Sun 1.0.1",
     "provider": "llamacpp",
@@ -8,7 +8,8 @@
     "logit_bias": {
       "128009": 5.955837
     },
-    "bos_tokens": 2
+    "bos_tokens": 2,
+    "transcript_name": "Sun"
   },
   "Olmo-3-7B-stage1-step1413814.BF16.gguf": {
     "label": "OLMo 3 7B base (stage1, bf16)",

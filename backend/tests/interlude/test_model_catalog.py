@@ -99,7 +99,7 @@ class TestModelsEndpoint:
         plain = next(e for e in entries if e["model"] == "gpt-plain")
         assert plain == {"id": "dual:gpt-plain", "label": "gpt-plain", "provider": "dual",
                          "model": "gpt-plain", "mode": "chat", "prompt_template": None,
-                         "source": "discovered"}
+                         "transcript_name": None, "source": "discovered"}
 
 
 class TestTemplateResolution:
